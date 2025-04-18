@@ -1,0 +1,10 @@
+[package]
+name = "ps2-filetypes"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byteorder = "1.5.0"
+chrono = "0.4.40"
+encoding_rs = "0.8.35"
+unicode-normalization = "0.1.24"

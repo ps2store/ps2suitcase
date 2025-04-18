@@ -1,0 +1,10 @@
+[package]
+name = "ps2-mcm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.31.1"
+image = "0.25.6"
+ps2-filetypes={path = "../ps2-filetypes"}
+rfd = "0.15.3"
