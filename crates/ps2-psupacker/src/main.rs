@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 mod psu;
 
 use crate::psu::PSU;
