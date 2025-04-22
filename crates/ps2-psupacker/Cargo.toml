@@ -1,0 +1,10 @@
+[package]
+name = "ps2-psupacker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.31.1"
+rfd = "0.15.3"
+chrono = "0.4.40"
+byteorder = "1.5.0"

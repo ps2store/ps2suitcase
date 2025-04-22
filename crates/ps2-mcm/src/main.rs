@@ -68,7 +68,8 @@ impl eframe::App for MCM {
     fn update(&mut self, ctx: &Context, frame: &mut Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             if ui.button("Load File").clicked() {
-                self.load_file("/Users/simonhochrein/Downloads/EMU_PICODRIVE-201.psu")
+                // self.load_file("/Users/simonhochrein/Downloads/EMU_PICODRIVE-201.psu")
+                self.load_file("WLE.PSU")
             }
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.with_layout(
