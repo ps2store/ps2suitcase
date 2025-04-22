@@ -9,7 +9,7 @@ use std::path::PathBuf;
 fn main() {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([640.0, 240.0])
+            .with_inner_size([640.0, 400.0])
             .with_drag_and_drop(true),
         ..Default::default()
     };
