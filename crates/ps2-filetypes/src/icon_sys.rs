@@ -32,14 +32,14 @@ pub struct Vector {
 pub struct IconSys {
     pub title_line_transparency: u16,
     pub background_transparency: u32,
-    background_colors: [Color; 4],
-    light_directions: [Vector; 3],
-    light_colors: [Color; 3],
+    pub background_colors: [Color; 4],
+    pub light_directions: [Vector; 3],
+    pub light_colors: [Color; 3],
     pub ambient_color: ColorF,
-    title: String,
-    icon_file: String,
-    icon_copy_file: String,
-    icon_delete_file: String,
+    pub title: String,
+    pub icon_file: String,
+    pub icon_copy_file: String,
+    pub icon_delete_file: String,
 }
 
 impl IconSys {

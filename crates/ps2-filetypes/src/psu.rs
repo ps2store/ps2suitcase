@@ -83,7 +83,6 @@ impl PSUParser {
         let modified = self.read_timestamp()?;
         self.c.seek_relative(32)?;
 
-
         let mut name = [0; 448];
         self.c.read_exact(&mut name)?;
         println!("{}: {} %{} ", parse_cstring(&name), junk1, size);

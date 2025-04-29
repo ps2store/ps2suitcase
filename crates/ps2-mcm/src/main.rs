@@ -46,17 +46,17 @@ impl MCM {
         //         output
         //             .write_all(icn.export_obj().as_bytes())
         //             .expect("Failed to write");
-                // let mut image = RgbImage::new(128, 128);
-                // for y in 0..128 {
-                //     for x in 0..128 {
-                //         let pixel = icn.texture.pixels[y * 128 + x];
-                //         let r = ((pixel & 0x3F) * 255 / 31) as u8;
-                //         let g = (((pixel >> 5) & 0x3F) * 255 / 31) as u8;
-                //         let b = (((pixel >> 10) & 0x3F) * 255 / 31) as u8;
-                //         image.put_pixel(x as u32, y as u32, Rgb([r,g,b]));
-                //     }
-                // }
-                // image.save("/Users/<user>/Downloads/list.png").unwrap();
+        // let mut image = RgbImage::new(128, 128);
+        // for y in 0..128 {
+        //     for x in 0..128 {
+        //         let pixel = icn.texture.pixels[y * 128 + x];
+        //         let r = ((pixel & 0x3F) * 255 / 31) as u8;
+        //         let g = (((pixel >> 5) & 0x3F) * 255 / 31) as u8;
+        //         let b = (((pixel >> 10) & 0x3F) * 255 / 31) as u8;
+        //         image.put_pixel(x as u32, y as u32, Rgb([r,g,b]));
+        //     }
+        // }
+        // image.save("/Users/<user>/Downloads/list.png").unwrap();
         //
         //         break;
         //     }

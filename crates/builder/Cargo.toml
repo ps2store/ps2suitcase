@@ -1,0 +1,13 @@
+[package]
+name = "builder"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+
+[dependencies]
+macros = { path = "../macros" }
+eframe = { version = "0.31.1", features = ["default"] }
+egui_dock = "0.16.0"
+cgmath = "0.18.0"
+ps2-filetypes = { path = "../ps2-filetypes" }
+image = "0.25.6"

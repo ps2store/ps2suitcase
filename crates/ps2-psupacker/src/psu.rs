@@ -1,8 +1,8 @@
+use byteorder::{WriteBytesExt, LE};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use std::fs::File;
 use std::io::{Read, Seek, Write};
 use std::path::Path;
-use byteorder::{WriteBytesExt, LE};
-use chrono::{DateTime, Datelike, Timelike, Utc};
 
 const DIR_ID: u16 = 0x8427;
 const FILE_ID: u16 = 0x8497;
@@ -66,7 +66,7 @@ impl PSUEntry {
         Ok(Self {
             id: FILE_ID,
             size,
-            sector:0,
+            sector: 0,
             contents: Some(contents),
             name,
             created: created_at.naive_local(),
@@ -83,11 +83,11 @@ impl PSUEntry {
         data.write_u16::<LE>(0)?;
         data.write_u32::<LE>(0)?;
         data.write_all(&timestamp_to_bytes(self.modified)?)?;
-        let padding = vec![0u8;32];
+        let padding = vec![0u8; 32];
         data.write_all(&padding)?;
         data.write_all(&encode_string(self.name.clone())?)?;
 
-        if(self.id == FILE_ID) {
+        if (self.id == FILE_ID) {
             data.write_all(&self.contents.clone().unwrap())?;
             let rem = 1024 - (self.size % 1024);
 
@@ -118,32 +118,32 @@ impl PSU {
 
     pub fn write(&self, name: &Path) -> Result<(), std::io::Error> {
         let mut file = File::create(name)?;
-        let root = PSUEntry{
+        let root = PSUEntry {
             id: DIR_ID,
             size: self.entries.len() as u32 + 2,
             created: Utc::now().naive_utc(),
             sector: 0,
             modified: Utc::now().naive_utc(),
             name: name.to_str().unwrap().to_string(),
-            contents: None
+            contents: None,
         };
-        let cur = PSUEntry{
+        let cur = PSUEntry {
             id: DIR_ID,
             size: 0,
             created: Utc::now().naive_utc(),
             sector: 0,
             modified: Utc::now().naive_utc(),
             name: ".".to_string(),
-            contents: None
+            contents: None,
         };
-        let parent = PSUEntry{
+        let parent = PSUEntry {
             id: DIR_ID,
             size: 0,
             created: Utc::now().naive_utc(),
             sector: 0,
             modified: Utc::now().naive_utc(),
             name: "..".to_string(),
-            contents: None
+            contents: None,
         };
         file.write_all(root.as_bytes()?.as_slice())?;
         file.write_all(cur.as_bytes()?.as_slice())?;

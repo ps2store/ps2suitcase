@@ -6,6 +6,8 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/ps2-mcm/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/ps2-psupacker/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/builder/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/macros/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/crates/ps2-filetypes/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>

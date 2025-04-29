@@ -99,9 +99,9 @@ impl ICN {
             output += format!(
                 "vt {} {}\n",
                 self.uvs[i].u as f32 / 4096.0,
-                1.0-(self.uvs[i].v as f32 / 4096.0)
+                1.0 - (self.uvs[i].v as f32 / 4096.0)
             )
-                .as_str();
+            .as_str();
         }
         output += "usemtl tex\n";
         for f in 0..self.header.vertex_count / 3 {
@@ -113,11 +113,9 @@ impl ICN {
                 f * 3 + 1 + 1,
                 f * 3 + 2 + 1,
                 f * 3 + 2 + 1,
-
             )
             .as_str();
         }
-
 
         output
     }
@@ -242,7 +240,7 @@ impl ICNParser {
     }
 
     fn parse_texture(&mut self, texture_type: u32) -> std::io::Result<IcnTexture> {
-        if texture_type == 0x07 {
+        if texture_type <= 0x07 {
             self.parse_texture_uncompressed()
         } else {
             self.parse_texture_compressed()
@@ -273,12 +271,14 @@ impl ICNParser {
                 let pixel = compressed[offset];
                 offset += 1;
                 for _ in 0..rep_count {
+                    if index >= TEXTURE_SIZE {break;}
                     pixels[index] = pixel;
                     index += 1;
                 }
             } else {
                 let actual_count = 0xffff ^ rep_count;
                 for _ in 0..=actual_count {
+                    if index >= TEXTURE_SIZE {break;}
                     let pixel = compressed[offset];
                     offset += 1;
                     pixels[index] = pixel;
