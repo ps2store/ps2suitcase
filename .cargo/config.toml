@@ -1,0 +1,2 @@
+[alias]
+build-app = "run --package xtask-build-app --"
