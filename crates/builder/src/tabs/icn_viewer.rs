@@ -1,13 +1,14 @@
+use std::fs::File;
+use crate::rendering::Shader;
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
+use cgmath::num_traits::FloatConst;
 use cgmath::{point3, vec3, Matrix4, Transform, Vector3};
 use eframe::egui::{Ui, Vec2};
 use eframe::glow::NativeTexture;
 use eframe::{egui, egui_glow, glow};
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
-use cgmath::num_traits::FloatConst;
-use crate::rendering::Shader;
 
 pub struct ICNViewer {
     renderer: Arc<Mutex<Option<ICNRenderer>>>,
@@ -18,21 +19,16 @@ pub struct ICNViewer {
 
 impl ICNViewer {
     pub fn new(app: Arc<Mutex<AppState>>, file: Arc<Mutex<VirtualFile>>) -> Self {
-        let file = file.clone();
-        let mut file = file.lock().unwrap();
-        let bytes = if let Some(file) = &mut file.file {
-            let mut buf = Vec::new();
-            file.seek(SeekFrom::Start(0)).unwrap();
-            file.read_to_end(&mut buf).unwrap();
-            buf
-        } else {
-            vec![]
-        };
+        let virtual_file = file.clone();
+        let virtual_file = virtual_file.lock().unwrap();
+        let mut file = File::open(&virtual_file.file_path).expect("File not found");
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).unwrap();
         Self {
             renderer: Arc::new(Mutex::new(None)),
-            bytes: Arc::new(bytes),
-            file: file.name.clone(),
-            angle: f32::PI()/2.0,
+            bytes: Arc::new(buf),
+            file: virtual_file.name.clone(),
+            angle: f32::PI() / 2.0,
         }
     }
     fn custom_painting(&mut self, ui: &mut Ui) {
@@ -42,7 +38,7 @@ impl ICNViewer {
 
         let renderer = self.renderer.clone();
         let bytes = self.bytes.clone();
-        
+
         let angle = self.angle;
 
         let callback = egui::PaintCallback {
@@ -61,6 +57,10 @@ impl ICNViewer {
 }
 
 impl Tab for ICNViewer {
+    fn get_id(&self) -> &str {
+        &self.file
+    }
+
     fn get_title(&self) -> String {
         self.file.clone()
     }
@@ -69,6 +69,14 @@ impl Tab for ICNViewer {
         egui::Frame::canvas(ui.style()).show(ui, |ui| {
             self.custom_painting(ui);
         });
+    }
+
+    fn get_modified(&self) -> bool {
+        false
+    }
+
+    fn save(&mut self) {
+        todo!();
     }
 }
 
@@ -88,17 +96,35 @@ impl ICNRenderer {
         let icn = ps2_filetypes::ICN::new(bytes.clone().to_vec());
 
         unsafe {
-            let shader = Shader::new(gl, include_str!("../shaders/icn.vsh"), include_str!("../shaders/icn.fsh"));
-            let lines_shader = Shader::new(gl, include_str!("../shaders/outline.vsh"), include_str!("../shaders/outline.fsh"));
+            let shader = Shader::new(
+                gl,
+                include_str!("../shaders/icn.vsh"),
+                include_str!("../shaders/icn.fsh"),
+            );
+            let lines_shader = Shader::new(
+                gl,
+                include_str!("../shaders/outline.vsh"),
+                include_str!("../shaders/outline.fsh"),
+            );
 
-            let pixels: Vec<u8> = icn.texture.pixels.into_iter().flat_map(|pixel| {
-                let r = pixel & 0x1f;
-                let g = (pixel >> 5) & 0x1f;
-                let b = (pixel >> 10) & 0x1f;
-                let a = if pixel & 0x8000 != 0 { 255 } else { 0 };
+            let pixels: Vec<u8> = icn
+                .texture
+                .pixels
+                .into_iter()
+                .flat_map(|pixel| {
+                    let r = pixel & 0x1f;
+                    let g = (pixel >> 5) & 0x1f;
+                    let b = (pixel >> 10) & 0x1f;
+                    let a = if pixel & 0x8000 != 0 { 255 } else { 0 };
 
-                [(r * 255 / 31) as u8, (g * 255 / 31) as u8, (b * 255 / 31) as u8, a as u8]
-            }).collect();
+                    [
+                        (r * 255 / 31) as u8,
+                        (g * 255 / 31) as u8,
+                        (b * 255 / 31) as u8,
+                        a as u8,
+                    ]
+                })
+                .collect();
 
             let mut vertices = Vec::new();
             for (i, vertex) in icn.animation_shapes[0].iter().enumerate() {
@@ -115,7 +141,6 @@ impl ICNRenderer {
             }
 
             let data = vertices.as_slice();
-
 
             let vertex_array = gl
                 .create_vertex_array()
@@ -153,8 +178,16 @@ impl ICNRenderer {
 
             let texture = gl.create_texture().expect("Cannot create texture");
             gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR_MIPMAP_LINEAR as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::LINEAR_MIPMAP_LINEAR as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::LINEAR as i32,
+            );
 
             gl.tex_image_2d(
                 glow::TEXTURE_2D,
@@ -169,7 +202,9 @@ impl ICNRenderer {
             );
             gl.generate_mipmap(glow::TEXTURE_2D);
 
-            let lines_array = gl.create_vertex_array().expect("Cannot create vertex array");
+            let lines_array = gl
+                .create_vertex_array()
+                .expect("Cannot create vertex array");
             gl.bind_vertex_array(Some(lines_array));
 
             let vbo2 = gl.create_buffer().expect("Cannot create buffer");
@@ -256,17 +291,14 @@ impl ICNRenderer {
             );
             gl.bind_vertex_array(Some(self.vertex_array));
             gl.draw_arrays(glow::TRIANGLES, 0, self.vertex_count as i32);
-
         }
     }
 }
 
 fn convert_matrix(mat: Matrix4<f32>) -> Vec<f32> {
     vec![
-        mat.x.x, mat.x.y, mat.x.z, mat.x.w,
-        mat.y.x, mat.y.y, mat.y.z, mat.y.w,
-        mat.z.x, mat.z.y, mat.z.z, mat.z.w,
-        mat.w.x, mat.w.y, mat.w.z, mat.w.w,
+        mat.x.x, mat.x.y, mat.x.z, mat.x.w, mat.y.x, mat.y.y, mat.y.z, mat.y.w, mat.z.x, mat.z.y,
+        mat.z.z, mat.z.w, mat.w.x, mat.w.y, mat.w.z, mat.w.w,
     ]
 }
 
@@ -286,9 +318,18 @@ pub fn generate_wireframe_box(size: Vector3<f32>) -> Vec<f32> {
 
     // Each pair of points forms a line
     let edges = [
-        (0, 1), (1, 2), (2, 3), (3, 0), // bottom rectangle
-        (4, 5), (5, 6), (6, 7), (7, 4), // top rectangle
-        (0, 4), (1, 5), (2, 6), (3, 7), // vertical lines
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0), // bottom rectangle
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4), // top rectangle
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7), // vertical lines
     ];
 
     let mut vertices = Vec::new();

@@ -271,14 +271,18 @@ impl ICNParser {
                 let pixel = compressed[offset];
                 offset += 1;
                 for _ in 0..rep_count {
-                    if index >= TEXTURE_SIZE {break;}
+                    if index >= TEXTURE_SIZE {
+                        break;
+                    }
                     pixels[index] = pixel;
                     index += 1;
                 }
             } else {
                 let actual_count = 0xffff ^ rep_count;
                 for _ in 0..=actual_count {
-                    if index >= TEXTURE_SIZE {break;}
+                    if index >= TEXTURE_SIZE {
+                        break;
+                    }
                     let pixel = compressed[offset];
                     offset += 1;
                     pixels[index] = pixel;

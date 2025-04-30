@@ -3,12 +3,18 @@
 mod rendering;
 mod tabs;
 mod ui;
+mod utils;
 
-use crate::tabs::{FileTree, ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
-use crate::ui::{BottomBar, TabViewer};
-use eframe::egui::{menu, Context, Frame, IconData, ViewportCommand, Widget};
+use crate::tabs::{FileTree, FileTreeComponent, ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
+use crate::ui::{BottomBar, MenuItemComponent, TabViewer};
+use crate::utils::{shortcut, Shortcut};
+use eframe::egui::{
+    menu, Area, Button, Color32, Context, CornerRadius, Frame, IconData, Id, KeyboardShortcut,
+    Modifiers, OpenUrl, Pos2, Sense, ViewportCommand, Widget,
+};
 use eframe::{egui, NativeOptions};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
+use lazy_static::lazy_static;
 use std::fs::{read_dir, File};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -43,7 +49,7 @@ fn main() -> eframe::Result<()> {
 
 pub struct VirtualFile {
     pub name: String,
-    pub file: Option<File>,
+    pub file_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -77,7 +83,7 @@ impl AppState {
                 if entry.file_type().ok()?.is_file() {
                     Some(Arc::new(Mutex::new(VirtualFile {
                         name: entry.file_name().into_string().unwrap(),
-                        file: File::open(entry.path()).ok(),
+                        file_path:entry.path(),
                     })))
                 } else {
                     None
@@ -97,6 +103,9 @@ struct PSUBuilderApp {
     tree: DockState<Box<dyn Tab>>,
     state: Arc<Mutex<AppState>>,
     file_tree: FileTree,
+    first_render: bool,
+    saving: bool,
+    confirm_close: bool,
 }
 
 impl PSUBuilderApp {
@@ -113,6 +122,9 @@ impl PSUBuilderApp {
             file_tree: FileTree {
                 state: state.clone(),
             },
+            first_render: true,
+            saving: false,
+            confirm_close: false,
         }
     }
 
@@ -156,34 +168,104 @@ impl PSUBuilderApp {
             };
 
             if let Some(editor) = editor {
-                self.tree.push_to_first_leaf(editor);
+                self.tree.push_to_focused_leaf(editor);
+                if let Some(position) = self.tree.focused_leaf() {
+                    self.tree.set_focused_node_and_surface(position);
+                } else {
+                    self.tree
+                        .set_focused_node_and_surface((SurfaceIndex::main(), NodeIndex::root()));
+                }
             }
         }
+    }
+
+    fn save_file(&mut self) {
+        if let Some((_, tab)) = self.tree.find_active_focused() {
+            tab.save();
+        }
+    }
+
+    fn has_unsaved_files(&self) -> bool {
+        for (_, tab) in self.tree.iter_all_tabs() {
+            if tab.get_modified() {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
 impl eframe::App for PSUBuilderApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        const CTRL_OR_CMD: Modifiers = if cfg!(target_os = "macos") {
+            Modifiers::MAC_CMD
+        } else {
+            Modifiers::CTRL
+        };
+
+        let export_keyboard_shortcut =
+            KeyboardShortcut::new(CTRL_OR_CMD | Modifiers::SHIFT, egui::Key::S);
+        let add_file_keyboard_shortcut =
+            KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::O);
+        let save_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::S);
+        let create_icn_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::I);
+
+        if self.first_render {
+            ctx.send_viewport_cmd(ViewportCommand::Title(
+                self.state
+                    .lock()
+                    .unwrap()
+                    .opened_folder
+                    .file_name()
+                    .and_then(|name| Some(name.to_str()?.to_string()))
+                    .unwrap_or("PSU Builder".to_string()),
+            ));
+            self.first_render = false;
+        }
+
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            self.file_tree.get_content(ui);
+            ui.file_tree(self.state.clone());
         });
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.button("Add Files").clicked() {
+                    if ui
+                        .menu_item_shortcut("Add Files", &add_file_keyboard_shortcut)
+                        .clicked()
+                    {
                         println!("Add Files");
                     }
-                    if ui.button("Quit").clicked() {
-                        ui.ctx().send_viewport_cmd(ViewportCommand::Close);
+                    if ui
+                        .menu_item_shortcut("Save File", &save_keyboard_shortcut)
+                        .clicked()
+                    {
+                        self.save_file();
+                    }
+                    ui.separator();
+                    if ui
+                        .menu_item_shortcut("Create ICN", &create_icn_keyboard_shortcut)
+                        .clicked()
+                    {
+                        println!("Create ICN");
                     }
                 });
-                ui.menu_button("Export", |ui| {});
-                ui.menu_button("Help", |ui| {})
+                ui.menu_button("Export", |ui| {
+                    if ui
+                        .menu_item_shortcut("Export PSU", &export_keyboard_shortcut)
+                        .clicked()
+                    {
+                        println!("Export PSU");
+                    }
+                });
+                ui.menu_button("Help", |ui| {
+                    ui.menu_item_link("GitHub", "https://github.com/simonhochrein/ps2-rust")
+                })
             });
         });
 
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            BottomBar {}.ui(ui);
+            ui.add(BottomBar {});
         });
 
         egui::CentralPanel::default()
@@ -196,6 +278,61 @@ impl eframe::App for PSUBuilderApp {
                     .show_inside(ui, &mut TabViewer {});
             });
 
+        if ctx.input_mut(|i| i.consume_shortcut(&export_keyboard_shortcut)) {
+            self.saving = true;
+        } else if ctx.input_mut(|i| i.consume_shortcut(&save_keyboard_shortcut)) {
+            self.save_file();
+        }
+
+        if self.saving {
+            Area::new(Id::new("export_modal"))
+                .fixed_pos(Pos2::ZERO)
+                .show(ctx, |ui| {
+                    let screen_rect = ui.ctx().input(|i| i.screen_rect);
+                    let area_response = ui.allocate_response(screen_rect.size(), Sense::click());
+
+                    if area_response.clicked() {
+                        self.saving = false;
+                    }
+
+                    ui.painter().rect_filled(
+                        screen_rect,
+                        CornerRadius::ZERO,
+                        Color32::from_rgba_premultiplied(0, 0, 0, 100),
+                    );
+                });
+        }
+
+        // if ctx.input(|i| i.viewport().close_requested()) {
+        //     if !self.confirm_close && self.has_unsaved_files() {
+        //         ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+        //         self.confirm_close = true;
+        //     }
+        // }
+        //
+        // if self.confirm_close {
+        //     let screen_rect = ctx.input(|i| i.screen_rect);
+        //     egui::Window::new("Do you want to quit?")
+        //         .collapsible(false)
+        //         .resizable(false)
+        //         .fixed_pos(screen_rect.center())
+        //         .show(ctx, |ui| {
+        //             ui.horizontal(|ui| {
+        //                 if ui.button("No").clicked() {
+        //                     self.confirm_close = false;
+        //                 }
+        //
+        //                 if ui.button("Yes").clicked() {
+        //                     ui.ctx().send_viewport_cmd(ViewportCommand::Close);
+        //                 }
+        //             });
+        //         });
+        // }
+
         self.handle_events();
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+
     }
 }

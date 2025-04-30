@@ -1,5 +1,7 @@
-mod tab_viewer;
 mod bottom_bar;
+mod tab_viewer;
+mod menu_item;
 
-pub use tab_viewer::*;
 pub use bottom_bar::*;
+pub use tab_viewer::*;
+pub use menu_item::*;

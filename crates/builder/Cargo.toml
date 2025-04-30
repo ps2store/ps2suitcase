@@ -11,3 +11,4 @@ egui_dock = "0.16.0"
 cgmath = "0.18.0"
 ps2-filetypes = { path = "../ps2-filetypes" }
 image = "0.25.6"
+lazy_static = "1.5.0"

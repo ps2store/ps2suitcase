@@ -6,12 +6,16 @@ pub struct Shader {
 }
 
 impl Shader {
-    pub unsafe fn new(gl: &glow::Context, vertex_shader_source: &str, fragment_shader_source: &str) -> Self {
+    pub unsafe fn new(
+        gl: &glow::Context,
+        vertex_shader_source: &str,
+        fragment_shader_source: &str,
+    ) -> Self {
         let program = gl.create_program().expect("Cannot create program");
 
         let shader_sources = [
             (glow::VERTEX_SHADER, vertex_shader_source),
-            (glow::FRAGMENT_SHADER,  fragment_shader_source),
+            (glow::FRAGMENT_SHADER, fragment_shader_source),
         ];
 
         let shaders: Vec<_> = shader_sources
@@ -43,10 +47,10 @@ impl Shader {
             gl.detach_shader(program, shader);
             gl.delete_shader(shader);
         }
-        
+
         Self { program }
     }
-    
+
     pub fn program(&self) -> glow::Program {
         self.program
     }
