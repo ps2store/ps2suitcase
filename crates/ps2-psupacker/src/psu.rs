@@ -1,7 +1,7 @@
 use byteorder::{WriteBytesExt, LE};
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use std::fs::File;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::Path;
 
 const DIR_ID: u16 = 0x8427;
@@ -87,7 +87,7 @@ impl PSUEntry {
         data.write_all(&padding)?;
         data.write_all(&encode_string(self.name.clone())?)?;
 
-        if (self.id == FILE_ID) {
+        if self.id == FILE_ID {
             data.write_all(&self.contents.clone().unwrap())?;
             let rem = 1024 - (self.size % 1024);
 

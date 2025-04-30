@@ -1,5 +1,5 @@
 #![windows_subsystem = "windows"]
-mod psu;
+pub mod psu;
 
 use crate::psu::PSU;
 use eframe::egui;

@@ -1,8 +1,8 @@
-mod file_tree;
-mod icn_viewer;
-mod icon_sys_viewer;
-mod tab;
-mod title_cfg_viewer;
+pub mod file_tree;
+pub mod icn_viewer;
+pub mod icon_sys_viewer;
+pub mod tab;
+pub mod title_cfg_viewer;
 
 pub use file_tree::*;
 pub use icn_viewer::*;

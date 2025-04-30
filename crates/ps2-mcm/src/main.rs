@@ -1,7 +1,6 @@
 use eframe::egui::{Align, Align2, Color32, Context, Id, LayerId, Order, TextStyle};
 use eframe::{egui, Frame};
-// use image::{ImageBuffer, Rgb, RgbImage};
-use ps2_filetypes::{PSUEntry, ICN, PSU};
+use ps2_filetypes::{PSUEntry, PSU};
 use rfd::FileDialog;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -65,7 +64,7 @@ impl MCM {
 }
 
 impl eframe::App for MCM {
-    fn update(&mut self, ctx: &Context, frame: &mut Frame) {
+    fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             if ui.button("Load File").clicked() {
                 // self.load_file("/Users/simonhochrein/Downloads/EMU_PICODRIVE-201.psu")
