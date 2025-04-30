@@ -55,10 +55,11 @@ pub struct VirtualFile {
 #[derive(Clone)]
 pub enum AppEvent {
     OpenFile(Arc<Mutex<VirtualFile>>),
+    SetTitle(String),
 }
 
 pub struct AppState {
-    opened_folder: PathBuf,
+    opened_folder: Option<PathBuf>,
     files: Vec<Arc<Mutex<VirtualFile>>>,
     events: Vec<AppEvent>,
 }
@@ -67,33 +68,17 @@ impl AppState {
     pub fn open_file(&mut self, file: Arc<Mutex<VirtualFile>>) {
         self.events.push(AppEvent::OpenFile(file));
     }
+    pub fn set_title(&mut self, title: String) {
+        self.events.push(AppEvent::SetTitle(title));
+    }
 }
 
 impl AppState {
-    pub fn new<T>(opened_folder: T) -> Self
-    where
-        T: Into<PathBuf>,
-        T: Clone,
+    pub fn new() -> Self
     {
-        let files = read_dir(opened_folder.clone().into()).expect("Could not read directory");
-        let files = files
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| {
-                if entry.file_type().ok()?.is_file() {
-                    Some(Arc::new(Mutex::new(VirtualFile {
-                        name: entry.file_name().into_string().unwrap(),
-                        file_path:entry.path(),
-                    })))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
         Self {
-            opened_folder: opened_folder.into(),
-            files,
+            opened_folder: None,
+            files: vec![],
             events: vec![],
         }
     }
@@ -110,9 +95,7 @@ struct PSUBuilderApp {
 
 impl PSUBuilderApp {
     fn new() -> Self {
-        let state = Arc::new(Mutex::new(AppState::new(
-            "/Users/simonhochrein/Downloads/APPS/APP_OPL",
-        )));
+        let state = Arc::new(Mutex::new(AppState::new()));
         let tabs: Vec<Box<dyn Tab>> = vec![];
         let tree = DockState::new(tabs);
 
@@ -128,7 +111,7 @@ impl PSUBuilderApp {
         }
     }
 
-    fn handle_events(&mut self) {
+    fn handle_events(&mut self, ctx: &Context) {
         let events = {
             let mut state = self.state.lock().unwrap();
             state.events.drain(..).collect::<Vec<_>>()
@@ -138,6 +121,9 @@ impl PSUBuilderApp {
             match event {
                 AppEvent::OpenFile(file) => {
                     self.handle_open(file.clone());
+                }
+                AppEvent::SetTitle(title) => {
+                    ctx.send_viewport_cmd(ViewportCommand::Title(title));
                 }
             }
         }
@@ -185,6 +171,13 @@ impl PSUBuilderApp {
         }
     }
 
+    fn open_folder(&mut self) {
+       if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+           self.state.lock().unwrap().opened_folder = Some(folder.clone());
+           self.file_tree.open(folder);
+       }
+    }
+
     fn has_unsaved_files(&self) -> bool {
         for (_, tab) in self.tree.iter_all_tabs() {
             if tab.get_modified() {
@@ -198,65 +191,66 @@ impl PSUBuilderApp {
 
 impl eframe::App for PSUBuilderApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        let is_folder_open = self.state.lock().unwrap().opened_folder.is_some();
         const CTRL_OR_CMD: Modifiers = if cfg!(target_os = "macos") {
             Modifiers::MAC_CMD
         } else {
             Modifiers::CTRL
         };
 
+        let open_folder_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::O);
         let export_keyboard_shortcut =
             KeyboardShortcut::new(CTRL_OR_CMD | Modifiers::SHIFT, egui::Key::S);
-        let add_file_keyboard_shortcut =
-            KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::O);
+        let add_file_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::N);
         let save_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::S);
         let create_icn_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::I);
 
         if self.first_render {
-            ctx.send_viewport_cmd(ViewportCommand::Title(
-                self.state
-                    .lock()
-                    .unwrap()
-                    .opened_folder
-                    .file_name()
-                    .and_then(|name| Some(name.to_str()?.to_string()))
-                    .unwrap_or("PSU Builder".to_string()),
-            ));
             self.first_render = false;
         }
 
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.file_tree(self.state.clone());
-        });
+        if self.state.lock().unwrap().opened_folder.is_some() {
+            egui::SidePanel::left("side_panel").show(ctx, |ui| {
+                ui.file_tree(self.state.clone());
+            });
+        }
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui
-                        .menu_item_shortcut("Add Files", &add_file_keyboard_shortcut)
-                        .clicked()
-                    {
-                        println!("Add Files");
+                    if ui.menu_item_shortcut("Open Folder", &open_folder_keyboard_shortcut).clicked() {
+                        self.open_folder();
                     }
-                    if ui
-                        .menu_item_shortcut("Save File", &save_keyboard_shortcut)
-                        .clicked()
-                    {
-                        self.save_file();
-                    }
-                    ui.separator();
-                    if ui
-                        .menu_item_shortcut("Create ICN", &create_icn_keyboard_shortcut)
-                        .clicked()
-                    {
-                        println!("Create ICN");
-                    }
+                    ui.add_enabled_ui(is_folder_open, |ui| {
+                        if ui
+                            .menu_item_shortcut("Add Files", &add_file_keyboard_shortcut)
+                            .clicked()
+                        {
+                            println!("Add Files");
+                        }
+                        if ui
+                            .menu_item_shortcut("Save File", &save_keyboard_shortcut)
+                            .clicked()
+                        {
+                            self.save_file();
+                        }
+                        ui.separator();
+                        if ui
+                            .menu_item_shortcut("Create ICN", &create_icn_keyboard_shortcut)
+                            .clicked()
+                        {
+                            println!("Create ICN");
+                        }
+                    });
                 });
                 ui.menu_button("Export", |ui| {
-                    if ui
-                        .menu_item_shortcut("Export PSU", &export_keyboard_shortcut)
-                        .clicked()
-                    {
-                        println!("Export PSU");
-                    }
+                    ui.add_enabled_ui(is_folder_open, |ui| {
+                        if ui
+                            .menu_item_shortcut("Export PSU", &export_keyboard_shortcut)
+                            .clicked()
+                        {
+                            println!("Export PSU");
+                        }
+                    });
                 });
                 ui.menu_button("Help", |ui| {
                     ui.menu_item_link("GitHub", "https://github.com/simonhochrein/ps2-rust")
@@ -278,7 +272,9 @@ impl eframe::App for PSUBuilderApp {
                     .show_inside(ui, &mut TabViewer {});
             });
 
-        if ctx.input_mut(|i| i.consume_shortcut(&export_keyboard_shortcut)) {
+        if ctx.input_mut(|i| i.consume_shortcut(&open_folder_keyboard_shortcut)) {
+            self.open_folder();
+        } else if ctx.input_mut(|i| i.consume_shortcut(&export_keyboard_shortcut)) {
             self.saving = true;
         } else if ctx.input_mut(|i| i.consume_shortcut(&save_keyboard_shortcut)) {
             self.save_file();
@@ -329,10 +325,8 @@ impl eframe::App for PSUBuilderApp {
         //         });
         // }
 
-        self.handle_events();
+        self.handle_events(ctx);
     }
 
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-
-    }
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {}
 }

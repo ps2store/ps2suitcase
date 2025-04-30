@@ -614,6 +614,7 @@ dependencies = [
  "lazy_static",
  "macros",
  "ps2-filetypes",
+ "rfd",
 ]
 
 [[package]]

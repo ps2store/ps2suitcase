@@ -1,5 +1,7 @@
+use std::fs::read_dir;
+use std::path::{Path, PathBuf};
 use crate::tabs::tab::Tab;
-use crate::AppState;
+use crate::{AppState, VirtualFile};
 use eframe::egui;
 use eframe::egui::WidgetText::LayoutJob;
 use eframe::egui::{Align, Button, Color32, Layout, TextStyle, Ui, Vec2, WidgetText};
@@ -7,6 +9,27 @@ use std::sync::{Arc, Mutex};
 
 pub struct FileTree {
     pub state: Arc<Mutex<AppState>>,
+}
+
+impl FileTree {
+    pub fn open(&mut self, folder: PathBuf) {
+        let files = read_dir(folder).expect("Could not read directory");
+        let files = files
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| {
+                if entry.file_type().ok()?.is_file() {
+                    Some(Arc::new(Mutex::new(VirtualFile {
+                        name: entry.file_name().into_string().unwrap(),
+                        file_path: entry.path(),
+                    })))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        self.state.lock().unwrap().files = files;
+    }
 }
 
 impl egui::Widget for &mut FileTree {
