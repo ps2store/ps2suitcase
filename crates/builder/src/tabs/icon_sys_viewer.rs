@@ -2,11 +2,10 @@ use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui::{ComboBox, Ui};
 use ps2_filetypes::IconSys;
-use std::fs::{File, FileType};
-use std::io::{Read, Seek, SeekFrom};
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::vec::IntoIter;
 
 pub struct IconSysViewer {
     app: Arc<Mutex<AppState>>,

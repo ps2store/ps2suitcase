@@ -1,10 +1,8 @@
-use std::fs::read_dir;
-use std::path::{Path, PathBuf};
-use crate::tabs::tab::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
-use eframe::egui::WidgetText::LayoutJob;
-use eframe::egui::{Align, Button, Color32, Layout, TextStyle, Ui, Vec2, WidgetText};
+use eframe::egui::{Align, Button, Color32, Layout, Ui, Vec2, WidgetText};
+use std::fs::read_dir;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub struct FileTree {

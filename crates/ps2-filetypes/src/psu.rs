@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read, Seek};
 
 use byteorder::{ReadBytesExt, LE};
-use chrono::{Datelike, Timelike};
+
 const DIR_ID: u16 = 0x8427;
 const FILE_ID: u16 = 0x8497;
 
@@ -73,19 +73,18 @@ impl PSUParser {
 
     fn read_entry(&mut self) -> Result<PSUEntry, std::io::Error> {
         let id = self.c.read_u16::<LE>()?;
-        let junk1 = self.c.read_u16::<LE>()?;
+        let _ = self.c.read_u16::<LE>()?;
         let size = self.c.read_u32::<LE>()?;
         println!("{} {}", self.c.position(), size);
         let created = self.read_timestamp()?;
         let sector = self.c.read_u16::<LE>()?;
-        let junk2 = self.c.read_u16::<LE>()?;
-        let junk3 = self.c.read_u32::<LE>()?;
+        let _ = self.c.read_u16::<LE>()?;
+        let _ = self.c.read_u32::<LE>()?;
         let modified = self.read_timestamp()?;
         self.c.seek_relative(32)?;
 
         let mut name = [0; 448];
         self.c.read_exact(&mut name)?;
-        println!("{}: {} %{} ", parse_cstring(&name), junk1, size);
 
         let contents = if id == FILE_ID {
             let mut contents = vec![0; size as usize];

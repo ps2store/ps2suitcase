@@ -1,8 +1,6 @@
-use crate::util::parse_cstring;
 use crate::Color;
 use byteorder::{ReadBytesExt, LE};
-use std::fmt::{format, Write};
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 const ICN_MAGIC: u32 = 0x010000;
 
@@ -44,6 +42,7 @@ pub struct Key {
     pub value: f32,
 }
 
+#[expect(unused)]
 #[derive(Debug)]
 pub struct Frame {
     shape_id: u32,
@@ -129,15 +128,12 @@ impl ICN {
 
 struct ICNParser {
     c: Cursor<Vec<u8>>,
-    len: usize,
 }
 
 impl ICNParser {
     pub fn new(bytes: Vec<u8>) -> Self {
-        let len = bytes.len();
         ICNParser {
             c: Cursor::new(bytes),
-            len,
         }
     }
     pub fn parse(bytes: Vec<u8>) -> std::io::Result<ICN> {
@@ -190,7 +186,7 @@ impl ICNParser {
         let mut uvs: Vec<UV> = Vec::with_capacity(icnheader.vertex_count as usize);
         let mut colors: Vec<Color> = Vec::with_capacity(icnheader.vertex_count as usize);
 
-        for i in 0..icnheader.animation_shape_count as usize {
+        for _ in 0..icnheader.animation_shape_count as usize {
             shapes.push(vec![
                 Vertex {
                     x: 0,

@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read, Result};
 
 use byteorder::{ReadBytesExt, LE};
-use unicode_normalization::{Decompositions, UnicodeNormalization};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::util::parse_cstring;
 
@@ -48,6 +48,7 @@ impl IconSys {
     }
 }
 
+#[expect(unused)]
 struct IconSysParser {
     c: Cursor<Vec<u8>>,
     len: usize,

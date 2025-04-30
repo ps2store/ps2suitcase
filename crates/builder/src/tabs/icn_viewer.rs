@@ -1,13 +1,13 @@
-use std::fs::File;
 use crate::rendering::Shader;
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use cgmath::num_traits::FloatConst;
-use cgmath::{point3, vec3, Matrix4, Transform, Vector3};
+use cgmath::{point3, vec3, Matrix4, Vector3};
 use eframe::egui::{Ui, Vec2};
 use eframe::glow::NativeTexture;
 use eframe::{egui, egui_glow, glow};
-use std::io::{Read, Seek, SeekFrom};
+use std::fs::File;
+use std::io::Read;
 use std::sync::{Arc, Mutex};
 
 pub struct ICNViewer {
@@ -18,7 +18,7 @@ pub struct ICNViewer {
 }
 
 impl ICNViewer {
-    pub fn new(app: Arc<Mutex<AppState>>, file: Arc<Mutex<VirtualFile>>) -> Self {
+    pub fn new(_app: Arc<Mutex<AppState>>, file: Arc<Mutex<VirtualFile>>) -> Self {
         let virtual_file = file.clone();
         let virtual_file = virtual_file.lock().unwrap();
         let mut file = File::open(&virtual_file.file_path).expect("File not found");
@@ -254,8 +254,8 @@ impl ICNRenderer {
         unsafe {
             gl.enable(glow::DEPTH_TEST);
             gl.depth_func(glow::LEQUAL);
+            gl.clear(glow::DEPTH_BUFFER_BIT);
 
-            gl.depth_mask(false);
             let program = self.lines_shader.program();
             gl.use_program(Some(program));
             gl.uniform_matrix_4_f32_slice(

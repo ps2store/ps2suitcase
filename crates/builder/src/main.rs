@@ -3,19 +3,15 @@
 mod rendering;
 mod tabs;
 mod ui;
-mod utils;
 
 use crate::tabs::{FileTree, FileTreeComponent, ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
 use crate::ui::{BottomBar, MenuItemComponent, TabViewer};
-use crate::utils::{shortcut, Shortcut};
 use eframe::egui::{
-    menu, Area, Button, Color32, Context, CornerRadius, Frame, IconData, Id, KeyboardShortcut,
-    Modifiers, OpenUrl, Pos2, Sense, ViewportCommand, Widget,
+    menu, Area, Color32, Context, CornerRadius, Frame, IconData, Id, KeyboardShortcut,
+    Modifiers, Pos2, Sense, ViewportCommand,
 };
 use eframe::{egui, NativeOptions};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
-use lazy_static::lazy_static;
-use std::fs::{read_dir, File};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -37,6 +33,7 @@ fn main() -> eframe::Result<()> {
                 }
             }),
         multisampling: 4,
+        depth_buffer: 1,
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
@@ -90,7 +87,6 @@ struct PSUBuilderApp {
     file_tree: FileTree,
     first_render: bool,
     saving: bool,
-    confirm_close: bool,
 }
 
 impl PSUBuilderApp {
@@ -107,7 +103,6 @@ impl PSUBuilderApp {
             },
             first_render: true,
             saving: false,
-            confirm_close: false,
         }
     }
 
@@ -178,15 +173,15 @@ impl PSUBuilderApp {
        }
     }
 
-    fn has_unsaved_files(&self) -> bool {
-        for (_, tab) in self.tree.iter_all_tabs() {
-            if tab.get_modified() {
-                return true;
-            }
-        }
-
-        false
-    }
+    // fn has_unsaved_files(&self) -> bool {
+    //     for (_, tab) in self.tree.iter_all_tabs() {
+    //         if tab.get_modified() {
+    //             return true;
+    //         }
+    //     }
+    // 
+    //     false
+    // }
 }
 
 impl eframe::App for PSUBuilderApp {

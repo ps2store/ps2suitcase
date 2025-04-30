@@ -11,21 +11,24 @@ pub struct TitleCfgViewer {
     file_path: PathBuf,
     contents: String,
     modified: bool,
+    encoding_error: bool,
 }
 
 impl TitleCfgViewer {
-    pub fn new(app: Arc<Mutex<AppState>>, file: Arc<Mutex<VirtualFile>>) -> Self {
+    pub fn new(_app: Arc<Mutex<AppState>>, file: Arc<Mutex<VirtualFile>>) -> Self {
         let virtual_file = file.lock().unwrap();
         let mut file = File::open(&virtual_file.file_path).expect("File not found");
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).unwrap();
 
-        let contents = String::from_utf8(buf).unwrap();
+        let contents = String::from_utf8(buf).ok();
+        let encoding_error = contents.is_none();
 
         Self {
             file: virtual_file.name.clone(),
             file_path: virtual_file.file_path.clone(),
-            contents,
+            contents: contents.unwrap_or_default(),
+            encoding_error,
             modified: false,
         }
     }
@@ -41,8 +44,12 @@ impl Tab for TitleCfgViewer {
 
     fn get_content(&mut self, ui: &mut Ui) {
         ui.centered_and_justified(|ui| {
-            if ui.text_edit_multiline(&mut self.contents).changed() {
-                self.modified = true;
+            if self.encoding_error {
+                ui.colored_label(eframe::egui::Color32::RED, "Encoding error, please use valid ASCII or UTF-8 encoding.");
+            } else {
+                if ui.text_edit_multiline(&mut self.contents).changed() {
+                    self.modified = true;
+                }
             }
         });
     }

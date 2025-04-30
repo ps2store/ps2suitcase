@@ -1,6 +1,6 @@
 use eframe::egui::{Button, KeyboardShortcut, OpenUrl, Response, Ui, WidgetText};
-use crate::utils::shortcut;
 
+#[allow(dead_code)]
 pub trait MenuItemComponent {
     fn menu_item(self, label: impl Into<WidgetText>) -> Response;
     fn menu_item_link(self, label: impl Into<WidgetText>, link: &str) -> Response;
