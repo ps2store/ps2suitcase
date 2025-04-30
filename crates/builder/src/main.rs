@@ -7,8 +7,8 @@ mod ui;
 use crate::tabs::{FileTree, FileTreeComponent, ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
 use crate::ui::{BottomBar, MenuItemComponent, TabViewer};
 use eframe::egui::{
-    menu, Area, Color32, Context, CornerRadius, Frame, IconData, Id, KeyboardShortcut,
-    Modifiers, Pos2, Sense, ViewportCommand,
+    menu, Area, Color32, Context, CornerRadius, Frame, IconData, Id, KeyboardShortcut, Modifiers,
+    Pos2, Sense, ViewportCommand,
 };
 use eframe::{egui, NativeOptions};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
@@ -20,7 +20,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 720.0])
             .with_icon({
-                let icon = include_bytes!("../ps2.png");
+                let icon = include_bytes!("../assets/ps2.png");
                 let result = image::load_from_memory(icon).expect("Failed to load icon");
 
                 let width = result.width();
@@ -71,8 +71,7 @@ impl AppState {
 }
 
 impl AppState {
-    pub fn new() -> Self
-    {
+    pub fn new() -> Self {
         Self {
             opened_folder: None,
             files: vec![],
@@ -144,7 +143,7 @@ impl PSUBuilderApp {
             let editor: Option<Box<dyn Tab>> = match extension.to_str().unwrap() {
                 "icn" | "ico" => Some(Box::new(ICNViewer::new(self.state.clone(), file))),
                 "sys" => Some(Box::new(IconSysViewer::new(self.state.clone(), file))),
-                "cfg" => Some(Box::new(TitleCfgViewer::new(self.state.clone(), file))),
+                "cfg" | "txt" => Some(Box::new(TitleCfgViewer::new(self.state.clone(), file))),
                 _ => None,
             };
 
@@ -167,10 +166,11 @@ impl PSUBuilderApp {
     }
 
     fn open_folder(&mut self) {
-       if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-           self.state.lock().unwrap().opened_folder = Some(folder.clone());
-           self.file_tree.open(folder);
-       }
+        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+            self.state.lock().unwrap().opened_folder = Some(folder.clone());
+            self.state.lock().unwrap().set_title(folder.file_name().unwrap_or_default().to_string_lossy().to_string());
+            self.file_tree.open(folder);
+        }
     }
 
     // fn has_unsaved_files(&self) -> bool {
@@ -179,7 +179,7 @@ impl PSUBuilderApp {
     //             return true;
     //         }
     //     }
-    // 
+    //
     //     false
     // }
 }
@@ -212,7 +212,10 @@ impl eframe::App for PSUBuilderApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.menu_item_shortcut("Open Folder", &open_folder_keyboard_shortcut).clicked() {
+                    if ui
+                        .menu_item_shortcut("Open Folder", &open_folder_keyboard_shortcut)
+                        .clicked()
+                    {
                         self.open_folder();
                     }
                     ui.add_enabled_ui(is_folder_open, |ui| {
@@ -260,11 +263,24 @@ impl eframe::App for PSUBuilderApp {
         egui::CentralPanel::default()
             .frame(Frame::central_panel(&ctx.style()).inner_margin(0))
             .show(ctx, |ui| {
-                DockArea::new(&mut self.tree)
-                    .show_leaf_close_all_buttons(false)
-                    .show_leaf_collapse_buttons(false)
-                    .style(Style::from_egui(ctx.style().as_ref()))
-                    .show_inside(ui, &mut TabViewer {});
+                if self.tree.iter_all_tabs().count() > 0 {
+                    DockArea::new(&mut self.tree)
+                        .show_leaf_close_all_buttons(false)
+                        .show_leaf_collapse_buttons(false)
+                        .style(Style::from_egui(ctx.style().as_ref()))
+                        .show_inside(ui, &mut TabViewer {});
+                } else {
+                    ui.centered_and_justified(|ui| {
+                        if !is_folder_open {
+                            ui.heading(format!(
+                                "Open a folder to get started ({})",
+                                &ctx.format_shortcut(&open_folder_keyboard_shortcut)
+                            ));
+                        } else {
+                            ui.heading("No open editors");
+                        }
+                    });
+                }
             });
 
         if ctx.input_mut(|i| i.consume_shortcut(&open_folder_keyboard_shortcut)) {

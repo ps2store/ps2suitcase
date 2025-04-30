@@ -12,3 +12,6 @@ ps2-filetypes = { path = "../ps2-filetypes" }
 image = "0.25.6"
 lazy_static = "1.5.0"
 rfd = "0.15.3"
+
+[build-dependencies]
+winresource = "0.1.20"
