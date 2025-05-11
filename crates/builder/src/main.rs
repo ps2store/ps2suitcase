@@ -3,17 +3,20 @@
 mod rendering;
 mod tabs;
 mod ui;
+mod wizards;
 
 use crate::tabs::{FileTree, FileTreeComponent, ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
 use crate::ui::{BottomBar, MenuItemComponent, TabViewer};
 use eframe::egui::{
-    menu, Area, Color32, Context, CornerRadius, Frame, IconData, Id, KeyboardShortcut, Modifiers,
-    Pos2, Sense, ViewportCommand,
+    menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, ViewportCommand,
 };
 use eframe::{egui, NativeOptions};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use crate::wizards::create_icn::CreateICN;
+use crate::wizards::wizard::Wizard;
+use crate::wizards::Wizards;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -86,6 +89,7 @@ struct PSUBuilderApp {
     file_tree: FileTree,
     first_render: bool,
     saving: bool,
+    show_create_icn: bool
 }
 
 impl PSUBuilderApp {
@@ -102,6 +106,7 @@ impl PSUBuilderApp {
             },
             first_render: true,
             saving: false,
+            show_create_icn: false,
         }
     }
 
@@ -236,7 +241,7 @@ impl eframe::App for PSUBuilderApp {
                             .menu_item_shortcut("Create ICN", &create_icn_keyboard_shortcut)
                             .clicked()
                         {
-                            println!("Create ICN");
+                            self.show_create_icn = true;
                         }
                     });
                 });
@@ -289,26 +294,29 @@ impl eframe::App for PSUBuilderApp {
             self.saving = true;
         } else if ctx.input_mut(|i| i.consume_shortcut(&save_keyboard_shortcut)) {
             self.save_file();
+        } else if ctx.input_mut(|i| i.consume_shortcut(&create_icn_keyboard_shortcut)) {
+            self.show_create_icn = true;
         }
 
-        if self.saving {
-            Area::new(Id::new("export_modal"))
-                .fixed_pos(Pos2::ZERO)
-                .show(ctx, |ui| {
-                    let screen_rect = ui.ctx().input(|i| i.screen_rect);
-                    let area_response = ui.allocate_response(screen_rect.size(), Sense::click());
-
-                    if area_response.clicked() {
-                        self.saving = false;
-                    }
-
-                    ui.painter().rect_filled(
-                        screen_rect,
-                        CornerRadius::ZERO,
-                        Color32::from_rgba_premultiplied(0, 0, 0, 100),
-                    );
-                });
-        }
+        // if self.saving {
+        //     Area::new(Id::new("export_modal"))
+        //         .fixed_pos(Pos2::ZERO)
+        //         .show(ctx, |ui| {
+        //             let screen_rect = ui.ctx().input(|i| i.screen_rect);
+        //             let area_response = ui.allocate_response(screen_rect.size(), Sense::click());
+        // 
+        //             if area_response.clicked() {
+        //                 self.saving = false;
+        //             }
+        // 
+        //             ui.painter().rect_filled(
+        //                 screen_rect,
+        //                 CornerRadius::ZERO,
+        //                 Color32::from_rgba_premultiplied(0, 0, 0, 100),
+        //             );
+        //         });
+        // }
+        ctx.create_icn_wizard(&mut self.show_create_icn);
 
         // if ctx.input(|i| i.viewport().close_requested()) {
         //     if !self.confirm_close && self.has_unsaved_files() {
