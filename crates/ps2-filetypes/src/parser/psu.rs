@@ -1,17 +1,8 @@
 use std::io::{Cursor, Read, Seek};
 
 use byteorder::{ReadBytesExt, LE};
-
-const DIR_ID: u16 = 0x8427;
-const FILE_ID: u16 = 0x8497;
-
-const PAGE_SIZE: u32 = 0x400;
-
+use crate::{PSUEntry, PSUEntryKind, PSUParser, DIR_ID, FILE_ID, PAGE_SIZE, PSU};
 use crate::util::parse_cstring;
-
-pub struct PSU {
-    pub entries: Vec<PSUEntry>,
-}
 
 impl PSU {
     pub fn entries(&self) -> Vec<PSUEntry> {
@@ -25,30 +16,6 @@ impl PSU {
             entries: PSUParser::new(bytes).parse().unwrap(),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum PSUEntryKind {
-    Directory,
-    File,
-}
-
-#[derive(Debug, Clone)]
-pub struct PSUEntry {
-    pub id: u16,
-    pub size: u32,
-    pub created: chrono::NaiveDateTime,
-    pub sector: u16,
-    pub modified: chrono::NaiveDateTime,
-    pub name: String,
-    pub kind: PSUEntryKind,
-    pub contents: Option<Vec<u8>>,
-}
-
-struct PSUParser {
-    c: Cursor<Vec<u8>>,
-    len: u64,
 }
 
 impl PSUParser {

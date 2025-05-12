@@ -29,9 +29,7 @@ fn encode_string(string: String) -> Result<Vec<u8>, std::io::Error> {
         data.push(c as u8);
     }
 
-    for _ in 0..remainder {
-        data.push(0);
-    }
+    data.extend(vec![0; remainder]);
 
     Ok(data)
 }

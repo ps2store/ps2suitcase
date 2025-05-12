@@ -13,6 +13,13 @@ pub struct Color {
     pub a: u8,
 }
 
+impl Color {
+    pub const WHITE: Color = Color{r:255, g:255, b:255, a:255};
+    pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self { r, g, b, a }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct ColorF {
     pub r: f32,

@@ -1,3 +1,4 @@
+use ps2_filetypes::{BinReader, ICN};
 use crate::rendering::Shader;
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
@@ -7,7 +8,7 @@ use eframe::egui::{Ui, Vec2};
 use eframe::glow::NativeTexture;
 use eframe::{egui, egui_glow, glow};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 pub struct ICNViewer {
@@ -15,6 +16,7 @@ pub struct ICNViewer {
     bytes: Arc<Vec<u8>>,
     file: String,
     angle: f32,
+    icn: ICN,
 }
 
 impl ICNViewer {
@@ -24,11 +26,14 @@ impl ICNViewer {
         let mut file = File::open(&virtual_file.file_path).expect("File not found");
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).unwrap();
+        let icn = ps2_filetypes::ICNParser::read(&buf.clone()).unwrap();
+        
         Self {
             renderer: Arc::new(Mutex::new(None)),
             bytes: Arc::new(buf),
             file: virtual_file.name.clone(),
             angle: f32::PI() / 2.0,
+            icn,
         }
     }
     fn custom_painting(&mut self, ui: &mut Ui) {
@@ -66,8 +71,14 @@ impl Tab for ICNViewer {
     }
 
     fn get_content(&mut self, ui: &mut Ui) {
-        egui::Frame::canvas(ui.style()).show(ui, |ui| {
-            self.custom_painting(ui);
+        ui.vertical(|ui| {
+            if ui.button("Export OBJ").clicked() {
+                File::create("export.obj").unwrap().write_all(self.icn.export_obj().as_bytes()).unwrap();
+            }
+
+            egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                self.custom_painting(ui);
+            });
         });
     }
 
@@ -93,7 +104,7 @@ impl ICNRenderer {
     pub fn new(gl: &glow::Context, bytes: Arc<Vec<u8>>) -> Self {
         use glow::HasContext as _;
 
-        let icn = ps2_filetypes::ICN::new(bytes.clone().to_vec());
+        let icn = ps2_filetypes::ICNParser::read(&bytes.clone()).unwrap();
 
         unsafe {
             let shader = Shader::new(

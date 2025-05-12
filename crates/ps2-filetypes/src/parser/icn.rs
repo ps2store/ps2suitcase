@@ -1,81 +1,6 @@
-use crate::Color;
+use crate::{AnimationHeader, AnimationShape, BinReader, Color, Frame, ICNHeader, IcnTexture, Key, Normal, Vertex, ICN, ICN_MAGIC, TEXTURE_SIZE, UV};
 use byteorder::{ReadBytesExt, LE};
 use std::io::Cursor;
-
-const ICN_MAGIC: u32 = 0x010000;
-
-const TEXTURE_WIDTH: usize = 128;
-const TEXTURE_HEIGHT: usize = 128;
-pub const TEXTURE_SIZE: usize = TEXTURE_WIDTH * TEXTURE_HEIGHT;
-
-#[derive(Debug, Clone, Copy)]
-pub struct Vertex {
-    pub x: i16,
-    pub y: i16,
-    pub z: i16,
-    pub w: u16,
-}
-
-#[derive(Debug)]
-pub struct Normal {
-    pub x: i16,
-    pub y: i16,
-    pub z: i16,
-    pub w: u16,
-}
-
-#[derive(Debug)]
-pub struct UV {
-    pub u: i16,
-    pub v: i16,
-}
-#[derive(Debug)]
-pub struct IcnTexture {
-    pub pixels: [u16; TEXTURE_SIZE],
-}
-
-type AnimationShape = Vec<Vertex>;
-
-#[derive(Debug)]
-pub struct Key {
-    pub time: f32,
-    pub value: f32,
-}
-
-#[expect(unused)]
-#[derive(Debug)]
-pub struct Frame {
-    shape_id: u32,
-    keys: Vec<Key>,
-}
-
-#[derive(Debug)]
-pub struct AnimationHeader {
-    pub tag: u32,
-    pub frame_length: u32,
-    pub anim_speed: f32,
-    pub play_offset: u32,
-    pub frame_count: u32,
-}
-
-#[derive(Debug)]
-pub struct ICNHeader {
-    animation_shape_count: u32,
-    vertex_count: u32,
-    pub texture_type: u32,
-}
-
-#[derive(Debug)]
-pub struct ICN {
-    pub header: ICNHeader,
-    pub animation_shapes: Vec<AnimationShape>,
-    pub normals: Vec<Normal>,
-    pub uvs: Vec<UV>,
-    pub colors: Vec<Color>,
-    pub texture: IcnTexture,
-    pub animation_header: AnimationHeader,
-    pub frames: Vec<Frame>,
-}
 
 impl ICN {
     pub fn export_obj(&self) -> String {
@@ -120,24 +45,14 @@ impl ICN {
     }
 }
 
-impl ICN {
-    pub fn new(bytes: Vec<u8>) -> Self {
-        ICNParser::parse(bytes).unwrap()
-    }
-}
 
-struct ICNParser {
+pub struct ICNParser {
     c: Cursor<Vec<u8>>,
 }
 
-impl ICNParser {
-    pub fn new(bytes: Vec<u8>) -> Self {
-        ICNParser {
-            c: Cursor::new(bytes),
-        }
-    }
-    pub fn parse(bytes: Vec<u8>) -> std::io::Result<ICN> {
-        let mut parser = ICNParser::new(bytes);
+impl BinReader<ICN> for ICNParser {
+    fn read(data: &[u8]) -> std::io::Result<ICN> {
+        let mut parser = ICNParser{c: Cursor::new(data.to_vec())};
         let header = parser.parse_header().expect("Failed to parse ICN header");
         let (animation_shapes, normals, uvs, colors) = parser
             .parse_animation_shapes(&header)
@@ -158,9 +73,11 @@ impl ICNParser {
             animation_header,
             frames,
             texture,
-        })
+        }) 
     }
+}
 
+impl ICNParser {
     pub fn parse_header(&mut self) -> std::io::Result<ICNHeader> {
         let magic = self.c.read_u32::<LE>()?;
         assert_eq!(magic, ICN_MAGIC);

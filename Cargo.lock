@@ -615,6 +615,7 @@ dependencies = [
  "macros",
  "ps2-filetypes",
  "rfd",
+ "wavefront_obj",
  "winresource",
 ]
 
@@ -3788,6 +3789,12 @@ checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "wavefront_obj"
+version = "11.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "934504ea79927c25f18e980053b64269490284129b327334fc2591daf1539b9c"
 
 [[package]]
 name = "wayland-backend"

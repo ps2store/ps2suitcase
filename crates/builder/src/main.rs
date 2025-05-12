@@ -5,18 +5,18 @@ mod tabs;
 mod ui;
 mod wizards;
 
+use std::fs::File;
+use std::io::{Read, Write};
 use crate::tabs::{FileTree, FileTreeComponent, ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
 use crate::ui::{BottomBar, MenuItemComponent, TabViewer};
-use eframe::egui::{
-    menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, ViewportCommand,
-};
+use crate::wizards::Wizards;
+use eframe::egui::{menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, ViewportCommand};
 use eframe::{egui, NativeOptions};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::wizards::create_icn::CreateICN;
-use crate::wizards::wizard::Wizard;
-use crate::wizards::Wizards;
+use ps2_filetypes::{BinWriter, PSUEntry, PSUEntryKind, PSUWriter, DIR_ID, FILE_ID, PSU};
+use ps2_filetypes::chrono::{DateTime, Utc};
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -73,6 +73,12 @@ impl AppState {
     }
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppState {
     pub fn new() -> Self {
         Self {
@@ -89,7 +95,7 @@ struct PSUBuilderApp {
     file_tree: FileTree,
     first_render: bool,
     saving: bool,
-    show_create_icn: bool
+    show_create_icn: bool,
 }
 
 impl PSUBuilderApp {
@@ -173,9 +179,101 @@ impl PSUBuilderApp {
     fn open_folder(&mut self) {
         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
             self.state.lock().unwrap().opened_folder = Some(folder.clone());
-            self.state.lock().unwrap().set_title(folder.file_name().unwrap_or_default().to_string_lossy().to_string());
+            self.state.lock().unwrap().set_title(
+                folder
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+            );
             self.file_tree.open(folder);
         }
+    }
+
+    fn export_psu(&mut self) -> std::io::Result<()> {
+        let folder_name = self.state
+            .lock()
+            .unwrap()
+            .opened_folder
+            .clone()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+
+        let target_filename = folder_name.to_owned()
+            + ".psu";
+
+        if let Some(filename) = rfd::FileDialog::new()
+            .set_file_name(target_filename)
+            .save_file()
+        {
+            let mut psu = PSU::default();
+
+            let root = PSUEntry {
+                id: DIR_ID,
+                size:  self.state.lock().unwrap().files.len() as u32 + 2,
+                created: Utc::now().naive_utc(),
+                sector: 0,
+                modified: Utc::now().naive_utc(),
+                name: folder_name,
+                kind: PSUEntryKind::Directory,
+                contents: None,
+            };
+            let cur = PSUEntry {
+                id: DIR_ID,
+                size: 0,
+                created: Utc::now().naive_utc(),
+                sector: 0,
+                modified: Utc::now().naive_utc(),
+                name: ".".to_string(),
+                kind: PSUEntryKind::Directory,
+                contents: None,
+            };
+            let parent = PSUEntry {
+                id: DIR_ID,
+                size: 0,
+                created: Utc::now().naive_utc(),
+                sector: 0,
+                modified: Utc::now().naive_utc(),
+                name: "..".to_string(),
+                kind: PSUEntryKind::Directory,
+                contents: None,
+            };
+            
+            psu.entries.push(root);
+            psu.entries.push(cur);
+            psu.entries.push(parent);
+            
+            for file in self.state.lock().unwrap().files.iter() {
+                let file_path = file.lock().unwrap().file_path.clone();
+                let name = file.lock().unwrap().name.clone();
+                let mut file = File::open(file_path)?;
+                let metadata = file.metadata()?;
+                let mut contents = vec![0u8; metadata.len() as usize];
+                let size = file.read(&mut contents)? as u32;
+
+                let created_at: DateTime<Utc> = metadata.modified()?.into();
+                let modified_at: DateTime<Utc> = metadata.modified()?.into();
+
+                psu.entries.push(PSUEntry  {
+                    id: FILE_ID,
+                    size,
+                    sector: 0,
+                    contents: Some(contents),
+                    name,
+                    created: created_at.naive_local(),
+                    modified: modified_at.naive_local(),
+                    kind: PSUEntryKind::File,
+                });
+            }
+            let data = PSUWriter::new(psu).write()?;
+            File::create(&filename)?.write_all(&data)?;
+        }
+        
+        Ok(())
     }
 
     // fn has_unsaved_files(&self) -> bool {
@@ -251,7 +349,7 @@ impl eframe::App for PSUBuilderApp {
                             .menu_item_shortcut("Export PSU", &export_keyboard_shortcut)
                             .clicked()
                         {
-                            println!("Export PSU");
+                            self.export_psu();
                         }
                     });
                 });
@@ -292,6 +390,7 @@ impl eframe::App for PSUBuilderApp {
             self.open_folder();
         } else if ctx.input_mut(|i| i.consume_shortcut(&export_keyboard_shortcut)) {
             self.saving = true;
+            self.export_psu();
         } else if ctx.input_mut(|i| i.consume_shortcut(&save_keyboard_shortcut)) {
             self.save_file();
         } else if ctx.input_mut(|i| i.consume_shortcut(&create_icn_keyboard_shortcut)) {
@@ -304,11 +403,11 @@ impl eframe::App for PSUBuilderApp {
         //         .show(ctx, |ui| {
         //             let screen_rect = ui.ctx().input(|i| i.screen_rect);
         //             let area_response = ui.allocate_response(screen_rect.size(), Sense::click());
-        // 
+        //
         //             if area_response.clicked() {
         //                 self.saving = false;
         //             }
-        // 
+        //
         //             ui.painter().rect_filled(
         //                 screen_rect,
         //                 CornerRadius::ZERO,
