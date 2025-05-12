@@ -12,7 +12,7 @@ pub struct FileTree {
 impl FileTree {
     pub fn open(&mut self, folder: PathBuf) {
         let files = read_dir(folder).expect("Could not read directory");
-        let files = files
+        let mut files = files
             .into_iter()
             .flatten()
             .filter_map(|entry| {
@@ -25,7 +25,12 @@ impl FileTree {
                     None
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+
+        files.sort_by(|a, b| {
+            a.lock().unwrap().name.partial_cmp(&b.lock().unwrap().name).unwrap()
+        });
+
         self.state.lock().unwrap().files = files;
     }
 }

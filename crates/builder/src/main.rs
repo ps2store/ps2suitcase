@@ -349,7 +349,7 @@ impl eframe::App for PSUBuilderApp {
                             .menu_item_shortcut("Export PSU", &export_keyboard_shortcut)
                             .clicked()
                         {
-                            self.export_psu();
+                            self.export_psu().expect("Failed to export PSU");
                         }
                     });
                 });
@@ -390,7 +390,7 @@ impl eframe::App for PSUBuilderApp {
             self.open_folder();
         } else if ctx.input_mut(|i| i.consume_shortcut(&export_keyboard_shortcut)) {
             self.saving = true;
-            self.export_psu();
+            self.export_psu().expect("Failed to export psu");
         } else if ctx.input_mut(|i| i.consume_shortcut(&save_keyboard_shortcut)) {
             self.save_file();
         } else if ctx.input_mut(|i| i.consume_shortcut(&create_icn_keyboard_shortcut)) {
