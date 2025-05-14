@@ -78,7 +78,7 @@ impl egui::Widget for &mut FileTree {
                         for file in state.files.clone().into_iter() {
                             let name = file.lock().unwrap().name.clone();
                             
-                            let item = ui.icon_text_button(include_image!("../../assets/icons/file-plus.svg"), name);
+                            let item = ui.icon_text_button(include_image!("../../assets/icons/file.svg"), name);
 
                             if item.clicked() {
                                 state.open_file(file);
