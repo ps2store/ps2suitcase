@@ -7,10 +7,10 @@ mod wizards;
 
 use std::fs::File;
 use std::io::{Read, Write};
-use crate::tabs::{FileTree, FileTreeComponent, ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
-use crate::ui::{BottomBar, MenuItemComponent, TabViewer};
+use crate::tabs::{ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
+use crate::ui::{BottomBar, CustomButtons, Dialogs, FileTree, FileTreeComponent, MenuItemComponent, TabViewer};
 use crate::wizards::Wizards;
-use eframe::egui::{menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, ViewportCommand};
+use eframe::egui::{include_image, menu, Button, Color32, Context, Frame, IconData, Image, KeyboardShortcut, Modifiers, Vec2, ViewportCommand};
 use eframe::{egui, NativeOptions};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
@@ -43,7 +43,10 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "PSU Builder",
         options,
-        Box::new(|_cc| Ok(Box::new(PSUBuilderApp::new()))),
+        Box::new(|cc| {
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            Ok(Box::new(PSUBuilderApp::new()))
+        }),
     )
 }
 
@@ -56,12 +59,14 @@ pub struct VirtualFile {
 pub enum AppEvent {
     OpenFile(Arc<Mutex<VirtualFile>>),
     SetTitle(String),
+    AddFiles,
 }
 
 pub struct AppState {
     opened_folder: Option<PathBuf>,
     files: Vec<Arc<Mutex<VirtualFile>>>,
     events: Vec<AppEvent>,
+    pub calculated_size: u64,
 }
 
 impl AppState {
@@ -70,6 +75,9 @@ impl AppState {
     }
     pub fn set_title(&mut self, title: String) {
         self.events.push(AppEvent::SetTitle(title));
+    }
+    pub fn add_files(&mut self) {
+        self.events.push(AppEvent::AddFiles);
     }
 }
 
@@ -85,6 +93,7 @@ impl AppState {
             opened_folder: None,
             files: vec![],
             events: vec![],
+            calculated_size: 0,
         }
     }
 }
@@ -99,6 +108,35 @@ struct PSUBuilderApp {
 }
 
 impl PSUBuilderApp {
+    const CTRL_OR_CMD: Modifiers = if cfg!(target_os = "macos") {
+        Modifiers::MAC_CMD
+    } else {
+        Modifiers::CTRL
+    };
+    const CTRL_OR_CMD_SHIFT: Modifiers = if cfg!(target_os = "macos") {
+       Modifiers {
+           alt: false,
+           ctrl: false,
+           shift: true,
+           mac_cmd: true,
+           command: false,
+       }
+    } else {
+        Modifiers {
+            alt: false,
+            ctrl: true,
+            shift: true,
+            mac_cmd: false,
+            command: false,
+        }
+    };
+
+    const OPEN_FOLDER_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::O);
+    const EXPORT_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD_SHIFT, egui::Key::S);
+    const ADD_FILE_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::N);
+    const SAVE_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::S);
+    const CREATE_ICN_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::I);
+
     fn new() -> Self {
         let state = Arc::new(Mutex::new(AppState::new()));
         let tabs: Vec<Box<dyn Tab>> = vec![];
@@ -109,6 +147,7 @@ impl PSUBuilderApp {
             state: state.clone(),
             file_tree: FileTree {
                 state: state.clone(),
+                ..Default::default()
             },
             first_render: true,
             saving: false,
@@ -129,6 +168,9 @@ impl PSUBuilderApp {
                 }
                 AppEvent::SetTitle(title) => {
                     ctx.send_viewport_cmd(ViewportCommand::Title(title));
+                }
+                AppEvent::AddFiles => {
+                    self.add_files(ctx);
                 }
             }
         }
@@ -173,6 +215,19 @@ impl PSUBuilderApp {
     fn save_file(&mut self) {
         if let Some((_, tab)) = self.tree.find_active_focused() {
             tab.save();
+        }
+    }
+
+    fn add_files(&mut self, ctx: &Context) {
+        if let Some(files) = ctx.open_files() {
+            let opened_folder = self.state.lock().unwrap().opened_folder.clone().expect("Should only be called after folder is opened");
+
+            for file in files {
+                let name = file.file_name().unwrap();
+                // std::fs::copy(opened_folder.join(name));
+                // opened_folder
+            }
+            // println!("{:#?}", files);
         }
     }
 
@@ -242,11 +297,11 @@ impl PSUBuilderApp {
                 kind: PSUEntryKind::Directory,
                 contents: None,
             };
-            
+
             psu.entries.push(root);
             psu.entries.push(cur);
             psu.entries.push(parent);
-            
+
             for file in self.state.lock().unwrap().files.iter() {
                 let file_path = file.lock().unwrap().file_path.clone();
                 let name = file.lock().unwrap().name.clone();
@@ -272,7 +327,7 @@ impl PSUBuilderApp {
             let data = PSUWriter::new(psu).write()?;
             File::create(&filename)?.write_all(&data)?;
         }
-        
+
         Ok(())
     }
 
@@ -290,53 +345,36 @@ impl PSUBuilderApp {
 impl eframe::App for PSUBuilderApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         let is_folder_open = self.state.lock().unwrap().opened_folder.is_some();
-        const CTRL_OR_CMD: Modifiers = if cfg!(target_os = "macos") {
-            Modifiers::MAC_CMD
-        } else {
-            Modifiers::CTRL
-        };
-
-        let open_folder_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::O);
-        let export_keyboard_shortcut =
-            KeyboardShortcut::new(CTRL_OR_CMD | Modifiers::SHIFT, egui::Key::S);
-        let add_file_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::N);
-        let save_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::S);
-        let create_icn_keyboard_shortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::I);
 
         if self.first_render {
             self.first_render = false;
         }
 
-        if self.state.lock().unwrap().opened_folder.is_some() {
-            egui::SidePanel::left("side_panel").show(ctx, |ui| {
-                ui.file_tree(self.state.clone());
-            });
-        }
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui
-                        .menu_item_shortcut("Open Folder", &open_folder_keyboard_shortcut)
+                        .menu_item_shortcut("Open Folder", &Self::OPEN_FOLDER_KEYBOARD_SHORTCUT)
                         .clicked()
                     {
                         self.open_folder();
                     }
                     ui.add_enabled_ui(is_folder_open, |ui| {
                         if ui
-                            .menu_item_shortcut("Add Files", &add_file_keyboard_shortcut)
+                            .menu_item_shortcut("Add Files", &Self::ADD_FILE_KEYBOARD_SHORTCUT)
                             .clicked()
                         {
-                            println!("Add Files");
+                            self.add_files(ctx);
                         }
                         if ui
-                            .menu_item_shortcut("Save File", &save_keyboard_shortcut)
+                            .menu_item_shortcut("Save File", &Self::SAVE_KEYBOARD_SHORTCUT)
                             .clicked()
                         {
                             self.save_file();
                         }
                         ui.separator();
                         if ui
-                            .menu_item_shortcut("Create ICN", &create_icn_keyboard_shortcut)
+                            .menu_item_shortcut("Create ICN", &Self::CREATE_ICN_KEYBOARD_SHORTCUT)
                             .clicked()
                         {
                             self.show_create_icn = true;
@@ -346,7 +384,7 @@ impl eframe::App for PSUBuilderApp {
                 ui.menu_button("Export", |ui| {
                     ui.add_enabled_ui(is_folder_open, |ui| {
                         if ui
-                            .menu_item_shortcut("Export PSU", &export_keyboard_shortcut)
+                            .menu_item_shortcut("Export PSU", &Self::EXPORT_KEYBOARD_SHORTCUT)
                             .clicked()
                         {
                             self.export_psu().expect("Failed to export PSU");
@@ -358,6 +396,33 @@ impl eframe::App for PSUBuilderApp {
                 })
             });
         });
+        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+            ui.add_space(4.0);
+            menu::bar(ui, |ui| {
+                ui.set_min_size(Vec2::new(24.0, 24.0));
+                if ui.icon_button(include_image!("../assets/icons/folder.svg")).on_hover_text("Open Folder").clicked() {
+                    self.open_folder();
+                }
+                ui.add_enabled_ui(is_folder_open, |ui| {
+                    if ui.icon_button(include_image!("../assets/icons/file-plus.svg")).on_hover_text("Add Files").clicked() {
+                        self.add_files(ctx);
+                    }
+                });
+                ui.separator();
+                ui.add_enabled_ui(is_folder_open, |ui| {
+                    if ui.icon_button(include_image!("../assets/icons/cube-plus.svg")).on_hover_text("Create ICN").clicked() {
+                        self.show_create_icn = true;
+                    }
+                });
+            });
+            ui.add_space(4.0);
+        });
+
+        if self.state.lock().unwrap().opened_folder.is_some() {
+            egui::SidePanel::left("side_panel").show(ctx, |ui| {
+                ui.file_tree(self.state.clone());
+            });
+        }
 
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.add(BottomBar {});
@@ -377,7 +442,7 @@ impl eframe::App for PSUBuilderApp {
                         if !is_folder_open {
                             ui.heading(format!(
                                 "Open a folder to get started ({})",
-                                &ctx.format_shortcut(&open_folder_keyboard_shortcut)
+                                &ctx.format_shortcut(&Self::OPEN_FOLDER_KEYBOARD_SHORTCUT)
                             ));
                         } else {
                             ui.heading("No open editors");
@@ -386,63 +451,18 @@ impl eframe::App for PSUBuilderApp {
                 }
             });
 
-        if ctx.input_mut(|i| i.consume_shortcut(&open_folder_keyboard_shortcut)) {
+        if ctx.input_mut(|i| i.consume_shortcut(&Self::OPEN_FOLDER_KEYBOARD_SHORTCUT)) {
             self.open_folder();
-        } else if ctx.input_mut(|i| i.consume_shortcut(&export_keyboard_shortcut)) {
+        } else if ctx.input_mut(|i| i.consume_shortcut(&Self::EXPORT_KEYBOARD_SHORTCUT)) {
             self.saving = true;
             self.export_psu().expect("Failed to export psu");
-        } else if ctx.input_mut(|i| i.consume_shortcut(&save_keyboard_shortcut)) {
+        } else if ctx.input_mut(|i| i.consume_shortcut(&Self::SAVE_KEYBOARD_SHORTCUT)) {
             self.save_file();
-        } else if ctx.input_mut(|i| i.consume_shortcut(&create_icn_keyboard_shortcut)) {
+        } else if ctx.input_mut(|i| i.consume_shortcut(&Self::CREATE_ICN_KEYBOARD_SHORTCUT)) {
             self.show_create_icn = true;
         }
 
-        // if self.saving {
-        //     Area::new(Id::new("export_modal"))
-        //         .fixed_pos(Pos2::ZERO)
-        //         .show(ctx, |ui| {
-        //             let screen_rect = ui.ctx().input(|i| i.screen_rect);
-        //             let area_response = ui.allocate_response(screen_rect.size(), Sense::click());
-        //
-        //             if area_response.clicked() {
-        //                 self.saving = false;
-        //             }
-        //
-        //             ui.painter().rect_filled(
-        //                 screen_rect,
-        //                 CornerRadius::ZERO,
-        //                 Color32::from_rgba_premultiplied(0, 0, 0, 100),
-        //             );
-        //         });
-        // }
         ctx.create_icn_wizard(&mut self.show_create_icn);
-
-        // if ctx.input(|i| i.viewport().close_requested()) {
-        //     if !self.confirm_close && self.has_unsaved_files() {
-        //         ctx.send_viewport_cmd(ViewportCommand::CancelClose);
-        //         self.confirm_close = true;
-        //     }
-        // }
-        //
-        // if self.confirm_close {
-        //     let screen_rect = ctx.input(|i| i.screen_rect);
-        //     egui::Window::new("Do you want to quit?")
-        //         .collapsible(false)
-        //         .resizable(false)
-        //         .fixed_pos(screen_rect.center())
-        //         .show(ctx, |ui| {
-        //             ui.horizontal(|ui| {
-        //                 if ui.button("No").clicked() {
-        //                     self.confirm_close = false;
-        //                 }
-        //
-        //                 if ui.button("Yes").clicked() {
-        //                     ui.ctx().send_viewport_cmd(ViewportCommand::Close);
-        //                 }
-        //             });
-        //         });
-        // }
-
         self.handle_events(ctx);
     }
 

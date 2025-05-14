@@ -1,12 +1,13 @@
-use ps2_filetypes::{BinReader, ICN};
 use crate::rendering::Shader;
 use crate::tabs::Tab;
+use crate::ui::Dialogs;
 use crate::{AppState, VirtualFile};
 use cgmath::num_traits::FloatConst;
 use cgmath::{point3, vec3, Matrix4, Vector3};
-use eframe::egui::{Ui, Vec2};
+use eframe::egui::{include_image, menu, Button, Color32, TextStyle, Ui, Vec2, WidgetText};
 use eframe::glow::NativeTexture;
 use eframe::{egui, egui_glow, glow};
+use ps2_filetypes::{BinReader, ICN};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -17,6 +18,7 @@ pub struct ICNViewer {
     file: String,
     angle: f32,
     icn: ICN,
+    dark_mode: bool,
 }
 
 impl ICNViewer {
@@ -27,13 +29,14 @@ impl ICNViewer {
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).unwrap();
         let icn = ps2_filetypes::ICNParser::read(&buf.clone()).unwrap();
-        
+
         Self {
             renderer: Arc::new(Mutex::new(None)),
             bytes: Arc::new(buf),
             file: virtual_file.name.clone(),
             angle: f32::PI() / 2.0,
             icn,
+            dark_mode: true,
         }
     }
     fn custom_painting(&mut self, ui: &mut Ui) {
@@ -72,12 +75,46 @@ impl Tab for ICNViewer {
 
     fn get_content(&mut self, ui: &mut Ui) {
         ui.vertical(|ui| {
-            if ui.button("Export OBJ").clicked() {
-                File::create("export.obj").unwrap().write_all(self.icn.export_obj().as_bytes()).unwrap();
-            }
+            menu::bar(ui, |ui| {
+                if ui
+                    .add(
+                        Button::image_and_text(
+                            include_image!("../../assets/icons/file-arrow-right.svg"),
+                            "Export OBJ",
+                        )
+                        .image_tint_follows_text_color(true),
+                    )
+                    .clicked()
+                {
+                    if let Some(path) = ui.ctx().save_as(self.file.clone() + ".obj") {
+                        File::create(path)
+                            .unwrap()
+                            .write_all(self.icn.export_obj().as_bytes())
+                            .unwrap();
+                    }
+                }
 
-            egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                self.custom_painting(ui);
+                if ui
+                    .add(
+                        Button::image_and_text(
+                            include_image!("../../assets/icons/photo-plus.svg"),
+                            "Replace Texture",
+                        )
+                            .image_tint_follows_text_color(true),
+                    )
+                    .clicked()
+                {
+                    
+                }
+
+                ui.checkbox(&mut self.dark_mode, "Dark Mode");
+            });
+
+            ui.centered_and_justified(|ui| {
+                let fill = if self.dark_mode { Color32::BLACK } else { Color32::from_rgb(0xAA, 0xAA, 0xAA) };
+                egui::Frame::canvas(ui.style()).fill(fill).show(ui, |ui| {
+                    self.custom_painting(ui);
+                });
             });
         });
     }

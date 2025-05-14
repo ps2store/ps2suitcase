@@ -1,7 +1,13 @@
-pub mod bottom_bar;
-pub mod tab_viewer;
-pub mod menu_item;
+mod bottom_bar;
+mod tab_viewer;
+mod menu_item;
+mod dialogs;
+mod file_tree;
+mod buttons;
 
 pub use bottom_bar::*;
 pub use tab_viewer::*;
 pub use menu_item::*;
+pub use dialogs::*;
+pub use file_tree::*;
+pub use buttons::*;
