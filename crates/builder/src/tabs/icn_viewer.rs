@@ -4,7 +4,7 @@ use crate::ui::Dialogs;
 use crate::{AppState, VirtualFile};
 use cgmath::num_traits::FloatConst;
 use cgmath::{point3, vec3, Matrix4, Vector3};
-use eframe::egui::{include_image, menu, Button, Color32, TextStyle, Ui, Vec2, WidgetText};
+use eframe::egui::{include_image, menu, Button, Color32, Ui, Vec2};
 use eframe::glow::NativeTexture;
 use eframe::{egui, egui_glow, glow};
 use ps2_filetypes::{BinReader, ICN};

@@ -10,7 +10,7 @@ use std::io::{Read, Write};
 use crate::tabs::{ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
 use crate::ui::{BottomBar, CustomButtons, Dialogs, FileTree, FileTreeComponent, MenuItemComponent, TabViewer};
 use crate::wizards::Wizards;
-use eframe::egui::{include_image, menu, Button, Color32, Context, Frame, IconData, Image, KeyboardShortcut, Modifiers, Vec2, ViewportCommand};
+use eframe::egui::{include_image, menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, Vec2, ViewportCommand};
 use eframe::{egui, NativeOptions};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;

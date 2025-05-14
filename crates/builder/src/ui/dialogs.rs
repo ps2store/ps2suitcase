@@ -1,5 +1,5 @@
+use eframe::egui::Context;
 use std::path::PathBuf;
-use eframe::egui::{Context, Response};
 
 pub trait Dialogs {
     fn save_as(&self, filename: impl Into<String>) -> Option<PathBuf>;

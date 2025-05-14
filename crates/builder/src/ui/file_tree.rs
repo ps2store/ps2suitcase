@@ -1,12 +1,12 @@
+use crate::ui::CustomButtons;
 use crate::{AppState, VirtualFile};
+use bytesize::ByteSize;
 use eframe::egui;
-use eframe::egui::{include_image, vec2, Align, Button, Color32, Frame, Layout, Stroke, StrokeKind, TextWrapMode, Ui, UiBuilder, Vec2, WidgetText};
+use eframe::egui::{include_image, vec2, Align, Button, Color32, Layout, Stroke, TextWrapMode, Ui, Vec2, WidgetText};
 use std::fs::read_dir;
 use std::ops::Sub;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use bytesize::ByteSize;
-use crate::ui::CustomButtons;
 
 fn calc_size(size: u64) -> u64 {
     ((size + 1023) as i64 & -1024) as u64
