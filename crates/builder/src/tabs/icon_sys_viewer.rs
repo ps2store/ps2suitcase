@@ -1,6 +1,6 @@
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
-use eframe::egui::{ComboBox, Ui};
+use eframe::egui::{ComboBox, Id, Ui};
 use ps2_filetypes::IconSys;
 use std::fs::File;
 use std::io::Read;
@@ -32,7 +32,13 @@ impl IconSysViewer {
             icon_file: sys.icon_file.clone(),
             icon_copy_file: sys.icon_copy_file.clone(),
             icon_delete_file: sys.icon_delete_file.clone(),
-            file: virtual_file.file_path.file_name().unwrap().to_str().unwrap().to_string(),
+            file: virtual_file
+                .file_path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string(),
         }
     }
 }
@@ -71,21 +77,26 @@ impl Tab for IconSysViewer {
             })
             .collect();
 
-        ui.horizontal(|ui| {
-            ui.label("Title");
-            ui.text_edit_singleline(&mut self.title);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Icon");
-            file_select(ui, "list_icon", &mut self.icon_file, &files);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Copy Icon");
-            file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Delete Icon");
-            file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
+        ui.centered_and_justified(|ui| {
+            eframe::egui::Grid::new(Id::from("IconSysEditor"))
+                .num_columns(2)
+                .show(
+                ui,
+                |ui| {
+                    ui.label("Title");
+                    ui.text_edit_singleline(&mut self.title);
+                    ui.end_row();
+                    ui.label("Icon");
+                    file_select(ui, "list_icon", &mut self.icon_file, &files);
+                    ui.end_row();
+                    ui.label("Copy Icon");
+                    file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
+                    ui.end_row();
+                    ui.label("Delete Icon");
+                    file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
+                    ui.end_row();
+                },
+            );
         });
     }
 

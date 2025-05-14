@@ -2,7 +2,7 @@ use crate::ui::CustomButtons;
 use crate::{AppState, VirtualFile};
 use bytesize::ByteSize;
 use eframe::egui;
-use eframe::egui::{include_image, vec2, Align, Button, Color32, Layout, Stroke, TextWrapMode, Ui, Vec2, WidgetText};
+use eframe::egui::{include_image, vec2, Align, Button, Color32, Image, ImageSource, Layout, Stroke, TextWrapMode, Ui, Vec2, WidgetText};
 use std::fs::read_dir;
 use std::ops::Sub;
 use std::path::PathBuf;
@@ -54,6 +54,17 @@ impl FileTree {
         self.state.lock().unwrap().files = files;
         self.state.lock().unwrap().calculated_size = calculated_size;
     }
+    
+    pub fn icon(&self, file_name: String) -> ImageSource {
+        match file_name.to_lowercase().split('.').next_back() {
+            None => include_image!("../../assets/icons/file.svg"),
+            Some("elf") => include_image!("../../assets/icons/file-digit.svg"),
+            Some("icn") => include_image!("../../assets/icons/file-3d.svg"),
+            Some("sys") => include_image!("../../assets/icons/file-settings.svg"),
+            Some("cfg") => include_image!("../../assets/icons/file-code.svg"),
+            Some(_) => include_image!("../../assets/icons/file.svg"),
+        }
+    }
 }
 
 impl egui::Widget for &mut FileTree {
@@ -78,7 +89,7 @@ impl egui::Widget for &mut FileTree {
                         for file in state.files.clone().into_iter() {
                             let name = file.lock().unwrap().name.clone();
                             
-                            let item = ui.icon_text_button(include_image!("../../assets/icons/file.svg"), name);
+                            let item = ui.icon_text_button(self.icon(name.clone()), name);
 
                             if item.clicked() {
                                 state.open_file(file);
