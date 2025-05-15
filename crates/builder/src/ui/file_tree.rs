@@ -36,7 +36,7 @@ impl FileTree {
             .collect::<Vec<_>>();
 
         files.sort_by(|a, b| {
-            a.lock().unwrap().name.partial_cmp(&b.lock().unwrap().name).unwrap()
+            a.lock().unwrap().name.to_lowercase().partial_cmp(&b.lock().unwrap().name.to_lowercase()).unwrap()
         });
 
         let mut calculated_size = 512 * 3; // First 3 entries
