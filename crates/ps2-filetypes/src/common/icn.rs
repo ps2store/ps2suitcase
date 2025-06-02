@@ -1,4 +1,4 @@
-use crate::Color;
+use crate::color::Color;
 
 pub const ICN_MAGIC: u32 = 0x010000;
 pub const TEXTURE_WIDTH: usize = 128;
@@ -19,7 +19,7 @@ impl Vertex {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Normal {
     pub x: i16,
     pub y: i16,
@@ -33,7 +33,7 @@ impl Normal {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct UV {
     pub u: i16,
     pub v: i16,
@@ -45,26 +45,26 @@ impl UV {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct IcnTexture {
     pub pixels: [u16; TEXTURE_SIZE],
 }
 
 pub type AnimationShape = Vec<Vertex>;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Key {
     pub time: f32,
     pub value: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Frame {
     pub shape_id: u32,
     pub keys: Vec<Key>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct AnimationHeader {
     pub tag: u32,
     pub frame_length: u32,
@@ -73,14 +73,14 @@ pub struct AnimationHeader {
     pub frame_count: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ICNHeader {
     pub animation_shape_count: u32,
     pub vertex_count: u32,
     pub texture_type: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ICN {
     pub header: ICNHeader,
     pub animation_shapes: Vec<AnimationShape>,

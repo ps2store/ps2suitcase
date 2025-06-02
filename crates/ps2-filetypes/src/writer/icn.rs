@@ -1,6 +1,5 @@
 use crate::{
     BinWriter,
-    Color,
     Frame,
     Normal,
     Vertex,
@@ -10,6 +9,7 @@ use crate::{
 };
 use byteorder::{WriteBytesExt, LE};
 use std::io::ErrorKind;
+use crate::color::Color;
 
 pub struct ICNWriter {
     icn: ICN,

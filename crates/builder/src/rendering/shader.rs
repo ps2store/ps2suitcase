@@ -54,4 +54,10 @@ impl Shader {
     pub fn program(&self) -> glow::Program {
         self.program
     }
+    
+    pub fn drop(&mut self, gl: &glow::Context) {
+        unsafe {
+            gl.delete_program(self.program);
+        }
+    }
 }

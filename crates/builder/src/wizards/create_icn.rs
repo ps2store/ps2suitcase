@@ -11,12 +11,12 @@ use ps2_filetypes::{
     UV,
     BinWriter,
     ICNWriter,
-    Color
 };
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{Read, Write};
 use wavefront_obj::obj::Primitive::Triangle;
+use ps2_filetypes::color::Color;
 
 pub struct CreateICN {}
 

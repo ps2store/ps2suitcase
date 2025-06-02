@@ -1,24 +1,47 @@
 use crate::rendering::Shader;
 use crate::tabs::Tab;
-use crate::ui::Dialogs;
+use crate::ui::{CustomButtons, Dialogs};
 use crate::{AppState, VirtualFile};
 use cgmath::num_traits::FloatConst;
 use cgmath::{point3, vec3, Matrix4, Vector3};
-use eframe::egui::{include_image, menu, Button, Color32, Ui, Vec2};
-use eframe::glow::NativeTexture;
+use eframe::egui::{include_image, menu, Color32, Ui, Vec2};
+use eframe::glow::{HasContext, NativeTexture};
 use eframe::{egui, egui_glow, glow};
-use ps2_filetypes::{BinReader, ICN};
+use ps2_filetypes::color::Color;
+use ps2_filetypes::{BinReader, BinWriter, ICNWriter, ICN};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use image::ImageReader;
 
 pub struct ICNViewer {
     renderer: Arc<Mutex<Option<ICNRenderer>>>,
     bytes: Arc<Vec<u8>>,
     file: String,
+    path: PathBuf,
     angle: f32,
     icn: ICN,
     dark_mode: bool,
+    needs_update: bool,
+    modified: bool,
+}
+
+impl ICNViewer {
+    fn replace_texture(&mut self, path: PathBuf) {
+        let image = ImageReader::open(&path).unwrap().decode().unwrap();
+
+        let image = image.to_rgba8();
+        self.icn.texture.pixels = image
+            .pixels()
+            .map(|p| Color::new(p.0[0], p.0[1], p.0[2], p.0[3]).into())
+            .collect::<Vec<u16>>()
+            .try_into()
+            .unwrap();
+        self.needs_update = true;
+        self.modified = true;
+        // eprintln!("{image:?}");
+    }
 }
 
 impl ICNViewer {
@@ -34,9 +57,12 @@ impl ICNViewer {
             renderer: Arc::new(Mutex::new(None)),
             bytes: Arc::new(buf),
             file: virtual_file.name.clone(),
+            path: virtual_file.file_path.clone(),
             angle: f32::PI() / 2.0,
             icn,
             dark_mode: true,
+            needs_update: false,
+            modified: false,
         }
     }
     fn custom_painting(&mut self, ui: &mut Ui) {
@@ -45,20 +71,28 @@ impl ICNViewer {
         self.angle += response.drag_motion().x * 0.01;
 
         let renderer = self.renderer.clone();
-        let bytes = self.bytes.clone();
 
         let angle = self.angle;
+
+        let icn = self.icn.clone();
+        let needs_update = self.needs_update;
 
         let callback = egui::PaintCallback {
             rect,
             callback: Arc::new(egui_glow::CallbackFn::new(move |_, painter| {
                 let mut renderer = renderer.lock().unwrap();
-                let bytes = bytes.clone();
                 let renderer =
-                    renderer.get_or_insert_with(|| ICNRenderer::new(painter.gl(), bytes));
+                    renderer.get_or_insert_with(|| ICNRenderer::new(painter.gl(), &icn));
+                if needs_update {
+                    renderer.replace_texture(painter.gl(), &icn);
+                }
                 renderer.paint(painter.gl(), angle);
             })),
         };
+
+        if needs_update {
+            self.needs_update = false;
+        }
 
         ui.painter().add(callback);
     }
@@ -77,13 +111,7 @@ impl Tab for ICNViewer {
         ui.vertical(|ui| {
             menu::bar(ui, |ui| {
                 if ui
-                    .add(
-                        Button::image_and_text(
-                            include_image!("../../assets/icons/file-arrow-right.svg"),
-                            "Export OBJ",
-                        )
-                        .image_tint_follows_text_color(true),
-                    )
+                    .icon_text_button(include_image!("../../assets/icons/file-arrow-right.svg"), "Export OBJ")
                     .clicked()
                 {
                     if let Some(path) = ui.ctx().save_as(self.file.clone() + ".obj") {
@@ -95,16 +123,24 @@ impl Tab for ICNViewer {
                 }
 
                 if ui
-                    .add(
-                        Button::image_and_text(
-                            include_image!("../../assets/icons/photo-plus.svg"),
-                            "Replace Texture",
-                        )
-                            .image_tint_follows_text_color(true),
-                    )
+                    .icon_text_button(include_image!("../../assets/icons/file-arrow-right.svg"), "Export PNG")
                     .clicked()
                 {
-                    
+                    if let Some(path) = ui.ctx().save_as(self.file.clone() + ".png") {
+                        File::create(path)
+                            .unwrap()
+                            .write_all(&self.icn.export_png())
+                            .unwrap();
+                    }
+                }
+
+                if ui
+                    .icon_text_button(include_image!("../../assets/icons/photo-plus.svg"), "Replace Texture")
+                    .clicked()
+                {
+                    if let Some(path) = ui.ctx().open_file_filter(&["png"]) {
+                        self.replace_texture(path);
+                    }
                 }
 
                 ui.checkbox(&mut self.dark_mode, "Dark Mode");
@@ -120,11 +156,14 @@ impl Tab for ICNViewer {
     }
 
     fn get_modified(&self) -> bool {
-        false
+        self.modified
     }
 
     fn save(&mut self) {
-        todo!();
+        let mut file = File::create(&self.path).expect("Failed to create file");
+        let bytes = ICNWriter::new(self.icn.clone()).write().expect("Failed to save file");
+        file.write_all(&bytes).expect("Failed to write to file");
+        self.modified = false;
     }
 }
 
@@ -138,10 +177,8 @@ struct ICNRenderer {
 }
 
 impl ICNRenderer {
-    pub fn new(gl: &glow::Context, bytes: Arc<Vec<u8>>) -> Self {
+    pub fn new(gl: &glow::Context, icn: &ICN) -> Self {
         use glow::HasContext as _;
-
-        let icn = ps2_filetypes::ICNParser::read(&bytes.clone()).unwrap();
 
         unsafe {
             let shader = Shader::new(
@@ -160,17 +197,9 @@ impl ICNRenderer {
                 .pixels
                 .into_iter()
                 .flat_map(|pixel| {
-                    let r = pixel & 0x1f;
-                    let g = (pixel >> 5) & 0x1f;
-                    let b = (pixel >> 10) & 0x1f;
-                    let a = if pixel & 0x8000 != 0 { 255 } else { 0 };
-
-                    [
-                        (r * 255 / 31) as u8,
-                        (g * 255 / 31) as u8,
-                        (b * 255 / 31) as u8,
-                        a as u8,
-                    ]
+                    let color: Color = pixel.into();
+                    let bytes: [u8;4] = color.into();
+                    bytes
                 })
                 .collect();
 
@@ -285,6 +314,34 @@ impl ICNRenderer {
         }
     }
 
+    pub fn replace_texture(&mut self, gl: &glow::Context, icn: &ICN) {
+        use glow::HasContext as _;
+
+        unsafe {
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
+            let image = icn.texture.pixels
+                .iter()
+                .flat_map(|&color| {
+                    let color: Color = color.into();
+                    let bytes: [u8;4] = color.into();
+                    bytes
+                })
+                .collect::<Vec<u8>>();
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA as i32,
+                128,
+                128,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(Some(image.as_slice())),
+            );
+            gl.generate_mipmap(glow::TEXTURE_2D);
+        }
+    }
+
     fn paint(&mut self, gl: &glow::Context, angle: f32) {
         use glow::HasContext as _;
 
@@ -339,6 +396,17 @@ impl ICNRenderer {
             );
             gl.bind_vertex_array(Some(self.vertex_array));
             gl.draw_arrays(glow::TRIANGLES, 0, self.vertex_count as i32);
+        }
+    }
+
+    fn drop(&mut self, gl: &glow::Context) {
+        use glow::HasContext as _;
+        unsafe {
+            gl.delete_vertex_array(self.vertex_array);
+            gl.delete_vertex_array(self.lines_array);
+            self.shader.drop(gl);
+            self.lines_shader.drop(gl);
+            gl.delete_texture(self.texture);
         }
     }
 }

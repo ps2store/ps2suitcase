@@ -7,11 +7,12 @@ mod wizards;
 
 use std::fs::File;
 use std::io::{Read, Write};
+use std::ops::Sub;
 use crate::tabs::{ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
-use crate::ui::{BottomBar, CustomButtons, Dialogs, FileTree, FileTreeComponent, MenuItemComponent, TabViewer};
+use crate::ui::{BottomBar, CustomButtons, Dialogs, FileTree, MenuItemComponent, TabViewer};
 use crate::wizards::Wizards;
-use eframe::egui::{include_image, menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, Vec2, ViewportCommand};
-use eframe::{egui, NativeOptions};
+use eframe::egui::{include_image, menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, Rect, UiBuilder, Vec2, ViewportCommand, Widget};
+use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -45,7 +46,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
-            Ok(Box::new(PSUBuilderApp::new()))
+            Ok(Box::new(PSUBuilderApp::new(cc)))
         }),
     )
 }
@@ -107,6 +108,11 @@ struct PSUBuilderApp {
     show_create_icn: bool,
 }
 
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+struct WorkspaceSave {
+    opened_folder: Option<PathBuf>,
+}
+
 impl PSUBuilderApp {
     const CTRL_OR_CMD: Modifiers = if cfg!(target_os = "macos") {
         Modifiers::MAC_CMD
@@ -137,22 +143,32 @@ impl PSUBuilderApp {
     const SAVE_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::S);
     const CREATE_ICN_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::I);
 
-    fn new() -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let state = Arc::new(Mutex::new(AppState::new()));
         let tabs: Vec<Box<dyn Tab>> = vec![];
         let tree = DockState::new(tabs);
+        let file_tree = FileTree::new(state.clone());
 
-        Self {
+        let mut slf = Self {
             tree,
-            state: state.clone(),
-            file_tree: FileTree {
-                state: state.clone(),
-                ..Default::default()
-            },
+            state,
+            file_tree,
             first_render: true,
             saving: false,
             show_create_icn: false,
+        };
+
+        if let Some(storage) = cc.storage {
+            if let Some(save) = eframe::get_value::<WorkspaceSave>(storage, eframe::APP_KEY) {
+                if let Some(folder) = save.opened_folder {
+                    if folder.exists() {
+                        slf.do_open_folder(folder);
+                    }
+                }
+            }
         }
+
+       slf
     }
 
     fn handle_events(&mut self, ctx: &Context) {
@@ -233,16 +249,20 @@ impl PSUBuilderApp {
 
     fn open_folder(&mut self) {
         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-            self.state.lock().unwrap().opened_folder = Some(folder.clone());
-            self.state.lock().unwrap().set_title(
-                folder
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            self.file_tree.open(folder);
+            self.do_open_folder(folder);
         }
+    }
+
+    fn do_open_folder(&mut self, folder: PathBuf) {
+        self.state.lock().unwrap().opened_folder = Some(folder.clone());
+        self.state.lock().unwrap().set_title(
+            folder
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+        );
+        self.file_tree.open(folder);
     }
 
     fn export_psu(&mut self) -> std::io::Result<()> {
@@ -278,24 +298,24 @@ impl PSUBuilderApp {
                 contents: None,
             };
             let cur = PSUEntry {
-                id: DIR_ID,
+                id: FILE_ID,
                 size: 0,
                 created: Utc::now().naive_utc(),
                 sector: 0,
                 modified: Utc::now().naive_utc(),
                 name: ".".to_string(),
-                kind: PSUEntryKind::Directory,
-                contents: None,
+                kind: PSUEntryKind::File,
+                contents: Some(vec![]),
             };
             let parent = PSUEntry {
-                id: DIR_ID,
+                id: FILE_ID,
                 size: 0,
                 created: Utc::now().naive_utc(),
                 sector: 0,
                 modified: Utc::now().naive_utc(),
                 name: "..".to_string(),
-                kind: PSUEntryKind::Directory,
-                contents: None,
+                kind: PSUEntryKind::File,
+                contents: Some(vec![]),
             };
 
             psu.entries.push(root);
@@ -417,16 +437,16 @@ impl eframe::App for PSUBuilderApp {
             });
             ui.add_space(4.0);
         });
-
-        if self.state.lock().unwrap().opened_folder.is_some() {
-            egui::SidePanel::left("side_panel").show(ctx, |ui| {
-                ui.file_tree(self.state.clone());
-            });
-        }
-
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.add(BottomBar {});
         });
+
+        if self.state.lock().unwrap().opened_folder.is_some() {
+            egui::SidePanel::left("side_panel").show(ctx, |ui| {
+                self.file_tree.ui(ui);
+            });
+        }
+
 
         egui::CentralPanel::default()
             .frame(Frame::central_panel(&ctx.style()).inner_margin(0))
@@ -467,4 +487,11 @@ impl eframe::App for PSUBuilderApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {}
+
+    fn save(&mut self, storage: &mut dyn Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, &WorkspaceSave {
+            opened_folder: self.state.lock().unwrap().opened_folder.clone(),
+        });
+    }
 }
+

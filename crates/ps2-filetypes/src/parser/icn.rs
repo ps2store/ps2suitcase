@@ -1,5 +1,8 @@
-use crate::{AnimationHeader, AnimationShape, BinReader, Color, Frame, ICNHeader, IcnTexture, Key, Normal, Vertex, ICN, ICN_MAGIC, TEXTURE_SIZE, UV};
+use crate::color::Color;
+use crate::{AnimationHeader, AnimationShape, BinReader, Frame, ICNHeader, IcnTexture, Key, Normal, Vertex, ICN, ICN_MAGIC, TEXTURE_SIZE, UV};
 use byteorder::{ReadBytesExt, LE};
+use image::codecs::png::PngEncoder;
+use image::RgbaImage;
 use std::io::Cursor;
 
 impl ICN {
@@ -43,8 +46,24 @@ impl ICN {
 
         output
     }
-}
 
+    pub fn export_png(&self) -> Vec<u8> {
+        let mut png_data = Vec::new();
+        let mut img = RgbaImage::new(128, 128);
+
+        for (i, pixel) in img.pixels_mut().enumerate() {
+            let color: Color = self.texture.pixels[i].into();
+
+            pixel.0 = color.into();
+        }
+
+        let encoder = PngEncoder::new(&mut png_data);
+        img
+            .write_with_encoder(encoder)
+            .expect("Failed to write PNG data");
+        png_data
+    }
+}
 
 pub struct ICNParser {
     c: Cursor<Vec<u8>>,
@@ -52,7 +71,9 @@ pub struct ICNParser {
 
 impl BinReader<ICN> for ICNParser {
     fn read(data: &[u8]) -> std::io::Result<ICN> {
-        let mut parser = ICNParser{c: Cursor::new(data.to_vec())};
+        let mut parser = ICNParser {
+            c: Cursor::new(data.to_vec()),
+        };
         let header = parser.parse_header().expect("Failed to parse ICN header");
         let (animation_shapes, normals, uvs, colors) = parser
             .parse_animation_shapes(&header)
@@ -73,7 +94,7 @@ impl BinReader<ICN> for ICNParser {
             animation_header,
             frames,
             texture,
-        }) 
+        })
     }
 }
 
