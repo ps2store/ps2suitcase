@@ -42,6 +42,7 @@ impl FileTree {
                     Some(Arc::new(Mutex::new(VirtualFile {
                         name: entry.file_name().into_string().unwrap(),
                         file_path: entry.path(),
+                        size: entry.path().metadata().unwrap().len(),
                     })))
                 } else {
                     None
@@ -74,7 +75,7 @@ impl FileTree {
         self.state.lock().unwrap().calculated_size = calculated_size;
     }
 
-    pub fn icon(&self, file_name: &str) -> ImageSource {
+    pub fn icon(file_name: &str) -> ImageSource {
         match file_name.to_lowercase().split('.').next_back() {
             None => include_image!("../../assets/icons/file.svg"),
             Some("elf") => include_image!("../../assets/icons/file-digit.svg"),
@@ -88,8 +89,9 @@ impl FileTree {
 
 impl egui::Widget for &mut FileTree {
     fn ui(self, ui: &mut Ui) -> egui::Response {
-        let len = self.state.lock().unwrap().files.len();
         ui.scope(|ui| {
+            let mut state = self.state.lock().unwrap();
+            let len = state.files.len();
             let mut table = TableBuilder::new(ui)
                 .id_salt(self.id.clone())
                 .striped(true)
@@ -129,15 +131,16 @@ impl egui::Widget for &mut FileTree {
                 .body(|body| {
                     body.rows(20.0, len, |mut row| {
                         let row_index = row.index();
-                        let file_ref = self.state.lock().unwrap().files[row_index].clone();
+                        let file_ref = state.files[row_index].clone();
                         let file = file_ref.lock().unwrap();
                         let name = &file.name;
                         let file_path = &file.file_path;
+                        let size = file.size;
 
                         row.set_selected(self.selection.contains(&row_index));
 
                         row.col(|ui| {
-                            ui.image(self.icon(&name));
+                            ui.image(FileTree::icon(&name));
                         });
                         row.col(|ui| {
                             ui.add(Label::new(name).selectable(false));
@@ -155,7 +158,7 @@ impl egui::Widget for &mut FileTree {
                         }
 
                         row.col(|ui| {
-                            let size = ByteSize::b(calc_size(file_path.metadata().unwrap().len()));
+                            let size = ByteSize::b(calc_size(size));
                             ui.label(format!("{}", size));
                         });
 
@@ -168,8 +171,7 @@ impl egui::Widget for &mut FileTree {
                             }
                         }
                         if row.response().double_clicked() {
-                            println!("Open File {}", &file.name);
-                            self.state.lock().unwrap().open_file(file_ref.clone());
+                            state.open_file(file_ref.clone());
                         }
                     })
                 });

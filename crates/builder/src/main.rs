@@ -54,6 +54,7 @@ fn main() -> eframe::Result<()> {
 pub struct VirtualFile {
     pub name: String,
     pub file_path: PathBuf,
+    pub size: u64,
 }
 
 #[derive(Clone)]

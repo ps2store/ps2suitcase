@@ -34,7 +34,7 @@ impl ICNViewer {
         let image = image.to_rgba8();
         self.icn.texture.pixels = image
             .pixels()
-            .map(|p| Color::new(p.0[0], p.0[1], p.0[2], p.0[3]).into())
+            .map(|p| Color::new(p.0[0], p.0[1], p.0[2], 255).into())
             .collect::<Vec<u16>>()
             .try_into()
             .unwrap();
@@ -199,7 +199,7 @@ impl ICNRenderer {
                 .flat_map(|pixel| {
                     let color: Color = pixel.into();
                     let bytes: [u8;4] = color.into();
-                    bytes
+                    [ bytes[0], bytes[1], bytes[2], 255 ]
                 })
                 .collect();
 
