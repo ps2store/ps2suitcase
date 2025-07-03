@@ -11,3 +11,7 @@ A collection of PS2 file type parsers.
 ### ps2-mcm
 
 Memory Card Manager
+
+## Credits
+
+Icon & UI Design by [@Berion](https://www.psx-place.com/members/berion.1431/)

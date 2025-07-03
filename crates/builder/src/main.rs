@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::ops::Sub;
 use crate::tabs::{ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
-use crate::ui::{BottomBar, CustomButtons, Dialogs, FileTree, MenuItemComponent, TabViewer};
+use crate::ui::{BottomBar, CustomButtons, Dialogs, FileTree, MenuItemComponent, TabViewer, Toolbar};
 use crate::wizards::Wizards;
 use eframe::egui::{include_image, menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, Rect, UiBuilder, Vec2, ViewportCommand, Widget};
 use eframe::{egui, NativeOptions, Storage};
@@ -419,23 +419,24 @@ impl eframe::App for PSUBuilderApp {
         });
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.add_space(4.0);
-            menu::bar(ui, |ui| {
-                ui.set_min_size(Vec2::new(24.0, 24.0));
-                if ui.icon_button(include_image!("../assets/icons/folder.svg")).on_hover_text("Open Folder").clicked() {
-                    self.open_folder();
-                }
-                ui.add_enabled_ui(is_folder_open, |ui| {
-                    if ui.icon_button(include_image!("../assets/icons/file-plus.svg")).on_hover_text("Add Files").clicked() {
-                        self.add_files(ctx);
-                    }
-                });
-                ui.separator();
-                ui.add_enabled_ui(is_folder_open, |ui| {
-                    if ui.icon_button(include_image!("../assets/icons/cube-plus.svg")).on_hover_text("Create ICN").clicked() {
-                        self.show_create_icn = true;
-                    }
-                });
-            });
+            ui.add(Toolbar{});
+            // menu::bar(ui, |ui| {
+            //     ui.set_min_size(Vec2::new(24.0, 24.0));
+            //     if ui.icon_button(include_image!("../assets/icons/folder.svg")).on_hover_text("Open Folder").clicked() {
+            //         self.open_folder();
+            //     }
+            //     ui.add_enabled_ui(is_folder_open, |ui| {
+            //         if ui.icon_button(include_image!("../assets/icons/file-plus.svg")).on_hover_text("Add Files").clicked() {
+            //             self.add_files(ctx);
+            //         }
+            //     });
+            //     ui.separator();
+            //     ui.add_enabled_ui(is_folder_open, |ui| {
+            //         if ui.icon_button(include_image!("../assets/icons/cube-plus.svg")).on_hover_text("Create ICN").clicked() {
+            //             self.show_create_icn = true;
+            //         }
+            //     });
+            // });
             ui.add_space(4.0);
         });
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {

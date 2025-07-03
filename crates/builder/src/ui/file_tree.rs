@@ -1,7 +1,7 @@
 use crate::{AppState, VirtualFile};
 use bytesize::ByteSize;
 use eframe::egui;
-use eframe::egui::{include_image, Checkbox, Id, ImageSource, Label, Layout, Ui};
+use eframe::egui::{include_image, Checkbox, Id, Image, ImageSource, Label, Layout, Ui};
 use egui_extras::{Column, TableBuilder};
 use std::fs::read_dir;
 use std::path::PathBuf;
@@ -77,12 +77,12 @@ impl FileTree {
 
     pub fn icon(file_name: &str) -> ImageSource {
         match file_name.to_lowercase().split('.').next_back() {
-            None => include_image!("../../assets/icons/file.svg"),
-            Some("elf") => include_image!("../../assets/icons/file-digit.svg"),
-            Some("icn") => include_image!("../../assets/icons/file-3d.svg"),
-            Some("sys") => include_image!("../../assets/icons/file-settings.svg"),
-            Some("cfg") => include_image!("../../assets/icons/file-code.svg"),
-            Some(_) => include_image!("../../assets/icons/file.svg"),
+            None => include_image!("../../assets/lowdpi/fm_file.png"),
+            Some("elf") => include_image!("../../assets/lowdpi/fm_elf.png"),
+            Some("icn") => include_image!("../../assets/lowdpi/fm_icon.png"),
+            Some("sys") => include_image!("../../assets/lowdpi/fm_cfg_icon.png"),
+            Some("cfg") => include_image!("../../assets/lowdpi/fm_cfg_other.png"),
+            Some(_) => include_image!("../../assets/lowdpi/fm_file.png"),
         }
     }
 }
@@ -140,7 +140,7 @@ impl egui::Widget for &mut FileTree {
                         row.set_selected(self.selection.contains(&row_index));
 
                         row.col(|ui| {
-                            ui.image(FileTree::icon(&name));
+                            ui.add(Image::new(FileTree::icon(name)).fit_to_original_size(1.0));
                         });
                         row.col(|ui| {
                             ui.add(Label::new(name).selectable(false));
