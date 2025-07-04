@@ -1,23 +1,26 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod components;
+mod data;
+mod io;
 mod rendering;
 mod tabs;
-mod ui;
 mod wizards;
 
-use std::fs::File;
-use std::io::{Read, Write};
-use std::ops::Sub;
-use crate::tabs::{ICNViewer, IconSysViewer, Tab, TitleCfgViewer};
-use crate::ui::{BottomBar, CustomButtons, Dialogs, FileTree, MenuItemComponent, TabViewer, Toolbar};
+use crate::components::{bottom_bar, FileTree, MenuItemComponent, TabType, TabViewer, Toolbar};
+use crate::data::state::{AppEvent, AppState};
+use crate::data::virtual_file::VirtualFile;
+use crate::io::calculate_size::calculate_size;
+use crate::io::export_psu::export_psu;
+use crate::io::read_folder::read_folder;
+use crate::tabs::{ICNViewer, IconSysViewer, TitleCfgViewer};
 use crate::wizards::Wizards;
-use eframe::egui::{include_image, menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, Rect, UiBuilder, Vec2, ViewportCommand, Widget};
+use eframe::egui::{
+    menu, Context, Frame, IconData, KeyboardShortcut, Modifiers, ViewportCommand,
+};
 use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use ps2_filetypes::{BinWriter, PSUEntry, PSUEntryKind, PSUWriter, DIR_ID, FILE_ID, PSU};
-use ps2_filetypes::chrono::{DateTime, Utc};
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -51,58 +54,9 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-pub struct VirtualFile {
-    pub name: String,
-    pub file_path: PathBuf,
-    pub size: u64,
-}
-
-#[derive(Clone)]
-pub enum AppEvent {
-    OpenFile(Arc<Mutex<VirtualFile>>),
-    SetTitle(String),
-    AddFiles,
-}
-
-pub struct AppState {
-    opened_folder: Option<PathBuf>,
-    files: Vec<Arc<Mutex<VirtualFile>>>,
-    events: Vec<AppEvent>,
-    pub calculated_size: u64,
-}
-
-impl AppState {
-    pub fn open_file(&mut self, file: Arc<Mutex<VirtualFile>>) {
-        self.events.push(AppEvent::OpenFile(file));
-    }
-    pub fn set_title(&mut self, title: String) {
-        self.events.push(AppEvent::SetTitle(title));
-    }
-    pub fn add_files(&mut self) {
-        self.events.push(AppEvent::AddFiles);
-    }
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AppState {
-    pub fn new() -> Self {
-        Self {
-            opened_folder: None,
-            files: vec![],
-            events: vec![],
-            calculated_size: 0,
-        }
-    }
-}
-
 struct PSUBuilderApp {
-    tree: DockState<Box<dyn Tab>>,
-    state: Arc<Mutex<AppState>>,
+    tree: DockState<Box<TabType>>,
+    state: AppState,
     file_tree: FileTree,
     first_render: bool,
     saving: bool,
@@ -121,13 +75,13 @@ impl PSUBuilderApp {
         Modifiers::CTRL
     };
     const CTRL_OR_CMD_SHIFT: Modifiers = if cfg!(target_os = "macos") {
-       Modifiers {
-           alt: false,
-           ctrl: false,
-           shift: true,
-           mac_cmd: true,
-           command: false,
-       }
+        Modifiers {
+            alt: false,
+            ctrl: false,
+            shift: true,
+            mac_cmd: true,
+            command: false,
+        }
     } else {
         Modifiers {
             alt: false,
@@ -138,17 +92,22 @@ impl PSUBuilderApp {
         }
     };
 
-    const OPEN_FOLDER_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::O);
-    const EXPORT_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD_SHIFT, egui::Key::S);
-    const ADD_FILE_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::N);
-    const SAVE_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::S);
-    const CREATE_ICN_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::I);
+    const OPEN_FOLDER_KEYBOARD_SHORTCUT: KeyboardShortcut =
+        KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::O);
+    const EXPORT_KEYBOARD_SHORTCUT: KeyboardShortcut =
+        KeyboardShortcut::new(Self::CTRL_OR_CMD_SHIFT, egui::Key::S);
+    const ADD_FILE_KEYBOARD_SHORTCUT: KeyboardShortcut =
+        KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::N);
+    const SAVE_KEYBOARD_SHORTCUT: KeyboardShortcut =
+        KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::S);
+    const CREATE_ICN_KEYBOARD_SHORTCUT: KeyboardShortcut =
+        KeyboardShortcut::new(Self::CTRL_OR_CMD, egui::Key::I);
 
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let state = Arc::new(Mutex::new(AppState::new()));
-        let tabs: Vec<Box<dyn Tab>> = vec![];
+        let state = AppState::new();
+        let tabs: Vec<Box<TabType>> = vec![];
         let tree = DockState::new(tabs);
-        let file_tree = FileTree::new(state.clone());
+        let file_tree = FileTree::new();
 
         let mut slf = Self {
             tree,
@@ -159,29 +118,27 @@ impl PSUBuilderApp {
             show_create_icn: false,
         };
 
-        if let Some(storage) = cc.storage {
-            if let Some(save) = eframe::get_value::<WorkspaceSave>(storage, eframe::APP_KEY) {
-                if let Some(folder) = save.opened_folder {
-                    if folder.exists() {
-                        slf.do_open_folder(folder);
-                    }
-                }
-            }
-        }
+        slf.try_open_saved_folder(cc.storage);
+        slf
+    }
 
-       slf
+    fn try_open_saved_folder(&mut self, storage: Option<&dyn Storage>) -> Option<()> {
+        let folder = eframe::get_value::<WorkspaceSave>(storage?, eframe::APP_KEY)?.opened_folder?;
+
+        if folder.exists() {
+            self.do_open_folder(folder).ok()
+        } else {
+            None
+        }
     }
 
     fn handle_events(&mut self, ctx: &Context) {
-        let events = {
-            let mut state = self.state.lock().unwrap();
-            state.events.drain(..).collect::<Vec<_>>()
-        };
+        let events = { self.state.events.drain(..).collect::<Vec<_>>() };
 
         for event in events {
             match event {
                 AppEvent::OpenFile(file) => {
-                    self.handle_open(file.clone());
+                    self.handle_open(file);
                 }
                 AppEvent::SetTitle(title) => {
                     ctx.send_viewport_cmd(ViewportCommand::Title(title));
@@ -189,14 +146,23 @@ impl PSUBuilderApp {
                 AppEvent::AddFiles => {
                     self.add_files(ctx);
                 }
+                AppEvent::OpenFolder => {
+                    self.open_folder();
+                }
+                AppEvent::ExportPSU => {
+                    export_psu(&mut self.state).expect("Failed to export PSU");
+                }
+                AppEvent::SaveFile => {
+                    self.save_file();
+                }
             }
         }
     }
 
-    fn handle_open(&mut self, file: Arc<Mutex<VirtualFile>>) {
+    fn handle_open(&mut self, file: VirtualFile) {
         let mut found: Option<(SurfaceIndex, NodeIndex, TabIndex)> = None;
         for (i, ((surface, index), node)) in self.tree.iter_all_tabs().enumerate() {
-            if node.get_title() == file.lock().unwrap().name {
+            if node.get_title() == file.name {
                 found = Some((surface, index, TabIndex::from(i)));
             }
         }
@@ -207,18 +173,18 @@ impl PSUBuilderApp {
         }
     }
 
-    fn tab_for_file(&mut self, file: Arc<Mutex<VirtualFile>>) {
-        let name: PathBuf = file.lock().unwrap().name.clone().into();
+    fn tab_for_file(&mut self, file: VirtualFile) {
+        let name: PathBuf = file.name.clone().into();
         if let Some(extension) = name.extension() {
-            let editor: Option<Box<dyn Tab>> = match extension.to_str().unwrap() {
-                "icn" | "ico" => Some(Box::new(ICNViewer::new(self.state.clone(), file))),
-                "sys" => Some(Box::new(IconSysViewer::new(self.state.clone(), file))),
-                "cfg" | "txt" => Some(Box::new(TitleCfgViewer::new(self.state.clone(), file))),
+            let editor: Option<TabType> = match extension.to_ascii_lowercase().to_str().unwrap() {
+                "icn" | "ico" => Some(TabType::ICNViewer(ICNViewer::new(file))),
+                "sys" => Some(TabType::IconSysViewer(IconSysViewer::new(file))),
+                "cfg" | "cnf" | "dat" | "txt" => Some(TabType::TitleCfgViewer(TitleCfgViewer::new(file))),
                 _ => None,
             };
 
             if let Some(editor) = editor {
-                self.tree.push_to_focused_leaf(editor);
+                self.tree.push_to_focused_leaf(Box::new(editor));
                 if let Some(position) = self.tree.focused_leaf() {
                     self.tree.set_focused_node_and_surface(position);
                 } else {
@@ -235,119 +201,40 @@ impl PSUBuilderApp {
         }
     }
 
-    fn add_files(&mut self, ctx: &Context) {
-        if let Some(files) = ctx.open_files() {
-            let opened_folder = self.state.lock().unwrap().opened_folder.clone().expect("Should only be called after folder is opened");
+    fn add_files(&mut self, _ctx: &Context) {
+        // if let Some(files) = ctx.open_files() {
+        //     let opened_folder = self
+        //         .state
+        //         .opened_folder
+        //         .clone()
+        //         .expect("Should only be called after folder is opened");
 
-            for file in files {
-                let name = file.file_name().unwrap();
-                // std::fs::copy(opened_folder.join(name));
-                // opened_folder
-            }
-            // println!("{:#?}", files);
-        }
+        // for file in files {
+        // let name = file.file_name().unwrap();
+        // std::fs::copy(opened_folder.join(name));
+        // opened_folder
+        // }
+        // println!("{:#?}", files);
+        // }
     }
 
     fn open_folder(&mut self) {
         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-            self.do_open_folder(folder);
+            self.do_open_folder(folder).expect("Failed to open folder");
         }
     }
 
-    fn do_open_folder(&mut self, folder: PathBuf) {
-        self.state.lock().unwrap().opened_folder = Some(folder.clone());
-        self.state.lock().unwrap().set_title(
+    fn do_open_folder(&mut self, folder: PathBuf) -> std::io::Result<()> {
+        self.state.opened_folder = Some(folder.clone());
+        self.state.set_title(
             folder
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string(),
         );
-        self.file_tree.open(folder);
-    }
-
-    fn export_psu(&mut self) -> std::io::Result<()> {
-        let folder_name = self.state
-            .lock()
-            .unwrap()
-            .opened_folder
-            .clone()
-            .unwrap()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
-
-        let target_filename = folder_name.to_owned()
-            + ".psu";
-
-        if let Some(filename) = rfd::FileDialog::new()
-            .set_file_name(target_filename)
-            .save_file()
-        {
-            let mut psu = PSU::default();
-
-            let root = PSUEntry {
-                id: DIR_ID,
-                size:  self.state.lock().unwrap().files.len() as u32 + 2,
-                created: Utc::now().naive_utc(),
-                sector: 0,
-                modified: Utc::now().naive_utc(),
-                name: folder_name,
-                kind: PSUEntryKind::Directory,
-                contents: None,
-            };
-            let cur = PSUEntry {
-                id: FILE_ID,
-                size: 0,
-                created: Utc::now().naive_utc(),
-                sector: 0,
-                modified: Utc::now().naive_utc(),
-                name: ".".to_string(),
-                kind: PSUEntryKind::File,
-                contents: Some(vec![]),
-            };
-            let parent = PSUEntry {
-                id: FILE_ID,
-                size: 0,
-                created: Utc::now().naive_utc(),
-                sector: 0,
-                modified: Utc::now().naive_utc(),
-                name: "..".to_string(),
-                kind: PSUEntryKind::File,
-                contents: Some(vec![]),
-            };
-
-            psu.entries.push(root);
-            psu.entries.push(cur);
-            psu.entries.push(parent);
-
-            for file in self.state.lock().unwrap().files.iter() {
-                let file_path = file.lock().unwrap().file_path.clone();
-                let name = file.lock().unwrap().name.clone();
-                let mut file = File::open(file_path)?;
-                let metadata = file.metadata()?;
-                let mut contents = vec![0u8; metadata.len() as usize];
-                let size = file.read(&mut contents)? as u32;
-
-                let created_at: DateTime<Utc> = metadata.modified()?.into();
-                let modified_at: DateTime<Utc> = metadata.modified()?.into();
-
-                psu.entries.push(PSUEntry  {
-                    id: FILE_ID,
-                    size,
-                    sector: 0,
-                    contents: Some(contents),
-                    name,
-                    created: created_at.naive_local(),
-                    modified: modified_at.naive_local(),
-                    kind: PSUEntryKind::File,
-                });
-            }
-            let data = PSUWriter::new(psu).write()?;
-            File::create(&filename)?.write_all(&data)?;
-        }
+        self.state.files = read_folder(folder)?;
+        self.state.calculated_size = calculate_size(&self.state.files)?;
 
         Ok(())
     }
@@ -365,7 +252,7 @@ impl PSUBuilderApp {
 
 impl eframe::App for PSUBuilderApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-        let is_folder_open = self.state.lock().unwrap().opened_folder.is_some();
+        let is_folder_open = self.state.opened_folder.is_some();
 
         if self.first_render {
             self.first_render = false;
@@ -408,7 +295,7 @@ impl eframe::App for PSUBuilderApp {
                             .menu_item_shortcut("Export PSU", &Self::EXPORT_KEYBOARD_SHORTCUT)
                             .clicked()
                         {
-                            self.export_psu().expect("Failed to export PSU");
+                            self.state.export_psu();
                         }
                     });
                 });
@@ -419,20 +306,20 @@ impl eframe::App for PSUBuilderApp {
         });
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.add_space(4.0);
-            ui.add(Toolbar{});
-            // menu::bar(ui, |ui| {
-            //     ui.set_min_size(Vec2::new(24.0, 24.0));
-            //     if ui.icon_button(include_image!("../assets/icons/folder.svg")).on_hover_text("Open Folder").clicked() {
+            ui.add(Toolbar {});
+            // menu::bar(components, |components| {
+            //     components.set_min_size(Vec2::new(24.0, 24.0));
+            //     if components.icon_button(include_image!("../assets/icons/folder.svg")).on_hover_text("Open Folder").clicked() {
             //         self.open_folder();
             //     }
-            //     ui.add_enabled_ui(is_folder_open, |ui| {
-            //         if ui.icon_button(include_image!("../assets/icons/file-plus.svg")).on_hover_text("Add Files").clicked() {
+            //     components.add_enabled_ui(is_folder_open, |components| {
+            //         if components.icon_button(include_image!("../assets/icons/file-plus.svg")).on_hover_text("Add Files").clicked() {
             //             self.add_files(ctx);
             //         }
             //     });
-            //     ui.separator();
-            //     ui.add_enabled_ui(is_folder_open, |ui| {
-            //         if ui.icon_button(include_image!("../assets/icons/cube-plus.svg")).on_hover_text("Create ICN").clicked() {
+            //     components.separator();
+            //     components.add_enabled_ui(is_folder_open, |components| {
+            //         if components.icon_button(include_image!("../assets/icons/cube-plus.svg")).on_hover_text("Create ICN").clicked() {
             //             self.show_create_icn = true;
             //         }
             //     });
@@ -440,15 +327,14 @@ impl eframe::App for PSUBuilderApp {
             ui.add_space(4.0);
         });
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            ui.add(BottomBar {});
+            bottom_bar(ui, &mut self.state);
         });
 
-        if self.state.lock().unwrap().opened_folder.is_some() {
+        if self.state.opened_folder.is_some() {
             egui::SidePanel::left("side_panel").show(ctx, |ui| {
-                self.file_tree.ui(ui);
+                self.file_tree.show(ui, &mut self.state);
             });
         }
-
 
         egui::CentralPanel::default()
             .frame(Frame::central_panel(&ctx.style()).inner_margin(0))
@@ -458,7 +344,12 @@ impl eframe::App for PSUBuilderApp {
                         .show_leaf_close_all_buttons(false)
                         .show_leaf_collapse_buttons(false)
                         .style(Style::from_egui(ctx.style().as_ref()))
-                        .show_inside(ui, &mut TabViewer {});
+                        .show_inside(
+                            ui,
+                            &mut TabViewer {
+                                app: &mut self.state,
+                            },
+                        );
                 } else {
                     ui.centered_and_justified(|ui| {
                         if !is_folder_open {
@@ -474,12 +365,12 @@ impl eframe::App for PSUBuilderApp {
             });
 
         if ctx.input_mut(|i| i.consume_shortcut(&Self::OPEN_FOLDER_KEYBOARD_SHORTCUT)) {
-            self.open_folder();
+            self.state.open_folder();
         } else if ctx.input_mut(|i| i.consume_shortcut(&Self::EXPORT_KEYBOARD_SHORTCUT)) {
             self.saving = true;
-            self.export_psu().expect("Failed to export psu");
+            self.state.export_psu();
         } else if ctx.input_mut(|i| i.consume_shortcut(&Self::SAVE_KEYBOARD_SHORTCUT)) {
-            self.save_file();
+            self.state.save_file();
         } else if ctx.input_mut(|i| i.consume_shortcut(&Self::CREATE_ICN_KEYBOARD_SHORTCUT)) {
             self.show_create_icn = true;
         }
@@ -491,9 +382,12 @@ impl eframe::App for PSUBuilderApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {}
 
     fn save(&mut self, storage: &mut dyn Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, &WorkspaceSave {
-            opened_folder: self.state.lock().unwrap().opened_folder.clone(),
-        });
+        eframe::set_value(
+            storage,
+            eframe::APP_KEY,
+            &WorkspaceSave {
+                opened_folder: self.state.opened_folder.clone(),
+            },
+        );
     }
 }
-

@@ -1,10 +1,9 @@
 use crate::tabs::Tab;
-use crate::{AppState, VirtualFile};
+use crate::VirtualFile;
 use eframe::egui::Ui;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 pub struct TitleCfgViewer {
     file: String,
@@ -15,21 +14,38 @@ pub struct TitleCfgViewer {
 }
 
 impl TitleCfgViewer {
-    pub fn new(_app: Arc<Mutex<AppState>>, file: Arc<Mutex<VirtualFile>>) -> Self {
-        let virtual_file = file.lock().unwrap();
-        let mut file = File::open(&virtual_file.file_path).expect("File not found");
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).unwrap();
+    pub fn new(file: VirtualFile) -> Self {
+        let buf = std::fs::read(&file.file_path)
+            .expect("Failed to read file");
 
         let contents = String::from_utf8(buf).ok();
         let encoding_error = contents.is_none();
 
         Self {
-            file: virtual_file.name.clone(),
-            file_path: virtual_file.file_path.clone(),
+            file: file.name.clone(),
+            file_path: file.file_path.clone(),
             contents: contents.unwrap_or_default(),
             encoding_error,
             modified: false,
+        }
+    }
+
+    pub fn show(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.label("File:");
+            ui.monospace(&self.file);
+        });
+
+        if self.encoding_error {
+            ui.colored_label(eframe::egui::Color32::RED, "Encoding error, please use valid ASCII or UTF-8 encoding.");
+        } else {
+            if ui.text_edit_multiline(&mut self.contents).changed() {
+                self.modified = true;
+            }
+        }
+
+        if ui.button("Save").clicked() {
+            self.save();
         }
     }
 }
@@ -42,17 +58,6 @@ impl Tab for TitleCfgViewer {
         self.file.to_string()
     }
 
-    fn get_content(&mut self, ui: &mut Ui) {
-        ui.centered_and_justified(|ui| {
-            if self.encoding_error {
-                ui.colored_label(eframe::egui::Color32::RED, "Encoding error, please use valid ASCII or UTF-8 encoding.");
-            } else {
-                if ui.text_edit_multiline(&mut self.contents).changed() {
-                    self.modified = true;
-                }
-            }
-        });
-    }
 
     fn get_modified(&self) -> bool {
         self.modified

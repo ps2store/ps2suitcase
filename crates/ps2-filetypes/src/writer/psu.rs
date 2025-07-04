@@ -1,7 +1,7 @@
-use std::io::Write;
+use crate::{PSUEntry, FILE_ID, PAGE_SIZE, PSU};
 use byteorder::{WriteBytesExt, LE};
 use chrono::{Datelike, NaiveDateTime, Timelike};
-use crate::{BinWriter, PSUEntry, FILE_ID, PAGE_SIZE, PSU};
+use std::io::Write;
 
 pub struct PSUWriter {
     psu: PSU
@@ -62,16 +62,14 @@ impl PSUWriter {
 
         Ok(data) 
     }
-}
 
-impl BinWriter for PSUWriter {
-    fn write(&self) -> std::io::Result<Vec<u8>> {
+    pub fn to_bytes(&self) -> std::io::Result<Vec<u8>> {
         let mut data = vec![];
-        
+
         for entry in &self.psu.entries {
             data.extend(self.write_entry(entry)?);
         }
-        
+
         Ok(data)
     }
 }

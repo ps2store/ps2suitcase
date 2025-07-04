@@ -2,13 +2,9 @@ use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui::{ComboBox, Id, Ui};
 use ps2_filetypes::IconSys;
-use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 pub struct IconSysViewer {
-    app: Arc<Mutex<AppState>>,
     title: String,
     file: String,
     pub icon_file: String,
@@ -17,22 +13,17 @@ pub struct IconSysViewer {
 }
 
 impl IconSysViewer {
-    pub fn new(app: Arc<Mutex<AppState>>, file: Arc<Mutex<VirtualFile>>) -> Self {
-        let virtual_file = file.clone();
-        let virtual_file = virtual_file.lock().unwrap();
-        let mut file = File::open(&virtual_file.file_path).expect("File not found");
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).unwrap();
+    pub fn new(file: VirtualFile) -> Self {
+        let buf = std::fs::read(&file.file_path).expect("File not found");
 
         let sys = IconSys::new(buf);
 
         Self {
-            app,
             title: sys.title.clone(),
             icon_file: sys.icon_file.clone(),
             icon_copy_file: sys.icon_copy_file.clone(),
             icon_delete_file: sys.icon_delete_file.clone(),
-            file: virtual_file
+            file: file
                 .file_path
                 .file_name()
                 .unwrap()
@@ -41,27 +32,13 @@ impl IconSysViewer {
                 .to_string(),
         }
     }
-}
 
-impl Tab for IconSysViewer {
-    fn get_id(&self) -> &str {
-        &self.file
-    }
-
-    fn get_title(&self) -> String {
-        self.file.clone()
-    }
-
-    fn get_content(&mut self, ui: &mut Ui) {
-        let files: Vec<String> = self
-            .app
-            .lock()
-            .unwrap()
+    pub fn show(&mut self, ui: &mut Ui, app: &mut AppState) {
+        let files: Vec<String> = app
             .files
-            .clone()
             .iter()
             .filter_map(|file| {
-                let name = file.lock().unwrap().name.clone();
+                let name = file.name.clone();
                 if matches!(
                     PathBuf::from(&name)
                         .extension()
@@ -81,23 +58,33 @@ impl Tab for IconSysViewer {
             eframe::egui::Grid::new(Id::from("IconSysEditor"))
                 .num_columns(2)
                 .show(
-                ui,
-                |ui| {
-                    ui.label("Title");
-                    ui.text_edit_singleline(&mut self.title);
-                    ui.end_row();
-                    ui.label("Icon");
-                    file_select(ui, "list_icon", &mut self.icon_file, &files);
-                    ui.end_row();
-                    ui.label("Copy Icon");
-                    file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
-                    ui.end_row();
-                    ui.label("Delete Icon");
-                    file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
-                    ui.end_row();
-                },
-            );
+                    ui,
+                    |ui| {
+                        ui.label("Title");
+                        ui.text_edit_singleline(&mut self.title);
+                        ui.end_row();
+                        ui.label("Icon");
+                        file_select(ui, "list_icon", &mut self.icon_file, &files);
+                        ui.end_row();
+                        ui.label("Copy Icon");
+                        file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
+                        ui.end_row();
+                        ui.label("Delete Icon");
+                        file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
+                        ui.end_row();
+                    },
+                );
         });
+    }
+}
+
+impl Tab for IconSysViewer {
+    fn get_id(&self) -> &str {
+        &self.file
+    }
+
+    fn get_title(&self) -> String {
+        self.file.clone()
     }
 
     fn get_modified(&self) -> bool {

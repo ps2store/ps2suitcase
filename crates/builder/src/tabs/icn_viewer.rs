@@ -1,23 +1,24 @@
+use std::cell::RefCell;
+use crate::components::{CustomButtons, Dialogs};
 use crate::rendering::Shader;
 use crate::tabs::Tab;
-use crate::ui::{CustomButtons, Dialogs};
-use crate::{AppState, VirtualFile};
+use crate::VirtualFile;
 use cgmath::num_traits::FloatConst;
 use cgmath::{point3, vec3, Matrix4, Vector3};
 use eframe::egui::{include_image, menu, Color32, Ui, Vec2};
-use eframe::glow::{HasContext, NativeTexture};
+use eframe::glow::{NativeTexture};
 use eframe::{egui, egui_glow, glow};
+use image::ImageReader;
 use ps2_filetypes::color::Color;
 use ps2_filetypes::{BinReader, BinWriter, ICNWriter, ICN};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Write};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use image::ImageReader;
 
 pub struct ICNViewer {
     renderer: Arc<Mutex<Option<ICNRenderer>>>,
-    bytes: Arc<Vec<u8>>,
     file: String,
     path: PathBuf,
     angle: f32,
@@ -25,6 +26,7 @@ pub struct ICNViewer {
     dark_mode: bool,
     needs_update: bool,
     modified: bool,
+    pub closing: bool,
 }
 
 impl ICNViewer {
@@ -45,24 +47,20 @@ impl ICNViewer {
 }
 
 impl ICNViewer {
-    pub fn new(_app: Arc<Mutex<AppState>>, file: Arc<Mutex<VirtualFile>>) -> Self {
-        let virtual_file = file.clone();
-        let virtual_file = virtual_file.lock().unwrap();
-        let mut file = File::open(&virtual_file.file_path).expect("File not found");
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).unwrap();
+    pub fn new(file: VirtualFile) -> Self {
+        let buf = std::fs::read(&file.file_path).expect("File not found");
         let icn = ps2_filetypes::ICNParser::read(&buf.clone()).unwrap();
 
         Self {
             renderer: Arc::new(Mutex::new(None)),
-            bytes: Arc::new(buf),
-            file: virtual_file.name.clone(),
-            path: virtual_file.file_path.clone(),
+            file: file.name.clone(),
+            path: file.file_path.clone(),
             angle: f32::PI() / 2.0,
             icn,
             dark_mode: true,
             needs_update: false,
             modified: false,
+            closing: false,
         }
     }
     fn custom_painting(&mut self, ui: &mut Ui) {
@@ -76,6 +74,7 @@ impl ICNViewer {
 
         let icn = self.icn.clone();
         let needs_update = self.needs_update;
+        let closing = self.closing;
 
         let callback = egui::PaintCallback {
             rect,
@@ -86,7 +85,11 @@ impl ICNViewer {
                 if needs_update {
                     renderer.replace_texture(painter.gl(), &icn);
                 }
-                renderer.paint(painter.gl(), angle);
+                if closing {
+                    renderer.drop(painter.gl())
+                } else {
+                    renderer.paint(painter.gl(), angle);
+                }
             })),
         };
 
@@ -96,19 +99,9 @@ impl ICNViewer {
 
         ui.painter().add(callback);
     }
-}
 
-impl Tab for ICNViewer {
-    fn get_id(&self) -> &str {
-        &self.file
-    }
-
-    fn get_title(&self) -> String {
-        self.file.clone()
-    }
-
-    fn get_content(&mut self, ui: &mut Ui) {
-        ui.vertical(|ui| {
+    pub fn show(&mut self, ui: &mut Ui) {
+       ui.vertical(|ui| {
             menu::bar(ui, |ui| {
                 if ui
                     .icon_text_button(include_image!("../../assets/icons/file-arrow-right.svg"), "Export OBJ")
@@ -154,6 +147,16 @@ impl Tab for ICNViewer {
             });
         });
     }
+}
+
+impl Tab for ICNViewer {
+    fn get_id(&self) -> &str {
+        &self.file
+    }
+
+    fn get_title(&self) -> String {
+        self.file.clone()
+    }
 
     fn get_modified(&self) -> bool {
         self.modified
@@ -167,7 +170,8 @@ impl Tab for ICNViewer {
     }
 }
 
-struct ICNRenderer {
+#[derive(Clone)]
+pub struct ICNRenderer {
     shader: Shader,
     vertex_array: glow::VertexArray,
     lines_array: glow::VertexArray,
@@ -399,7 +403,7 @@ impl ICNRenderer {
         }
     }
 
-    fn drop(&mut self, gl: &glow::Context) {
+    pub fn drop(&self, gl: &glow::Context) {
         use glow::HasContext as _;
         unsafe {
             gl.delete_vertex_array(self.vertex_array);

@@ -1,6 +1,7 @@
 use eframe::glow;
 use eframe::glow::HasContext;
 
+#[derive(Clone, Debug)]
 pub struct Shader {
     program: glow::Program,
 }
@@ -55,7 +56,7 @@ impl Shader {
         self.program
     }
     
-    pub fn drop(&mut self, gl: &glow::Context) {
+    pub fn drop(&self, gl: &glow::Context) {
         unsafe {
             gl.delete_program(self.program);
         }

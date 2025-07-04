@@ -1,78 +1,30 @@
-use crate::{AppState, VirtualFile};
+use crate::io::calculate_size::calc_size;
+use crate::io::reveal_file_in_explorer::reveal_file_in_explorer;
+use crate::AppState;
 use bytesize::ByteSize;
 use eframe::egui;
-use eframe::egui::{include_image, Checkbox, Id, Image, ImageSource, Label, Layout, Ui};
+use eframe::egui::{
+    include_image, Align, Checkbox, Id, Image, ImageSource, Label, Layout, PointerButton, Sense, Ui,
+};
 use egui_extras::{Column, TableBuilder};
-use std::fs::read_dir;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::UNIX_EPOCH;
 use ps2_filetypes::chrono::{DateTime, Local};
-
-fn calc_size(size: u64) -> u64 {
-    ((size + 1023) as i64 & -1024) as u64
-}
+use std::path::Path;
 
 pub struct FileTree {
-    pub state: Arc<Mutex<AppState>>,
     selection: std::collections::HashSet<usize>,
     show_timestamp: bool,
     show_attributes: bool,
-    id: Id
+    id: Id,
 }
 
-
 impl FileTree {
-    pub fn new(state: Arc<Mutex<AppState>>) -> Self {
+    pub fn new() -> Self {
         Self {
-            state,
             selection: std::collections::HashSet::new(),
             show_timestamp: false,
             show_attributes: false,
             id: Id::new("file_tree"),
         }
-    }
-    pub fn open(&mut self, folder: PathBuf) {
-        let files = read_dir(folder).expect("Could not read directory");
-        let mut files = files
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| {
-                if entry.file_type().ok()?.is_file() {
-                    Some(Arc::new(Mutex::new(VirtualFile {
-                        name: entry.file_name().into_string().unwrap(),
-                        file_path: entry.path(),
-                        size: entry.path().metadata().unwrap().len(),
-                    })))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        files.sort_by(|a, b| {
-            a.lock()
-                .unwrap()
-                .name
-                .to_lowercase()
-                .partial_cmp(&b.lock().unwrap().name.to_lowercase())
-                .unwrap()
-        });
-
-        let mut calculated_size = 512 * 3; // First 3 entries
-
-        for file in files.iter() {
-            let path = file.lock().unwrap().file_path.clone();
-            if let Ok(metadata) = std::fs::metadata(&path) {
-                // println!("{}", metadata.len());
-                calculated_size += 512 + calc_size(metadata.len());
-            } else {
-                eprintln!("Could not get metadata for {:?}", path);
-            }
-        }
-
-        self.state.lock().unwrap().files = files;
-        self.state.lock().unwrap().calculated_size = calculated_size;
     }
 
     pub fn icon(file_name: &str) -> ImageSource {
@@ -85,13 +37,12 @@ impl FileTree {
             Some(_) => include_image!("../../assets/lowdpi/fm_file.png"),
         }
     }
-}
 
-impl egui::Widget for &mut FileTree {
-    fn ui(self, ui: &mut Ui) -> egui::Response {
+    pub fn show(&mut self, ui: &mut Ui, app: &mut AppState) {
+        let height = ui.available_height();
         ui.scope(|ui| {
-            let mut state = self.state.lock().unwrap();
-            let len = state.files.len();
+            let len = app.files.len();
+
             let mut table = TableBuilder::new(ui)
                 .id_salt(self.id.clone())
                 .striped(true)
@@ -100,7 +51,9 @@ impl egui::Widget for &mut FileTree {
                 .column(Column::auto().resizable(false))
                 .column(Column::auto().resizable(true))
                 .column(Column::auto())
-                .column(Column::remainder());
+                .column(Column::remainder())
+                .min_scrolled_height(0.0)
+                .max_scroll_height(height);
 
             table = table.sense(egui::Sense::click());
 
@@ -131,8 +84,7 @@ impl egui::Widget for &mut FileTree {
                 .body(|body| {
                     body.rows(20.0, len, |mut row| {
                         let row_index = row.index();
-                        let file_ref = state.files[row_index].clone();
-                        let file = file_ref.lock().unwrap();
+                        let file = app.files[row_index].clone();
                         let name = &file.name;
                         let file_path = &file.file_path;
                         let size = file.size;
@@ -151,7 +103,9 @@ impl egui::Widget for &mut FileTree {
                                 if let Ok(metadata) = file_path.metadata() {
                                     if let Ok(modified) = metadata.modified() {
                                         let dt_modified: DateTime<Local> = modified.into();
-                                        ui.label(dt_modified.format("%Y-%m-%d %H:%M:%S").to_string());
+                                        ui.label(
+                                            dt_modified.format("%Y-%m-%d %H:%M:%S").to_string(),
+                                        );
                                     }
                                 }
                             });
@@ -171,11 +125,25 @@ impl egui::Widget for &mut FileTree {
                             }
                         }
                         if row.response().double_clicked() {
-                            state.open_file(file_ref.clone());
+                            app.open_file(file.clone());
                         }
+                        row.response().context_menu(|ui| {
+                            if ui.button("Open").clicked() {
+                                app.open_file(file.clone());
+                                ui.close_menu();
+                            }
+                            if ui.button("Show in File Explorer").clicked() {
+                                if let Some(path) = file_path.to_str() {
+                                    reveal_file_in_explorer(Path::new(path));
+                                    ui.close_menu();
+                                }
+                            }
+                            ui.add_enabled_ui(false, |ui| {
+                                ui.button("Delete");
+                            });
+                        });
                     })
                 });
-        })
-            .response
+        });
     }
 }
