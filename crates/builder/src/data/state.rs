@@ -1,8 +1,5 @@
 use crate::data::virtual_file::VirtualFile;
 use std::path::PathBuf;
-use std::sync::Arc;
-use eframe::glow;
-use crate::tabs::ICNRenderer;
 
 #[derive(Clone)]
 pub enum AppEvent {

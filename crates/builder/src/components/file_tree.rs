@@ -4,7 +4,7 @@ use crate::AppState;
 use bytesize::ByteSize;
 use eframe::egui;
 use eframe::egui::{
-    include_image, Align, Checkbox, Id, Image, ImageSource, Label, Layout, PointerButton, Sense, Ui,
+    include_image, Checkbox, Id, Image, ImageSource, Label, Layout, Ui,
 };
 use egui_extras::{Column, TableBuilder};
 use ps2_filetypes::chrono::{DateTime, Local};
@@ -139,7 +139,7 @@ impl FileTree {
                                 }
                             }
                             ui.add_enabled_ui(false, |ui| {
-                                ui.button("Delete");
+                                _ = ui.button("Delete");
                             });
                         });
                     })
