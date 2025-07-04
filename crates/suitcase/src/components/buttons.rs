@@ -8,7 +8,7 @@ pub trait CustomButtons {
 impl CustomButtons for Ui {
     #[inline]
     fn icon_button<'a>(&mut self, image: impl Into<Image<'a>>) -> Response {
-        self.add(Button::image(image).image_tint_follows_text_color(true))
+        self.add(Button::image(image))
     }
 
     #[inline]

@@ -1,0 +1,29 @@
+use crate::data::state::AppState;
+use eframe::egui::{include_image, menu, ImageSource, Response, Ui, Vec2};
+use crate::components::buttons::CustomButtons;
+
+fn toolbar_item(ui: &mut Ui, source: ImageSource, tooltip: impl Into<String>) -> Response {
+    ui.icon_button(source).on_hover_ui(|ui| {
+        ui.label(tooltip.into());
+    })
+}
+
+pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
+    menu::bar(ui, |ui| {
+        ui.set_min_size(Vec2::new(24.0, 24.0));
+        if toolbar_item(ui, include_image!("../../assets/lowdpi/main_open_dir.png"), "Open a directory").clicked() {
+            app.open_folder();
+        }
+        if toolbar_item(ui, include_image!("../../assets/lowdpi/main_open_sav.png"), "Open a save file").clicked() {
+            app.open_save();
+        }
+        toolbar_item(ui, include_image!("../../assets/lowdpi/main_open_vmc.png"), "Open a virtual memory card");
+        toolbar_item(ui, include_image!("../../assets/lowdpi/main_mk_titlecfg.png"), "Make title configuration");
+        toolbar_item(ui, include_image!("../../assets/lowdpi/main_mk_iconsys.png"), "Make icon system");
+        toolbar_item(ui, include_image!("../../assets/lowdpi/main_sav_meta.png"), "Save metadata");
+        toolbar_item(ui, include_image!("../../assets/lowdpi/main_extract_all.png"), "Extract all saves");
+        toolbar_item(ui, include_image!("../../assets/lowdpi/main_mk_sav.png"), "Make save file");
+        toolbar_item(ui, include_image!("../../assets/lowdpi/main_mk_vmc.png"), "Make virtual memory card");
+        toolbar_item(ui, include_image!("../../assets/lowdpi/main_valid_ok.png"), "Validate save file");
+    }).response
+}

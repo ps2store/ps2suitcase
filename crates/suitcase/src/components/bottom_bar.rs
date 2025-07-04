@@ -17,7 +17,7 @@ fn size_label(ui: &mut Ui, size: u64) {
 pub fn bottom_bar(ui: &mut Ui, app: &mut AppState) -> eframe::egui::Response {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        size_label(ui, app.calculated_size);
+        size_label(ui, app.files.calculated_size());
         ui.add_space(5.0);
         ui.separator();
         ui.label("Version: ");

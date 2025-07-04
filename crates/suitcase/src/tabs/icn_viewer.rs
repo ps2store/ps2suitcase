@@ -1,4 +1,3 @@
-use crate::components::{CustomButtons, Dialogs};
 use crate::rendering::Shader;
 use crate::tabs::Tab;
 use crate::VirtualFile;
@@ -14,6 +13,8 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use crate::components::buttons::CustomButtons;
+use crate::components::dialogs::Dialogs;
 
 pub struct ICNViewer {
     renderer: Arc<Mutex<Option<ICNRenderer>>>,

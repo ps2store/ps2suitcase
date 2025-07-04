@@ -1,5 +1,5 @@
 [package]
-name = "builder"
+name = "suitcase"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,7 +11,6 @@ egui_dock = "0.16.0"
 cgmath = "0.18.0"
 ps2-filetypes = { path = "../ps2-filetypes" }
 image = { version = "0.25.6" }
-lazy_static = "1.5.0"
 rfd = "0.15.3"
 wavefront_obj = "11.0.0"
 bytesize = "2.0.1"

@@ -17,13 +17,13 @@ jobs:
         os:
           - name: ubuntu
             version: ubuntu-latest
-            executable: builder
+            executable: suitcase
           - name: macos
             version: macos-latest
-            executable: builder
+            executable: suitcase
           - name: windows
             version: windows-latest
-            executable: builder.exe
+            executable: suitcase.exe
     runs-on: ${{matrix.os.version}}
 
     steps:
@@ -37,5 +37,5 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: builder-${{matrix.os.name}}
+          name: suitcase-${{matrix.os.name}}
           path: target/release/${{matrix.os.executable}}

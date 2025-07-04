@@ -1,8 +1,9 @@
+use crate::data::files::Files;
 use crate::data::virtual_file::VirtualFile;
 use std::path::PathBuf;
 
-pub fn read_folder(folder: PathBuf) -> std::io::Result<Vec<VirtualFile>> {
-    let mut files = std::fs::read_dir(folder)?
+pub fn read_folder(folder: PathBuf) -> std::io::Result<Files> {
+    let files = std::fs::read_dir(folder)?
         .into_iter()
         .flatten()
         .filter_map(|entry| {
@@ -18,7 +19,5 @@ pub fn read_folder(folder: PathBuf) -> std::io::Result<Vec<VirtualFile>> {
         })
         .collect::<Vec<VirtualFile>>();
 
-    files.sort_by(|a, b| a.name.partial_cmp(&b.name).unwrap());
-
-    Ok(files)
+    Ok(Files::from(files)?)
 }

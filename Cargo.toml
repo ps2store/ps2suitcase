@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "crates/builder", "crates/macros","crates/ps2-filetypes", "crates/ps2-mcm", "crates/ps2-psupacker", "crates/xtask-build-app"]
+members = ["crates/suitcase", "crates/macros","crates/ps2-filetypes", "crates/ps2-mcm", "crates/ps2-psupacker", "crates/xtask-build-app"]
 
 [workspace.package]
 edition = "2021"

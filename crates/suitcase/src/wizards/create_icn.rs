@@ -1,5 +1,5 @@
 use crate::wizards::wizard::Wizard;
-use eframe::egui::{Response, Ui, Widget};
+use eframe::egui::{Context, Response, Ui, Widget};
 use ps2_filetypes::{
     AnimationHeader,
     AnimationShape,
@@ -18,6 +18,9 @@ use std::io::{Read, Write};
 use wavefront_obj::obj::Primitive::Triangle;
 use ps2_filetypes::color::Color;
 
+pub fn create_icn_wizard(ctx: &Context, show: &mut bool) {
+    CreateICN {}.show_modal(ctx, show);
+}
 pub struct CreateICN {}
 
 impl Widget for &mut CreateICN {

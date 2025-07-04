@@ -25,9 +25,9 @@ fn main() -> io::Result<()> {
     create_dir_all(&mac_os_path)?;
     create_dir_all(&resources_path)?;
 
-    std::fs::copy("target/debug/builder", mac_os_path.join("PSU Builder"))?;
-    std::fs::copy("crates/builder/assets/ps2.icns", resources_path.join("icon.icns"))?;
-    std::fs::copy("crates/builder/assets/Info.plist", contents_path.join("Info.plist"))?;
+    std::fs::copy("target/debug/suitcase", mac_os_path.join("PSU Builder"))?;
+    std::fs::copy("../../suitcase/assets/ps2.icns", resources_path.join("icon.icns"))?;
+    std::fs::copy("../../suitcase/assets/Info.plist", contents_path.join("Info.plist"))?;
     
     
     Ok(())
