@@ -1,8 +1,11 @@
+use crate::data::vec_math::ToGlow;
+use crate::components::buttons::CustomButtons;
+use crate::components::dialogs::Dialogs;
 use crate::rendering::Shader;
 use crate::tabs::Tab;
 use crate::VirtualFile;
 use cgmath::num_traits::FloatConst;
-use cgmath::{point3, vec3, Matrix4, Vector3};
+use cgmath::{point3, vec3, EuclideanSpace, Matrix4, Point3, Vector3};
 use eframe::egui::{include_image, menu, Color32, Ui, Vec2};
 use eframe::glow::NativeTexture;
 use eframe::{egui, egui_glow, glow};
@@ -13,14 +16,49 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::components::buttons::CustomButtons;
-use crate::components::dialogs::Dialogs;
+
+#[derive(Clone, Copy, Debug)]
+struct OrbitCamera {
+    pub target: Vector3<f32>,
+    pub distance: f32,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub min_distance: f32,
+    pub max_distance: f32,
+}
+
+impl OrbitCamera {
+    pub fn update(&mut self, delta_yaw: f32, delta_pitch: f32, delta_zoom: f32) {
+        self.yaw += delta_yaw;
+        self.pitch += delta_pitch;
+
+        // Clamp pitch to avoid gimbal lock
+        self.pitch = self.pitch.clamp(-1.54, 1.54); // limit to ~88 degrees
+        self.distance = (self.distance - delta_zoom).clamp(self.min_distance, self.max_distance);
+    }
+
+    pub fn position(&self) -> Vector3<f32> {
+        let x = self.distance * self.pitch.cos() * self.yaw.sin();
+        let y = self.distance * self.pitch.sin();
+        let z = self.distance * self.pitch.cos() * self.yaw.cos();
+        Vector3::new(x, y, z) + self.target
+    }
+
+    pub fn view_matrix(&self) -> Matrix4<f32> {
+        let position = self.position();
+        Matrix4::look_at_rh(
+            point3(position.x, position.y, position.z),
+            Point3::from_vec(self.target),
+            vec3(0.0, 1.0, 0.0),
+        )
+    }
+}
 
 pub struct ICNViewer {
     renderer: Arc<Mutex<Option<ICNRenderer>>>,
     file: String,
     path: PathBuf,
-    angle: f32,
+    camera: OrbitCamera,
     icn: ICN,
     dark_mode: bool,
     needs_update: bool,
@@ -54,7 +92,14 @@ impl ICNViewer {
             renderer: Arc::new(Mutex::new(None)),
             file: file.name.clone(),
             path: file.file_path.clone(),
-            angle: f32::PI() / 2.0,
+            camera: OrbitCamera {
+                target: Vector3::new(0.0, 2.5, 0.0),
+                distance: 10.0,
+                yaw: 0.0,
+                pitch: 0.0,
+                min_distance: 1.0,
+                max_distance: 50.0,
+            },
             icn,
             dark_mode: true,
             needs_update: false,
@@ -63,31 +108,45 @@ impl ICNViewer {
         }
     }
     fn custom_painting(&mut self, ui: &mut Ui) {
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(300.0), egui::Sense::drag());
+        let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
+        let input = ui.input(|i| i.clone());
 
-        self.angle += response.drag_motion().x * 0.01;
+        let mut delta_yaw = 0.0;
+        let mut delta_pitch = 0.0;
+        let mut delta_zoom = 0.0;
+
+        if input.pointer.primary_down() {
+            let delta = input.pointer.delta();
+            delta_yaw -= delta.x * 0.01;
+            delta_pitch += delta.y * 0.01;
+        }
+
+        if input.raw_scroll_delta.y != 0.0 {
+            delta_zoom += input.raw_scroll_delta.y * 0.1;
+        }
+
+        self.camera.update(delta_yaw, delta_pitch, delta_zoom);
 
         let renderer = self.renderer.clone();
-
-        let angle = self.angle;
 
         let icn = self.icn.clone();
         let needs_update = self.needs_update;
         let closing = self.closing;
+        let camera = self.camera.clone();
+        let aspect_ratio = rect.width() / rect.height();
 
         let callback = egui::PaintCallback {
             rect,
             callback: Arc::new(egui_glow::CallbackFn::new(move |_, painter| {
                 let mut renderer = renderer.lock().unwrap();
-                let renderer =
-                    renderer.get_or_insert_with(|| ICNRenderer::new(painter.gl(), &icn));
+                let renderer = renderer.get_or_insert_with(|| ICNRenderer::new(painter.gl(), &icn).expect("Failed to create ICNRenderer"));
                 if needs_update {
                     renderer.replace_texture(painter.gl(), &icn);
                 }
                 if closing {
                     renderer.drop(painter.gl())
                 } else {
-                    renderer.paint(painter.gl(), angle);
+                    renderer.paint(painter.gl(), aspect_ratio, camera);
                 }
             })),
         };
@@ -100,10 +159,13 @@ impl ICNViewer {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-       ui.vertical(|ui| {
+        ui.vertical(|ui| {
             menu::bar(ui, |ui| {
                 if ui
-                    .icon_text_button(include_image!("../../assets/icons/file-arrow-right.svg"), "Export OBJ")
+                    .icon_text_button(
+                        include_image!("../../assets/icons/file-arrow-right.svg"),
+                        "Export OBJ",
+                    )
                     .clicked()
                 {
                     if let Some(path) = ui.ctx().save_as(self.file.clone() + ".obj") {
@@ -115,7 +177,10 @@ impl ICNViewer {
                 }
 
                 if ui
-                    .icon_text_button(include_image!("../../assets/icons/file-arrow-right.svg"), "Export PNG")
+                    .icon_text_button(
+                        include_image!("../../assets/icons/file-arrow-right.svg"),
+                        "Export PNG",
+                    )
                     .clicked()
                 {
                     if let Some(path) = ui.ctx().save_as(self.file.clone() + ".png") {
@@ -127,7 +192,10 @@ impl ICNViewer {
                 }
 
                 if ui
-                    .icon_text_button(include_image!("../../assets/icons/photo-plus.svg"), "Replace Texture")
+                    .icon_text_button(
+                        include_image!("../../assets/icons/photo-plus.svg"),
+                        "Replace Texture",
+                    )
                     .clicked()
                 {
                     if let Some(path) = ui.ctx().open_file_filter(&["png"]) {
@@ -139,7 +207,11 @@ impl ICNViewer {
             });
 
             ui.centered_and_justified(|ui| {
-                let fill = if self.dark_mode { Color32::BLACK } else { Color32::from_rgb(0xAA, 0xAA, 0xAA) };
+                let fill = if self.dark_mode {
+                    ui.style().visuals.window_fill
+                } else {
+                    Color32::from_rgb(0xAA, 0xAA, 0xAA)
+                };
                 egui::Frame::canvas(ui.style()).fill(fill).show(ui, |ui| {
                     self.custom_painting(ui);
                 });
@@ -163,7 +235,9 @@ impl Tab for ICNViewer {
 
     fn save(&mut self) {
         let mut file = File::create(&self.path).expect("Failed to create file");
-        let bytes = ICNWriter::new(self.icn.clone()).write().expect("Failed to save file");
+        let bytes = ICNWriter::new(self.icn.clone())
+            .write()
+            .expect("Failed to save file");
         file.write_all(&bytes).expect("Failed to write to file");
         self.modified = false;
     }
@@ -172,19 +246,23 @@ impl Tab for ICNViewer {
 #[derive(Clone)]
 pub struct ICNRenderer {
     shader: Shader,
-    vertex_array: glow::VertexArray,
-    lines_array: glow::VertexArray,
+    model_vao: glow::VertexArray,
+    model_vbo: glow::Buffer,
+    lines_vao: glow::VertexArray,
+    lines_vbo: glow::Buffer,
+    grid_vao: glow::VertexArray,
+    grid_vbo: glow::Buffer,
     vertex_count: usize,
     texture: NativeTexture,
     lines_shader: Shader,
 }
 
 impl ICNRenderer {
-    pub fn new(gl: &glow::Context, icn: &ICN) -> Self {
+    pub fn new(gl: &glow::Context, icn: &ICN) -> Result<Self, String> {
         use glow::HasContext as _;
 
         unsafe {
-            let shader = Shader::new(
+            let model_shader = Shader::new(
                 gl,
                 include_str!("../shaders/icn.vsh"),
                 include_str!("../shaders/icn.fsh"),
@@ -201,34 +279,39 @@ impl ICNRenderer {
                 .into_iter()
                 .flat_map(|pixel| {
                     let color: Color = pixel.into();
-                    let bytes: [u8;4] = color.into();
-                    [ bytes[0], bytes[1], bytes[2], 255 ]
+                    let bytes: [u8; 4] = color.into();
+                    [bytes[0], bytes[1], bytes[2], 255]
                 })
                 .collect();
 
-            let mut vertices = Vec::new();
-            for (i, vertex) in icn.animation_shapes[0].iter().enumerate() {
-                vertices.push(vertex.x as f32 / 4096.0);
-                vertices.push(-vertex.y as f32 / 4096.0);
-                vertices.push(-vertex.z as f32 / 4096.0);
-
-                vertices.push(icn.normals[i].x as f32 / 4096.0);
-                vertices.push(-icn.normals[i].y as f32 / 4096.0);
-                vertices.push(-icn.normals[i].z as f32 / 4096.0);
-
-                vertices.push(icn.uvs[i].u as f32 / 4096.0);
-                vertices.push(icn.uvs[i].v as f32 / 4096.0);
-            }
+            let vertices = icn.animation_shapes[0]
+                .iter()
+                .enumerate()
+                .map(|(i, vertex)| {
+                    let normal = icn.normals[i];
+                    let uv = icn.uvs[i];
+                    [
+                        vertex.x as f32 / 4096.0,
+                        -vertex.y as f32 / 4096.0,
+                        -vertex.z as f32 / 4096.0,
+                        normal.x as f32 / 4096.0,
+                        -normal.y as f32 / 4096.0,
+                        -normal.z as f32 / 4096.0,
+                        uv.u as f32 / 4096.0,
+                        uv.v as f32 / 4096.0,
+                    ]
+                })
+                .flatten()
+                .collect::<Vec<f32>>();
 
             let data = vertices.as_slice();
 
-            let vertex_array = gl
-                .create_vertex_array()
-                .expect("Cannot create vertex array");
-            gl.bind_vertex_array(Some(vertex_array));
+            let model_vao = gl
+                .create_vertex_array()?;
+            gl.bind_vertex_array(Some(model_vao));
 
-            let vbo = gl.create_buffer().expect("Cannot create buffer");
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+            let model_vbo = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(model_vbo));
             let triangle_vertices_u8: &[u8] =
                 core::slice::from_raw_parts(data.as_ptr() as *const u8, size_of_val(data));
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, triangle_vertices_u8, glow::STATIC_DRAW);
@@ -256,7 +339,7 @@ impl ICNRenderer {
                 6 * size_of::<f32>() as i32,
             );
 
-            let texture = gl.create_texture().expect("Cannot create texture");
+            let texture = gl.create_texture()?;
             gl.bind_texture(glow::TEXTURE_2D, Some(texture));
             gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
@@ -282,38 +365,57 @@ impl ICNRenderer {
             );
             gl.generate_mipmap(glow::TEXTURE_2D);
 
-            let lines_array = gl
-                .create_vertex_array()
-                .expect("Cannot create vertex array");
-            gl.bind_vertex_array(Some(lines_array));
+            let lines_vao = gl
+                .create_vertex_array()?;
+            gl.bind_vertex_array(Some(lines_vao));
 
-            let vbo2 = gl.create_buffer().expect("Cannot create buffer");
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo2));
+            let lines_vbo = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(lines_vbo));
 
             gl.enable_vertex_attrib_array(0);
             gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 3 * size_of::<f32>() as i32, 0);
 
-            let data: Vec<f32> = generate_wireframe_box(vec3(5.0, 5.0, 5.0));
-            let data = data.as_slice();
+            let vertices = generate_wireframe_box(vec3(6.0, 6.0, 6.0), vec3(0.0, 3.0, 0.0));
 
             let lines_vertices_u8: &[u8] =
-                core::slice::from_raw_parts(data.as_ptr() as *const u8, size_of_val(data));
+                core::slice::from_raw_parts(vertices.as_ptr() as *const u8, size_of_val(&vertices[..]));
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, lines_vertices_u8, glow::STATIC_DRAW);
+
+
+            let grid_vao = gl.create_vertex_array()?;
+            gl.bind_vertex_array(Some(grid_vao));
+
+            let grid_vbo = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(grid_vbo));
+
+            gl.enable_vertex_attrib_array(0);
+            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 3 * size_of::<f32>() as i32, 0);
+
+            let vertices = generate_grid_lines(10, 1.0);
+            let grid_vertices_u8: &[u8] =
+                core::slice::from_raw_parts(vertices.as_ptr() as *const u8, size_of_val(&vertices[..]));
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, grid_vertices_u8, glow::STATIC_DRAW);
+
 
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
             gl.bind_vertex_array(None);
 
+
             gl.enable(glow::DEPTH_TEST);
             gl.depth_func(glow::LEQUAL);
 
-            Self {
-                shader,
+            Ok(Self {
+                shader: model_shader,
                 lines_shader,
-                vertex_array,
-                lines_array,
+                model_vao,
+                model_vbo,
+                lines_vao,
+                lines_vbo,
+                grid_vao,
+                grid_vbo,
                 vertex_count: icn.animation_shapes[0].len(),
                 texture,
-            }
+            })
         }
     }
 
@@ -322,11 +424,13 @@ impl ICNRenderer {
 
         unsafe {
             gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
-            let image = icn.texture.pixels
+            let image = icn
+                .texture
+                .pixels
                 .iter()
                 .flat_map(|&color| {
                     let color: Color = color.into();
-                    let bytes: [u8;4] = color.into();
+                    let bytes: [u8; 4] = color.into();
                     bytes
                 })
                 .collect::<Vec<u8>>();
@@ -345,19 +449,12 @@ impl ICNRenderer {
         }
     }
 
-    fn paint(&mut self, gl: &glow::Context, angle: f32) {
+    fn paint(&mut self, gl: &glow::Context, aspect_ratio: f32, orbit_camera: OrbitCamera) {
         use glow::HasContext as _;
 
-        let projection = cgmath::perspective(cgmath::Deg(45.0), 1.0, 0.1, 100.0);
-        let x = f32::cos(angle) * 10.0;
-        let y = f32::sin(angle) * 10.0;
-
-        let view: Matrix4<f32> = Matrix4::look_at_rh(
-            point3(x, 0.0, y),
-            point3(0.0, 0.0, 0.0),
-            vec3(0.0, 1.0, 0.0),
-        );
-        let model: Matrix4<f32> = Matrix4::from_translation(vec3(0.0, -2.5, 0.0));
+        let projection = cgmath::perspective(cgmath::Deg(45.0), aspect_ratio, 0.1, 100.0);
+        let view = orbit_camera.view_matrix();
+        let model: Matrix4<f32> = Matrix4::from_translation(vec3(0.0, 0.0, 0.0));
 
         unsafe {
             gl.enable(glow::DEPTH_TEST);
@@ -366,6 +463,7 @@ impl ICNRenderer {
 
             let program = self.lines_shader.program();
             gl.use_program(Some(program));
+
             gl.uniform_matrix_4_f32_slice(
                 Some(&gl.get_uniform_location(program, "projection").unwrap()),
                 false,
@@ -376,8 +474,23 @@ impl ICNRenderer {
                 false,
                 &convert_matrix(view),
             );
-            gl.bind_vertex_array(Some(self.lines_array));
+
+            gl.disable(glow::DEPTH_TEST);
+            gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
+
+            gl.uniform_3_f32_slice(Some(&gl.get_uniform_location(program, "color").unwrap()), &vec3::<f32>(0.0, 0.0, 0.0).to_glow());
+            gl.bind_vertex_array(Some(self.grid_vao));
+            gl.draw_arrays(glow::LINES, 0, 84);
+
+            gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
+            gl.enable(glow::DEPTH_TEST);
+
+
+            gl.uniform_3_f32_slice(Some(&gl.get_uniform_location(program, "color").unwrap()), &vec3::<f32>(1.0, 0.0, 0.0).to_glow());
+            gl.bind_vertex_array(Some(self.lines_vao));
             gl.draw_arrays(glow::LINES, 0, 24);
+
+
 
             let program = self.shader.program();
             gl.use_program(Some(program));
@@ -397,7 +510,7 @@ impl ICNRenderer {
                 false,
                 &convert_matrix(model),
             );
-            gl.bind_vertex_array(Some(self.vertex_array));
+            gl.bind_vertex_array(Some(self.model_vao));
             gl.draw_arrays(glow::TRIANGLES, 0, self.vertex_count as i32);
         }
     }
@@ -405,8 +518,12 @@ impl ICNRenderer {
     pub fn drop(&self, gl: &glow::Context) {
         use glow::HasContext as _;
         unsafe {
-            gl.delete_vertex_array(self.vertex_array);
-            gl.delete_vertex_array(self.lines_array);
+            gl.delete_vertex_array(self.model_vao);
+            gl.delete_buffer(self.lines_vbo);
+            gl.delete_vertex_array(self.lines_vao);
+            gl.delete_buffer(self.model_vbo);
+            gl.delete_vertex_array(self.grid_vao);
+            gl.delete_buffer(self.grid_vbo);
             self.shader.drop(gl);
             self.lines_shader.drop(gl);
             gl.delete_texture(self.texture);
@@ -421,7 +538,7 @@ fn convert_matrix(mat: Matrix4<f32>) -> Vec<f32> {
     ]
 }
 
-pub fn generate_wireframe_box(size: Vector3<f32>) -> Vec<f32> {
+pub fn generate_wireframe_box(size: Vector3<f32>, center: Vector3<f32>) -> Vec<f32> {
     let half = size * 0.5;
 
     let corners = [
@@ -436,7 +553,7 @@ pub fn generate_wireframe_box(size: Vector3<f32>) -> Vec<f32> {
     ];
 
     // Each pair of points forms a line
-    let edges = [
+    [
         (0, 1),
         (1, 2),
         (2, 3),
@@ -449,22 +566,28 @@ pub fn generate_wireframe_box(size: Vector3<f32>) -> Vec<f32> {
         (1, 5),
         (2, 6),
         (3, 7), // vertical lines
-    ];
+    ]
+        .iter()
+        .map(|(start, end)| {
+            let a = corners[*start] + center;
+            let b = corners[*end] + center;
 
-    let mut vertices = Vec::new();
+            vec![a.x, a.y, a.z, b.x, b.y, b.z]
+        })
+        .flatten()
+        .collect::<Vec<_>>()
+}
 
-    for (start, end) in edges.iter() {
-        let a = corners[*start];
-        let b = corners[*end];
+fn generate_grid_lines(size: i32, step: f32) -> Vec<f32> {
+    let mut lines = Vec::new();
+    let half = size as f32 * step;
 
-        vertices.push(a.x);
-        vertices.push(a.y);
-        vertices.push(a.z);
+    for i in -size..=size {
+        let p = i as f32 * step;
 
-        vertices.push(b.x);
-        vertices.push(b.y);
-        vertices.push(b.z);
+        lines.extend_from_slice(&[p, 0.0, -half, p, 0.0, half]); // Vertical lines
+        lines.extend_from_slice(&[-half, 0.0, p, half, 0.0, p]); // Horizontal lines
     }
 
-    vertices
+    lines
 }
