@@ -1,6 +1,5 @@
 use eframe::egui::Context;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::path::PathBuf;
 
 pub trait Dialogs {

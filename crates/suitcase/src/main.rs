@@ -27,7 +27,6 @@ use crate::{
 };
 use eframe::egui::{
     vec2, Context, Frame, Grid, IconData, Rect, ViewportBuilder, ViewportCommand, ViewportId,
-    WindowLevel,
 };
 use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
@@ -152,7 +151,6 @@ impl PSUBuilderApp {
                     Command::new(self.state.pcsx2_path.clone()).arg("-bios").spawn().expect("Failed to start PCSX2");
                 },
                 AppEvent::StartPCSX2Elf(path) => {
-                    eprintln!("{}: -- {}", self.state.pcsx2_path, path.display());
                     Command::new(self.state.pcsx2_path.clone())
                         .arg("--")
                         .arg(path)
@@ -304,7 +302,7 @@ impl eframe::App for PSUBuilderApp {
                     .with_title("Settings")
                     .with_position(center - window_size / 2.0)
                     .with_inner_size(window_size),
-                |ctx, class| {
+                |ctx, _class| {
                     egui::CentralPanel::default().show(ctx, |ui| {
                         Grid::new("settings_grid").num_columns(2).show(ui, |ui| {
                             ui.label("PCSX2 Path:");

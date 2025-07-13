@@ -41,7 +41,9 @@ impl FileWatcher {
                             if let Some(path) = &current_path {
                                 watcher.unwatch(path).unwrap();
                             }
-                            watcher.watch(&new_path, notify::RecursiveMode::NonRecursive).unwrap();
+                            watcher
+                                .watch(&new_path, notify::RecursiveMode::NonRecursive)
+                                .unwrap();
                             current_path = Some(new_path);
                         }
                         WatchCommand::Stop => {
