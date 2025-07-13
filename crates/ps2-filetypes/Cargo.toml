@@ -6,6 +6,4 @@ edition = "2021"
 [dependencies]
 byteorder = "1.5.0"
 chrono = "0.4.40"
-encoding_rs = "0.8.35"
-unicode-normalization = "0.1.24"
 image = "0.25.6"

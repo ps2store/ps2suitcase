@@ -1,11 +1,10 @@
 use std::io::{Cursor, Read, Result};
-
-use byteorder::{ReadBytesExt, LE};
-use unicode_normalization::UnicodeNormalization;
 use crate::color::Color;
+use crate::sjis::{decode_sjis, encode_sjis};
 use crate::util::parse_cstring;
+use byteorder::{ReadBytesExt, LE};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ColorF {
     pub r: f32,
     pub g: f32,
@@ -13,7 +12,19 @@ pub struct ColorF {
     pub a: f32,
 }
 
-#[derive(Clone, Copy)]
+impl ColorF {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        vec![
+            f32::to_le_bytes(self.r),
+            f32::to_le_bytes(self.g),
+            f32::to_le_bytes(self.b),
+            f32::to_le_bytes(self.a),
+        ]
+        .into_flattened()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Vector {
     pub x: f32,
     pub y: f32,
@@ -21,12 +32,41 @@ pub struct Vector {
     pub w: f32,
 }
 
+impl Vector {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        vec![
+            f32::to_le_bytes(self.x),
+            f32::to_le_bytes(self.y),
+            f32::to_le_bytes(self.z),
+            f32::to_le_bytes(self.w),
+        ]
+        .into_flattened()
+    }
+}
+
+/**
+ * IconSys Flags
+ * 00 -> PS2 Save File
+ * 01 -> Software (PS2)
+ * 02 -> unrecognized data
+ * 03 -> Software (Pocketstation
+ * 04 -> Settings (PS2)
+ * 05 -> system driver
+ * 06..20 -> unrecognized data
+ *
+ * those flags are available on most PS2 (excluding 05, which was implemented somewhere between 1.70 and 1.90 BIOS)
+ *
+ * Thanks israpps!
+ */
+
+#[derive(Clone, Debug)]
 pub struct IconSys {
-    pub title_line_transparency: u16,
+    pub flags: u16,
+    pub linebreak_pos: u16,
     pub background_transparency: u32,
     pub background_colors: [Color; 4],
     pub light_directions: [Vector; 3],
-    pub light_colors: [Color; 3],
+    pub light_colors: [ColorF; 3],
     pub ambient_color: ColorF,
     pub title: String,
     pub icon_file: String,
@@ -37,6 +77,66 @@ pub struct IconSys {
 impl IconSys {
     pub fn new(bytes: Vec<u8>) -> Self {
         parse_icon_sys(bytes).unwrap()
+    }
+
+    pub fn to_bytes(&self) -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"PS2D");
+
+        bytes.extend(self.flags.to_le_bytes());
+        bytes.extend(self.linebreak_pos.to_le_bytes());
+        bytes.extend(0u32.to_le_bytes()); // Reserved
+        bytes.extend(self.background_transparency.to_le_bytes());
+
+        for color in &self.background_colors {
+            bytes.extend_from_slice(&color.to_bytes());
+        }
+
+        for direction in &self.light_directions {
+            bytes.extend_from_slice(&direction.to_bytes());
+        }
+
+        for color in &self.light_colors {
+            bytes.extend_from_slice(&color.to_bytes());
+        }
+
+        bytes.extend_from_slice(&self.ambient_color.to_bytes());
+
+        let title_bytes = encode_sjis(&self.title);
+        let title_len = title_bytes.len();
+        if title_len > 68 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Title length exceeds 68 bytes",
+            ));
+        }
+
+        bytes.extend_from_slice(&title_bytes);
+        if title_len < 68 {
+            bytes.extend(vec![0; 68 - title_len]);
+        }
+
+        bytes.extend_from_slice(self.icon_file.as_bytes());
+
+        if self.icon_file.len() < 64 {
+            bytes.extend(vec![0; 64 - self.icon_file.len()]);
+        }
+
+        bytes.extend_from_slice(self.icon_copy_file.as_bytes());
+
+        if self.icon_copy_file.len() < 64 {
+            bytes.extend(vec![0; 64 - self.icon_copy_file.len()]);
+        }
+
+        bytes.extend_from_slice(self.icon_delete_file.as_bytes());
+
+        if self.icon_delete_file.len() < 64 {
+            bytes.extend(vec![0; 64 - self.icon_delete_file.len()]);
+        }
+
+        bytes.extend(vec![0; 512]);
+
+        Ok(bytes)
     }
 }
 
@@ -52,10 +152,10 @@ fn parse_icon_sys(bytes: Vec<u8>) -> Result<IconSys> {
     let mut magic = vec![0u8; 4];
     c.read_exact(&mut magic)?;
 
-    let title_line_transparency = c.read_u16::<LE>()?;
-    _ = c.read_u16::<LE>()?;
+    let flags = c.read_u16::<LE>()?;
+    let linebreak_pos = c.read_u16::<LE>()?;
+    _ = c.read_u32::<LE>(); // Reserved, always 0
     let background_transparency = c.read_u32::<LE>()?;
-    _ = c.read_u32::<LE>();
 
     let background_colors = [
         parse_color(&mut c)?,
@@ -71,9 +171,9 @@ fn parse_icon_sys(bytes: Vec<u8>) -> Result<IconSys> {
     ];
 
     let light_colors = [
-        parse_color(&mut c)?,
-        parse_color(&mut c)?,
-        parse_color(&mut c)?,
+        parse_colorf(&mut c)?,
+        parse_colorf(&mut c)?,
+        parse_colorf(&mut c)?,
     ];
 
     let ambient_color = parse_colorf(&mut c)?;
@@ -89,7 +189,8 @@ fn parse_icon_sys(bytes: Vec<u8>) -> Result<IconSys> {
     c.read_exact(&mut icon_delete_file_buf)?;
 
     Ok(IconSys {
-        title_line_transparency,
+        flags,
+        linebreak_pos,
         background_transparency,
         background_colors,
         light_directions,
@@ -103,9 +204,9 @@ fn parse_icon_sys(bytes: Vec<u8>) -> Result<IconSys> {
 }
 
 fn parse_sjis_string(c: &[u8]) -> String {
-    let title = encoding_rs::SHIFT_JIS.decode(c).0.to_string();
+    let title = decode_sjis(c);
 
-    parse_cstring(&title.nfkc().collect::<String>().as_bytes())
+    parse_cstring(&title.as_bytes())
 }
 
 fn parse_color(c: &mut Cursor<Vec<u8>>) -> Result<Color> {

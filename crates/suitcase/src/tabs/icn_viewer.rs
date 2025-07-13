@@ -1,12 +1,11 @@
-use crate::data::vec_math::ToGlow;
 use crate::components::buttons::CustomButtons;
 use crate::components::dialogs::Dialogs;
+use crate::data::vec_math::ToGlow;
 use crate::rendering::Shader;
 use crate::tabs::Tab;
 use crate::VirtualFile;
-use cgmath::num_traits::FloatConst;
 use cgmath::{point3, vec3, EuclideanSpace, Matrix4, Point3, Vector3};
-use eframe::egui::{include_image, menu, Color32, Ui, Vec2};
+use eframe::egui::{include_image, menu, Color32, Ui};
 use eframe::glow::NativeTexture;
 use eframe::{egui, egui_glow, glow};
 use image::ImageReader;
@@ -108,7 +107,7 @@ impl ICNViewer {
         }
     }
     fn custom_painting(&mut self, ui: &mut Ui) {
-        let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
+        let (rect, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
         let input = ui.input(|i| i.clone());
 
         let mut delta_yaw = 0.0;

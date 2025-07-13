@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, Copy)]
 pub struct Color {
     pub r: u8,
@@ -8,9 +7,24 @@ pub struct Color {
 }
 
 impl Color {
-    pub const WHITE: Color = Color { r: 255, g: 255, b: 255, a: 255 };
+    pub const WHITE: Color = Color {
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255,
+    };
     pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        vec![
+            (self.r as u32).to_le_bytes(),
+            (self.g as u32).to_le_bytes(),
+            (self.b as u32).to_le_bytes(),
+            (self.a as u32).to_le_bytes(),
+        ]
+        .into_flattened()
     }
 }
 
@@ -46,4 +60,3 @@ impl Into<[u8; 4]> for Color {
         [self.r, self.g, self.b, self.a]
     }
 }
-
