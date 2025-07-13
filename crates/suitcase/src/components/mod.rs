@@ -7,3 +7,4 @@ pub mod menu_item;
 pub mod tab_viewer;
 pub mod toolbar;
 pub mod greeting;
+pub(crate) mod file_picker;

@@ -1,6 +1,6 @@
+use crate::data::files::Files;
 use crate::data::virtual_file::VirtualFile;
 use std::path::PathBuf;
-use crate::data::files::Files;
 
 #[derive(Clone)]
 pub enum AppEvent {
@@ -12,12 +12,16 @@ pub enum AppEvent {
     SaveFile,
     OpenSave,
     CreateICN,
+    OpenSettings,
+    StartPCSX2,
+    StartPCSX2Elf(PathBuf),
 }
 
 pub struct AppState {
     pub opened_folder: Option<PathBuf>,
     pub files: Files,
     pub events: Vec<AppEvent>,
+    pub pcsx2_path: String,
 }
 
 impl AppState {
@@ -45,6 +49,15 @@ impl AppState {
     pub fn create_icn(&mut self) {
         self.events.push(AppEvent::CreateICN);
     }
+    pub fn open_settings(&mut self) {
+        self.events.push(AppEvent::OpenSettings);
+    }
+    pub fn start_pcsx2(&mut self) {
+        self.events.push(AppEvent::StartPCSX2);
+    }
+    pub fn start_pcsx2_elf(&mut self, path: PathBuf) {
+        self.events.push(AppEvent::StartPCSX2Elf(path));
+    }
 }
 
 impl Default for AppState {
@@ -59,6 +72,7 @@ impl AppState {
             opened_folder: None,
             files: Files::default(),
             events: vec![],
+            pcsx2_path: String::new(),
         }
     }
 }

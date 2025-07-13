@@ -1,7 +1,7 @@
-use eframe::egui;
-use eframe::egui::{menu, Context, KeyboardShortcut, Modifiers, Ui};
 use crate::components::menu_item::MenuItemComponent;
 use crate::data::state::AppState;
+use eframe::egui;
+use eframe::egui::{menu, Context, KeyboardShortcut, Modifiers, Ui};
 
 const CTRL_OR_CMD: Modifiers = if cfg!(target_os = "macos") {
     Modifiers::MAC_CMD
@@ -32,10 +32,12 @@ const EXPORT_KEYBOARD_SHORTCUT: KeyboardShortcut =
     KeyboardShortcut::new(CTRL_OR_CMD_SHIFT, egui::Key::S);
 const ADD_FILE_KEYBOARD_SHORTCUT: KeyboardShortcut =
     KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::N);
-const SAVE_KEYBOARD_SHORTCUT: KeyboardShortcut =
-    KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::S);
+const SAVE_KEYBOARD_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::S);
 const CREATE_ICN_KEYBOARD_SHORTCUT: KeyboardShortcut =
     KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::I);
+
+const OPEN_SETTINGS_KEYBOARD_SHORTCUT: KeyboardShortcut =
+    KeyboardShortcut::new(CTRL_OR_CMD, egui::Key::Comma);
 
 pub fn menu_bar(ui: &mut Ui, app: &mut AppState) {
     let is_folder_open = app.opened_folder.is_some();
@@ -47,6 +49,7 @@ pub fn menu_bar(ui: &mut Ui, app: &mut AppState) {
                 .clicked()
             {
                 app.open_folder();
+                ui.close_menu();
             }
             ui.add_enabled_ui(is_folder_open, |ui| {
                 if ui
@@ -54,12 +57,14 @@ pub fn menu_bar(ui: &mut Ui, app: &mut AppState) {
                     .clicked()
                 {
                     app.add_files();
+                    ui.close_menu();
                 }
                 if ui
                     .menu_item_shortcut("Save File", &SAVE_KEYBOARD_SHORTCUT)
                     .clicked()
                 {
                     app.save_file();
+                    ui.close_menu();
                 }
                 // ui.separator();
                 // if ui
@@ -70,6 +75,15 @@ pub fn menu_bar(ui: &mut Ui, app: &mut AppState) {
                 // }
             });
         });
+        ui.menu_button("Edit", |ui| {
+            if ui
+                .menu_item_shortcut("Settings", &OPEN_SETTINGS_KEYBOARD_SHORTCUT)
+                .clicked()
+            {
+                app.open_settings();
+                ui.close_menu();
+            }
+        });
         ui.menu_button("Export", |ui| {
             ui.add_enabled_ui(is_folder_open, |ui| {
                 if ui
@@ -77,6 +91,7 @@ pub fn menu_bar(ui: &mut Ui, app: &mut AppState) {
                     .clicked()
                 {
                     app.export_psu();
+                    ui.close_menu();
                 }
             });
         });
@@ -94,5 +109,9 @@ pub fn handle_accelerators(ctx: &Context, app: &mut AppState) {
     } else if ctx.input_mut(|i| i.consume_shortcut(&SAVE_KEYBOARD_SHORTCUT)) {
         app.save_file();
     } else if ctx.input_mut(|i| i.consume_shortcut(&CREATE_ICN_KEYBOARD_SHORTCUT)) {
+    } else if ctx.input_mut(|i| i.consume_shortcut(&ADD_FILE_KEYBOARD_SHORTCUT)) {
+        app.add_files();
+    } else if ctx.input_mut(|i| i.consume_shortcut(&OPEN_SETTINGS_KEYBOARD_SHORTCUT)) {
+        app.open_settings();
     }
 }

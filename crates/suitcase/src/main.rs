@@ -7,26 +7,32 @@ mod rendering;
 mod tabs;
 mod wizards;
 
-use crate::components::dialogs::Dialogs;
-use crate::components::greeting::greeting;
-use crate::wizards::create_icn::create_icn_wizard;
+use crate::components::dialogs::Filters;
 use crate::{
     components::bottom_bar::bottom_bar,
+    components::dialogs::Dialogs,
+    components::file_picker::FilePicker,
     components::file_tree::FileTree,
+    components::greeting::greeting,
     components::menu_bar::{handle_accelerators, menu_bar},
     components::tab_viewer::{TabType, TabViewer},
     components::toolbar::toolbar,
     data::state::{AppEvent, AppState},
     data::virtual_file::VirtualFile,
     io::export_psu::export_psu,
+    io::file_watcher::FileWatcher,
     io::read_folder::read_folder,
     tabs::{ICNViewer, IconSysViewer, TitleCfgViewer},
+    wizards::create_icn::create_icn_wizard,
 };
-use eframe::egui::{Context, Frame, IconData, ViewportCommand};
+use eframe::egui::{
+    vec2, Context, Frame, Grid, IconData, Rect, ViewportBuilder, ViewportCommand, ViewportId,
+    WindowLevel,
+};
 use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
-use crate::io::file_watcher::FileWatcher;
+use std::process::Command;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -65,6 +71,7 @@ struct PSUBuilderApp {
     state: AppState,
     file_tree: FileTree,
     show_create_icn: bool,
+    show_settings: bool,
     file_watcher: FileWatcher,
 }
 
@@ -75,20 +82,23 @@ struct WorkspaceSave {
 
 impl PSUBuilderApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let state = AppState::new();
-        let tabs: Vec<Box<TabType>> = vec![];
-        let tree = DockState::new(tabs);
-        let file_tree = FileTree::new();
+        let mut state = AppState::new();
+        state.pcsx2_path = cc
+            .storage
+            .and_then(|s| eframe::get_value::<String>(s, "pcsx2_path"))
+            .unwrap_or_default();
 
         let mut slf = Self {
-            tree,
+            tree: DockState::new(Vec::new()),
             state,
-            file_tree,
+            file_tree: FileTree::new(),
             show_create_icn: false,
+            show_settings: false,
             file_watcher: FileWatcher::new(),
         };
 
         slf.try_open_saved_folder(cc.storage);
+
         slf
     }
 
@@ -134,6 +144,20 @@ impl PSUBuilderApp {
                 }
                 AppEvent::CreateICN => {
                     self.show_create_icn = true;
+                }
+                AppEvent::OpenSettings => {
+                    self.show_settings = true;
+                },
+                AppEvent::StartPCSX2 => {
+                    Command::new(self.state.pcsx2_path.clone()).arg("-bios").spawn().expect("Failed to start PCSX2");
+                },
+                AppEvent::StartPCSX2Elf(path) => {
+                    eprintln!("{}: -- {}", self.state.pcsx2_path, path.display());
+                    Command::new(self.state.pcsx2_path.clone())
+                        .arg("--")
+                        .arg(path)
+                        .spawn()
+                        .expect("Failed to start PCSX2 with ELF");
                 }
             }
         }
@@ -269,6 +293,42 @@ impl eframe::App for PSUBuilderApp {
                 }
             });
 
+        if self.show_settings {
+            let rect = ctx.input(|i| i.viewport().outer_rect.unwrap_or(Rect::ZERO));
+            let center = rect.center();
+            let window_size = vec2(600.0, 400.0);
+
+            ctx.show_viewport_immediate(
+                ViewportId::from_hash_of("settings"),
+                ViewportBuilder::default()
+                    .with_title("Settings")
+                    .with_position(center - window_size / 2.0)
+                    .with_inner_size(window_size),
+                |ctx, class| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        Grid::new("settings_grid").num_columns(2).show(ui, |ui| {
+                            ui.label("PCSX2 Path:");
+                            let is_windows = cfg!(target_os = "windows");
+                            ui.add_enabled_ui(is_windows, |ui| {
+                                ui.file_picker(
+                                    &mut self.state.pcsx2_path,
+                                    Filters::new().add_filter("PCSX2 Executable", ["exe"]),
+                                );
+                            });
+                            if !is_windows {
+                                ui.label("PCSX2 Path is only configurable on Windows.");
+                            }
+                            ui.end_row();
+                        });
+                    });
+
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        self.show_settings = false;
+                    }
+                },
+            );
+        }
+
         handle_accelerators(ctx, &mut self.state);
 
         create_icn_wizard(ctx, &mut self.show_create_icn);
@@ -284,8 +344,8 @@ impl eframe::App for PSUBuilderApp {
                 opened_folder: self.state.opened_folder.clone(),
             },
         );
+        eframe::set_value(storage, "pcsx2_path", &self.state.pcsx2_path);
     }
 
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-    }
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {}
 }

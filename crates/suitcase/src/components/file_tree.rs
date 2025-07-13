@@ -138,6 +138,12 @@ impl FileTree {
                                     ui.close_menu();
                                 }
                             }
+                            if !app.pcsx2_path.is_empty() && file_path.extension().map_or(false, |ext| ext.to_ascii_lowercase() == "elf") {
+                                if ui.button("Run in PCSX2").clicked() {
+                                    app.start_pcsx2_elf(file.file_path.clone());
+                                    ui.close_menu();
+                                }
+                            }
                             ui.add_enabled_ui(false, |ui| {
                                 _ = ui.button("Delete");
                             });
