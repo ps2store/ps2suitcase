@@ -19,7 +19,9 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
         }
         toolbar_item(ui, include_image!("../../assets/lowdpi/main_open_vmc.png"), "Open a virtual memory card");
         toolbar_item(ui, include_image!("../../assets/lowdpi/main_mk_titlecfg.png"), "Make title configuration");
-        toolbar_item(ui, include_image!("../../assets/lowdpi/main_mk_iconsys.png"), "Make icon system");
+        if toolbar_item(ui, include_image!("../../assets/lowdpi/main_mk_iconsys.png"), "Create ICN file").clicked() {
+            app.create_icn();
+        }
         toolbar_item(ui, include_image!("../../assets/lowdpi/main_sav_meta.png"), "Save metadata");
         toolbar_item(ui, include_image!("../../assets/lowdpi/main_extract_all.png"), "Extract all saves");
         toolbar_item(ui, include_image!("../../assets/lowdpi/main_mk_sav.png"), "Make save file");

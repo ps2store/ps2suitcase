@@ -11,6 +11,7 @@ pub enum AppEvent {
     ExportPSU,
     SaveFile,
     OpenSave,
+    CreateICN,
 }
 
 pub struct AppState {
@@ -40,6 +41,9 @@ impl AppState {
     }
     pub fn save_file(&mut self) {
         self.events.push(AppEvent::SaveFile);
+    }
+    pub fn create_icn(&mut self) {
+        self.events.push(AppEvent::CreateICN);
     }
 }
 

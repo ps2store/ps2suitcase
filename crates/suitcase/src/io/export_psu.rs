@@ -40,8 +40,8 @@ pub fn export_psu(state: &mut AppState) -> std::io::Result<()> {
             sector: 0,
             modified: Utc::now().naive_utc(),
             name: ".".to_string(),
-            kind: PSUEntryKind::File,
-            contents: Some(vec![]),
+            kind: PSUEntryKind::Directory,
+            contents: None,
         };
         let parent = PSUEntry {
             id: FILE_ID,
@@ -50,8 +50,8 @@ pub fn export_psu(state: &mut AppState) -> std::io::Result<()> {
             sector: 0,
             modified: Utc::now().naive_utc(),
             name: "..".to_string(),
-            kind: PSUEntryKind::File,
-            contents: Some(vec![]),
+            kind: PSUEntryKind::Directory,
+            contents: None,
         };
 
         psu.entries.push(root);

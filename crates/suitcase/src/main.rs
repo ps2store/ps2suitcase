@@ -129,6 +129,9 @@ impl PSUBuilderApp {
                         .add_filter("PS2 Save Files", &["psu"])
                         .pick_file()
                     {}
+                },
+                AppEvent::CreateICN => {
+                    self.show_create_icn = true;
                 }
             }
         }
