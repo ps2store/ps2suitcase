@@ -1,10 +1,9 @@
-use std::ops::Add;
-use crate::components::buttons::CustomButtons;
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
-use eframe::egui::{ComboBox, CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
+use eframe::egui::{CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
 use ps2_filetypes::IconSys;
+use std::ops::Add;
 use std::path::PathBuf;
 
 pub struct IconSysViewer {
@@ -18,7 +17,7 @@ pub struct IconSysViewer {
 }
 
 impl IconSysViewer {
-    pub fn new(file: VirtualFile) -> Self {
+    pub fn new(file: &VirtualFile) -> Self {
         let buf = std::fs::read(&file.file_path).expect("File not found");
 
         let sys = IconSys::new(buf);
@@ -49,7 +48,7 @@ impl IconSysViewer {
                 if matches!(
                     PathBuf::from(&name)
                         .extension()
-                        .unwrap()
+                        .unwrap_or_default()
                         .to_str()
                         .unwrap_or(""),
                     "icn" | "ico"

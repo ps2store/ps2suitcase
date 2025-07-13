@@ -14,7 +14,7 @@ pub struct TitleCfgViewer {
 }
 
 impl TitleCfgViewer {
-    pub fn new(file: VirtualFile) -> Self {
+    pub fn new(file: &VirtualFile) -> Self {
         let buf = std::fs::read(&file.file_path)
             .expect("Failed to read file");
 

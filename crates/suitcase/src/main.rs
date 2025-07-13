@@ -17,8 +17,7 @@ use crate::{
     components::tab_viewer::{TabType, TabViewer},
     components::toolbar::toolbar,
     data::state::{AppEvent, AppState},
-    data::virtual_file::VirtualFile
-    ,
+    data::virtual_file::VirtualFile,
     io::export_psu::export_psu,
     io::read_folder::read_folder,
     tabs::{ICNViewer, IconSysViewer, TitleCfgViewer},
@@ -27,6 +26,7 @@ use eframe::egui::{Context, Frame, IconData, ViewportCommand};
 use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
+use crate::io::file_watcher::FileWatcher;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -65,6 +65,7 @@ struct PSUBuilderApp {
     state: AppState,
     file_tree: FileTree,
     show_create_icn: bool,
+    file_watcher: FileWatcher,
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -84,6 +85,7 @@ impl PSUBuilderApp {
             state,
             file_tree,
             show_create_icn: false,
+            file_watcher: FileWatcher::new(),
         };
 
         slf.try_open_saved_folder(cc.storage);
@@ -129,11 +131,17 @@ impl PSUBuilderApp {
                         .add_filter("PS2 Save Files", &["psu"])
                         .pick_file()
                     {}
-                },
+                }
                 AppEvent::CreateICN => {
                     self.show_create_icn = true;
                 }
             }
+        }
+    }
+
+    fn handle_fs_events(&mut self) {
+        while let Ok(_event) = self.file_watcher.event_rx.try_recv() {
+            self.state.files = read_folder(self.state.opened_folder.clone().unwrap()).unwrap();
         }
     }
 
@@ -155,10 +163,10 @@ impl PSUBuilderApp {
         let name: PathBuf = file.name.clone().into();
         if let Some(extension) = name.extension() {
             let editor: Option<TabType> = match extension.to_ascii_lowercase().to_str().unwrap() {
-                "icn" | "ico" => Some(TabType::ICNViewer(ICNViewer::new(file))),
-                "sys" => Some(TabType::IconSysViewer(IconSysViewer::new(file))),
+                "icn" | "ico" => Some(TabType::ICNViewer(ICNViewer::new(&file))),
+                "sys" => Some(TabType::IconSysViewer(IconSysViewer::new(&file))),
                 "cfg" | "cnf" | "dat" | "txt" => {
-                    Some(TabType::TitleCfgViewer(TitleCfgViewer::new(file)))
+                    Some(TabType::TitleCfgViewer(TitleCfgViewer::new(&file)))
                 }
                 _ => None,
             };
@@ -215,6 +223,7 @@ impl PSUBuilderApp {
                 .to_string_lossy()
                 .to_string(),
         );
+        self.file_watcher.change_path(&folder);
         self.state.files = read_folder(folder)?;
 
         Ok(())
@@ -264,6 +273,7 @@ impl eframe::App for PSUBuilderApp {
 
         create_icn_wizard(ctx, &mut self.show_create_icn);
         self.handle_events(ctx);
+        self.handle_fs_events();
     }
 
     fn save(&mut self, storage: &mut dyn Storage) {
@@ -276,5 +286,6 @@ impl eframe::App for PSUBuilderApp {
         );
     }
 
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {}
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    }
 }

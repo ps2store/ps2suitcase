@@ -174,10 +174,16 @@ impl ICNParser {
     }
 
     fn parse_texture(&mut self, texture_type: u32) -> std::io::Result<IcnTexture> {
-        if texture_type <= 0x07 {
-            self.parse_texture_uncompressed()
+        if texture_type & 0b0100 > 0 {
+            if texture_type & 0b1000 > 0 {
+                self.parse_texture_compressed()
+            } else {
+                self.parse_texture_uncompressed()
+            }
         } else {
-            self.parse_texture_compressed()
+            Ok(IcnTexture {
+                pixels: [0xFFFF; TEXTURE_SIZE],
+            })
         }
     }
 

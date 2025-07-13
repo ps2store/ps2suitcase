@@ -83,7 +83,7 @@ impl ICNViewer {
 }
 
 impl ICNViewer {
-    pub fn new(file: VirtualFile) -> Self {
+    pub fn new(file: &VirtualFile) -> Self {
         let buf = std::fs::read(&file.file_path).expect("File not found");
         let icn = ps2_filetypes::ICNParser::read(&buf.clone()).unwrap();
 
@@ -289,10 +289,17 @@ impl ICNRenderer {
                 .map(|(i, vertex)| {
                     let normal = icn.normals[i];
                     let uv = icn.uvs[i];
+                    let color = icn.colors[i];
                     [
                         vertex.x as f32 / 4096.0,
                         -vertex.y as f32 / 4096.0,
                         -vertex.z as f32 / 4096.0,
+
+                        color.r as f32 / 255.0,
+                        color.g as f32 / 255.0,
+                        color.b as f32 / 255.0,
+                        color.a as f32 / 255.0,
+
                         normal.x as f32 / 4096.0,
                         -normal.y as f32 / 4096.0,
                         -normal.z as f32 / 4096.0,
@@ -316,26 +323,36 @@ impl ICNRenderer {
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, triangle_vertices_u8, glow::STATIC_DRAW);
 
             gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 8 * size_of::<f32>() as i32, 0);
+            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 12 * size_of::<f32>() as i32, 0);
 
             gl.enable_vertex_attrib_array(1);
             gl.vertex_attrib_pointer_f32(
                 1,
-                3,
+                4,
                 glow::FLOAT,
                 false,
-                8 * size_of::<f32>() as i32,
+                12 * size_of::<f32>() as i32,
                 3 * size_of::<f32>() as i32,
             );
 
             gl.enable_vertex_attrib_array(2);
             gl.vertex_attrib_pointer_f32(
                 2,
+                3,
+                glow::FLOAT,
+                false,
+                12 * size_of::<f32>() as i32,
+                7 * size_of::<f32>() as i32,
+            );
+
+            gl.enable_vertex_attrib_array(3);
+            gl.vertex_attrib_pointer_f32(
+                3,
                 2,
                 glow::FLOAT,
                 false,
-                8 * size_of::<f32>() as i32,
-                6 * size_of::<f32>() as i32,
+                12 * size_of::<f32>() as i32,
+                10 * size_of::<f32>() as i32,
             );
 
             let texture = gl.create_texture()?;
