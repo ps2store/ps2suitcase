@@ -237,11 +237,9 @@ impl ICNParser {
     fn parse_frame(&mut self) -> std::io::Result<Frame> {
         let shape_id = self.c.read_u32::<LE>()?;
         let key_count = self.c.read_u32::<LE>()?;
-        _ = self.c.read_u32::<LE>()?;
-        _ = self.c.read_u32::<LE>()?;
         let mut keys = vec![];
 
-        for _ in 0..key_count - 1 {
+        for _ in 0..key_count {
             let time = self.c.read_f32::<LE>()?;
             let value = self.c.read_f32::<LE>()?;
 
