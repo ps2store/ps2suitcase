@@ -1,12 +1,13 @@
 use crate::components::buttons::CustomButtons;
 use crate::components::dialogs::Dialogs;
-use crate::data::vec_math::ToGlow;
-use crate::rendering::Shader;
+use crate::rendering::buffer::Buffer;
+use crate::rendering::texture::Texture;
+use crate::rendering::vertex_array::{attributes, VertexArray};
+use crate::rendering::Program;
 use crate::tabs::Tab;
 use crate::VirtualFile;
 use cgmath::{point3, vec3, EuclideanSpace, Matrix4, Point3, Vector3};
 use eframe::egui::{include_image, menu, Color32, Ui};
-use eframe::glow::NativeTexture;
 use eframe::{egui, egui_glow, glow};
 use image::ImageReader;
 use ps2_filetypes::color::Color;
@@ -78,7 +79,6 @@ impl ICNViewer {
             .unwrap();
         self.needs_update = true;
         self.modified = true;
-        // eprintln!("{image:?}");
     }
 }
 
@@ -138,7 +138,9 @@ impl ICNViewer {
             rect,
             callback: Arc::new(egui_glow::CallbackFn::new(move |_, painter| {
                 let mut renderer = renderer.lock().unwrap();
-                let renderer = renderer.get_or_insert_with(|| ICNRenderer::new(painter.gl(), &icn).expect("Failed to create ICNRenderer"));
+                let renderer = renderer.get_or_insert_with(|| {
+                    ICNRenderer::new(painter.gl(), &icn).expect("Failed to create ICNRenderer")
+                });
                 if needs_update {
                     renderer.replace_texture(painter.gl(), &icn);
                 }
@@ -242,31 +244,24 @@ impl Tab for ICNViewer {
     }
 }
 
-#[derive(Clone)]
 pub struct ICNRenderer {
-    shader: Shader,
-    model_vao: glow::VertexArray,
-    model_vbo: glow::Buffer,
-    lines_vao: glow::VertexArray,
-    lines_vbo: glow::Buffer,
-    grid_vao: glow::VertexArray,
-    grid_vbo: glow::Buffer,
-    vertex_count: usize,
-    texture: NativeTexture,
-    lines_shader: Shader,
+    shader: Program,
+    model: VertexArray,
+    model_texture: Texture,
+    lines: VertexArray,
+    grid: VertexArray,
+    lines_shader: Program,
 }
 
 impl ICNRenderer {
     pub fn new(gl: &glow::Context, icn: &ICN) -> Result<Self, String> {
-        use glow::HasContext as _;
-
         unsafe {
-            let model_shader = Shader::new(
+            let model_shader = Program::new(
                 gl,
                 include_str!("../shaders/icn.vsh"),
                 include_str!("../shaders/icn.fsh"),
             );
-            let lines_shader = Shader::new(
+            let lines_shader = Program::new(
                 gl,
                 include_str!("../shaders/outline.vsh"),
                 include_str!("../shaders/outline.fsh"),
@@ -294,12 +289,10 @@ impl ICNRenderer {
                         vertex.x as f32 / 4096.0,
                         -vertex.y as f32 / 4096.0,
                         -vertex.z as f32 / 4096.0,
-
                         color.r as f32 / 255.0,
                         color.g as f32 / 255.0,
                         color.b as f32 / 255.0,
                         color.a as f32 / 255.0,
-
                         normal.x as f32 / 4096.0,
                         -normal.y as f32 / 4096.0,
                         -normal.z as f32 / 4096.0,
@@ -312,157 +305,66 @@ impl ICNRenderer {
 
             let data = vertices.as_slice();
 
-            let model_vao = gl
-                .create_vertex_array()?;
-            gl.bind_vertex_array(Some(model_vao));
-
-            let model_vbo = gl.create_buffer()?;
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(model_vbo));
-            let triangle_vertices_u8: &[u8] =
-                core::slice::from_raw_parts(data.as_ptr() as *const u8, size_of_val(data));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, triangle_vertices_u8, glow::STATIC_DRAW);
-
-            gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 12 * size_of::<f32>() as i32, 0);
-
-            gl.enable_vertex_attrib_array(1);
-            gl.vertex_attrib_pointer_f32(
-                1,
-                4,
-                glow::FLOAT,
-                false,
-                12 * size_of::<f32>() as i32,
-                3 * size_of::<f32>() as i32,
+            let model = VertexArray::new(
+                gl,
+                &model_shader,
+                [(
+                    Buffer::new(gl, data),
+                    attributes()
+                        .float("position", 3)
+                        .float("color", 4)
+                        .float("normal", 3)
+                        .float("uv", 2),
+                )],
+                glow::TRIANGLES,
             );
 
-            gl.enable_vertex_attrib_array(2);
-            gl.vertex_attrib_pointer_f32(
-                2,
-                3,
-                glow::FLOAT,
-                false,
-                12 * size_of::<f32>() as i32,
-                7 * size_of::<f32>() as i32,
+            let grid = VertexArray::new(
+                gl,
+                &lines_shader,
+                [(
+                    Buffer::new(gl, &generate_grid_lines(10, 1.0)),
+                    attributes().float("position", 3),
+                )],
+                glow::LINES,
             );
-
-            gl.enable_vertex_attrib_array(3);
-            gl.vertex_attrib_pointer_f32(
-                3,
-                2,
-                glow::FLOAT,
-                false,
-                12 * size_of::<f32>() as i32,
-                10 * size_of::<f32>() as i32,
-            );
-
-            let texture = gl.create_texture()?;
-            gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_MIN_FILTER,
-                glow::LINEAR_MIPMAP_LINEAR as i32,
-            );
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_MAG_FILTER,
-                glow::LINEAR as i32,
-            );
-
-            gl.tex_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                glow::RGBA as i32,
-                128,
-                128,
-                0,
-                glow::RGBA,
-                glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(Some(pixels.as_slice())),
-            );
-            gl.generate_mipmap(glow::TEXTURE_2D);
-
-            let lines_vao = gl
-                .create_vertex_array()?;
-            gl.bind_vertex_array(Some(lines_vao));
-
-            let lines_vbo = gl.create_buffer()?;
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(lines_vbo));
-
-            gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 3 * size_of::<f32>() as i32, 0);
-
             let vertices = generate_wireframe_box(vec3(6.0, 6.0, 6.0), vec3(0.0, 3.0, 0.0));
 
-            let lines_vertices_u8: &[u8] =
-                core::slice::from_raw_parts(vertices.as_ptr() as *const u8, size_of_val(&vertices[..]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, lines_vertices_u8, glow::STATIC_DRAW);
+            let lines = VertexArray::new(
+                gl,
+                &lines_shader,
+                [(
+                    Buffer::new(gl, &vertices),
+                    attributes().float("position", 3),
+                )],
+                glow::LINES,
+            );
 
-
-            let grid_vao = gl.create_vertex_array()?;
-            gl.bind_vertex_array(Some(grid_vao));
-
-            let grid_vbo = gl.create_buffer()?;
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(grid_vbo));
-
-            gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 3 * size_of::<f32>() as i32, 0);
-
-            let vertices = generate_grid_lines(10, 1.0);
-            let grid_vertices_u8: &[u8] =
-                core::slice::from_raw_parts(vertices.as_ptr() as *const u8, size_of_val(&vertices[..]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, grid_vertices_u8, glow::STATIC_DRAW);
-
-
-            gl.bind_buffer(glow::ARRAY_BUFFER, None);
-            gl.bind_vertex_array(None);
-
-
-            gl.enable(glow::DEPTH_TEST);
-            gl.depth_func(glow::LEQUAL);
+            let model_texture = Texture::new(gl, &pixels);
 
             Ok(Self {
                 shader: model_shader,
                 lines_shader,
-                model_vao,
-                model_vbo,
-                lines_vao,
-                lines_vbo,
-                grid_vao,
-                grid_vbo,
-                vertex_count: icn.animation_shapes[0].len(),
-                texture,
+                model,
+                lines,
+                grid,
+                model_texture,
             })
         }
     }
 
     pub fn replace_texture(&mut self, gl: &glow::Context, icn: &ICN) {
-        use glow::HasContext as _;
-
-        unsafe {
-            gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
-            let image = icn
-                .texture
-                .pixels
-                .iter()
-                .flat_map(|&color| {
-                    let color: Color = color.into();
-                    let bytes: [u8; 4] = color.into();
-                    bytes
-                })
-                .collect::<Vec<u8>>();
-            gl.tex_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                glow::RGBA as i32,
-                128,
-                128,
-                0,
-                glow::RGBA,
-                glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(Some(image.as_slice())),
-            );
-            gl.generate_mipmap(glow::TEXTURE_2D);
-        }
+        let image = icn
+            .texture
+            .pixels
+            .iter()
+            .flat_map(|&color| {
+                let color: Color = color.into();
+                let bytes: [u8; 4] = color.into();
+                bytes
+            })
+            .collect::<Vec<u8>>();
+        self.model_texture.set(gl, &image);
     }
 
     fn paint(&mut self, gl: &glow::Context, aspect_ratio: f32, orbit_camera: OrbitCamera) {
@@ -477,81 +379,36 @@ impl ICNRenderer {
             gl.depth_func(glow::LEQUAL);
             gl.clear(glow::DEPTH_BUFFER_BIT);
 
-            let program = self.lines_shader.program();
-            gl.use_program(Some(program));
-
-            gl.uniform_matrix_4_f32_slice(
-                Some(&gl.get_uniform_location(program, "projection").unwrap()),
-                false,
-                &convert_matrix(projection),
-            );
-            gl.uniform_matrix_4_f32_slice(
-                Some(&gl.get_uniform_location(program, "view").unwrap()),
-                false,
-                &convert_matrix(view),
-            );
+            self.lines_shader.set(gl, "projection", projection);
+            self.lines_shader.set(gl, "view", view);
+            self.lines_shader.set(gl, "color", vec3(0.0, 0.0, 0.0));
 
             gl.disable(glow::DEPTH_TEST);
             gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
-
-            gl.uniform_3_f32_slice(Some(&gl.get_uniform_location(program, "color").unwrap()), &vec3::<f32>(0.0, 0.0, 0.0).to_glow());
-            gl.bind_vertex_array(Some(self.grid_vao));
-            gl.draw_arrays(glow::LINES, 0, 84);
-
+            self.grid.render(gl);
             gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
             gl.enable(glow::DEPTH_TEST);
 
+            self.lines_shader.set(gl, "color", vec3(1.0, 0.0, 0.0));
+            self.lines.render(gl);
 
-            gl.uniform_3_f32_slice(Some(&gl.get_uniform_location(program, "color").unwrap()), &vec3::<f32>(1.0, 0.0, 0.0).to_glow());
-            gl.bind_vertex_array(Some(self.lines_vao));
-            gl.draw_arrays(glow::LINES, 0, 24);
-
-
-
-            let program = self.shader.program();
-            gl.use_program(Some(program));
-            gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
-            gl.uniform_matrix_4_f32_slice(
-                Some(&gl.get_uniform_location(program, "projection").unwrap()),
-                false,
-                &convert_matrix(projection),
-            );
-            gl.uniform_matrix_4_f32_slice(
-                Some(&gl.get_uniform_location(program, "view").unwrap()),
-                false,
-                &convert_matrix(view),
-            );
-            gl.uniform_matrix_4_f32_slice(
-                Some(&gl.get_uniform_location(program, "model").unwrap()),
-                false,
-                &convert_matrix(model),
-            );
-            gl.bind_vertex_array(Some(self.model_vao));
-            gl.draw_arrays(glow::TRIANGLES, 0, self.vertex_count as i32);
+            self.model_texture.bind(gl);
+            self.shader.set(gl, "tex", 0);
+            self.shader.set(gl, "projection", projection);
+            self.shader.set(gl, "view", view);
+            self.shader.set(gl, "model", model);
+            self.model.render(gl);
         }
     }
 
     pub fn drop(&self, gl: &glow::Context) {
-        use glow::HasContext as _;
-        unsafe {
-            gl.delete_vertex_array(self.model_vao);
-            gl.delete_buffer(self.lines_vbo);
-            gl.delete_vertex_array(self.lines_vao);
-            gl.delete_buffer(self.model_vbo);
-            gl.delete_vertex_array(self.grid_vao);
-            gl.delete_buffer(self.grid_vbo);
-            self.shader.drop(gl);
-            self.lines_shader.drop(gl);
-            gl.delete_texture(self.texture);
-        }
+        self.lines.drop(gl);
+        self.grid.drop(gl);
+        self.model.drop(gl);
+        self.shader.drop(gl);
+        self.lines_shader.drop(gl);
+        self.model_texture.drop(gl);
     }
-}
-
-fn convert_matrix(mat: Matrix4<f32>) -> Vec<f32> {
-    vec![
-        mat.x.x, mat.x.y, mat.x.z, mat.x.w, mat.y.x, mat.y.y, mat.y.z, mat.y.w, mat.z.x, mat.z.y,
-        mat.z.z, mat.z.w, mat.w.x, mat.w.y, mat.w.z, mat.w.w,
-    ]
 }
 
 pub fn generate_wireframe_box(size: Vector3<f32>, center: Vector3<f32>) -> Vec<f32> {
@@ -583,15 +440,15 @@ pub fn generate_wireframe_box(size: Vector3<f32>, center: Vector3<f32>) -> Vec<f
         (2, 6),
         (3, 7), // vertical lines
     ]
-        .iter()
-        .map(|(start, end)| {
-            let a = corners[*start] + center;
-            let b = corners[*end] + center;
+    .iter()
+    .map(|(start, end)| {
+        let a = corners[*start] + center;
+        let b = corners[*end] + center;
 
-            vec![a.x, a.y, a.z, b.x, b.y, b.z]
-        })
-        .flatten()
-        .collect::<Vec<_>>()
+        vec![a.x, a.y, a.z, b.x, b.y, b.z]
+    })
+    .flatten()
+    .collect::<Vec<_>>()
 }
 
 fn generate_grid_lines(size: i32, step: f32) -> Vec<f32> {
