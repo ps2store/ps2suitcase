@@ -19,5 +19,5 @@ void main() {
 
     vec3 finalColor = (ambient + diffuse) * Color.rgb * texture(tex, TexCoord).rgb;
 
-    out_color = vec4(finalColor, 1.0);
+    out_color = vec4(pow(finalColor, vec3(1.6)), 1.0);
 }

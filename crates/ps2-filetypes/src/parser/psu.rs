@@ -30,7 +30,6 @@ impl PSUParser {
     fn parse(&mut self) -> Result<Vec<PSUEntry>, std::io::Error> {
         let mut result = vec![];
         while self.c.position() < self.len {
-            println!("{:#?}", self.c.position());
             let entry = self.read_entry()?;
             result.push(entry);
         }
@@ -42,7 +41,6 @@ impl PSUParser {
         let id = self.c.read_u16::<LE>()?;
         let _ = self.c.read_u16::<LE>()?;
         let size = self.c.read_u32::<LE>()?;
-        println!("{} {}", self.c.position(), size);
         let created = self.read_timestamp()?;
         let sector = self.c.read_u16::<LE>()?;
         let _ = self.c.read_u16::<LE>()?;
