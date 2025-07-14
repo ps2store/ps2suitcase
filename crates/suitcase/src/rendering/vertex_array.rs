@@ -1,5 +1,5 @@
 use crate::rendering::buffer::Buffer;
-use crate::rendering::Program;
+use crate::rendering::program::Program;
 use eframe::glow;
 use eframe::glow::HasContext;
 
@@ -79,6 +79,10 @@ impl VertexArray {
             count,
             type_,
         }
+    }
+
+    pub fn buffer(&self, i: usize) -> &Buffer {
+        &self.buffers[i]
     }
 
     pub fn render(&self, gl: &glow::Context) {
