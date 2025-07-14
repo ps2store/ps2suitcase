@@ -191,6 +191,10 @@ impl ICNViewer {
                     }
                 }
 
+                if ui.button("Reset View").clicked() {
+                    self.camera.reset_view();
+                }
+
                 ui.checkbox(&mut self.dark_mode, "Dark Mode");
             });
 
