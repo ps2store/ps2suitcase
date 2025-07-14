@@ -51,6 +51,12 @@ impl OrbitCamera {
             vec3(0.0, 1.0, 0.0),
         )
     }
+    
+    pub fn reset_view(&mut self) {
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.distance = 10.0;
+    }
 }
 
 pub struct ICNViewer {
@@ -200,6 +206,15 @@ impl ICNViewer {
                     if let Some(path) = ui.ctx().open_file_filter(&["png"]) {
                         self.replace_texture(path);
                     }
+                }
+
+                if ui
+                    .button(
+                        "Reset View",
+                    )
+                    .clicked()
+                {
+                    self.camera.reset_view();
                 }
 
                 ui.checkbox(&mut self.dark_mode, "Dark Mode");
