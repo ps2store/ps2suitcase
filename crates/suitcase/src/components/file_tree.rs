@@ -29,12 +29,12 @@ impl FileTree {
 
     pub fn icon(file_name: &str) -> ImageSource {
         match file_name.to_lowercase().split('.').next_back() {
-            None => include_image!("../../assets/lowdpi/fm_file.png"),
-            Some("elf") => include_image!("../../assets/lowdpi/fm_elf.png"),
-            Some("icn") => include_image!("../../assets/lowdpi/fm_icon.png"),
-            Some("sys") => include_image!("../../assets/lowdpi/fm_cfg_icon.png"),
-            Some("cfg") => include_image!("../../assets/lowdpi/fm_cfg_other.png"),
-            Some(_) => include_image!("../../assets/lowdpi/fm_file.png"),
+            None => include_image!("../../assets/hidpi/fm_file.png"),
+            Some("elf") => include_image!("../../assets/hidpi/fm_elf.png"),
+            Some("icn") => include_image!("../../assets/hidpi/fm_icon.png"),
+            Some("sys") => include_image!("../../assets/hidpi/fm_cfg_icon.png"),
+            Some("cfg") => include_image!("../../assets/hidpi/fm_cfg_other.png"),
+            Some(_) => include_image!("../../assets/hidpi/fm_file.png"),
         }
     }
 
@@ -82,7 +82,7 @@ impl FileTree {
                     });
                 })
                 .body(|body| {
-                    body.rows(20.0, len, |mut row| {
+                    body.rows(32.0, len, |mut row| {
                         let row_index = row.index();
                         let file = app.files[row_index].clone();
                         let name = &file.name;
