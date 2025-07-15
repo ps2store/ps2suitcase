@@ -35,4 +35,10 @@ impl OrbitCamera {
             vec3(0.0, 1.0, 0.0),
         )
     }
+
+    pub fn reset_view(&mut self) {
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.distance = 10.0;
+    }
 }
