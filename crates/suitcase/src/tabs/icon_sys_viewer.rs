@@ -2,9 +2,74 @@ use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
 use eframe::egui::{CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
-use ps2_filetypes::IconSys;
+use ps2_filetypes::{ColorF, IconSys, Vector};
 use std::ops::Add;
 use std::path::PathBuf;
+use ps2_filetypes::color::Color;
+
+pub struct PS2RgbaInterface {
+    pub rgb: [f32; 3],
+    pub alpha: f32,
+}
+
+impl PS2RgbaInterface {
+    pub fn build_from_color_f(color_f: ColorF) -> Self {
+        Self {
+            rgb: [color_f.r, color_f.g, color_f.b],
+            alpha: color_f.a,
+        }
+    }
+    pub fn build_from_color(color: Color) -> Self {
+        Self {
+            rgb: [
+                Self::convert_color_to_float(color.r),
+                Self::convert_color_to_float(color.g),
+                Self::convert_color_to_float(color.b),
+            ],
+            alpha: Self::convert_color_to_float(color.a),
+        }
+    }
+
+    pub fn to_color_f(&self) -> ColorF {
+        ColorF {
+            r: self.rgb[0],
+            g: self.rgb[1],
+            b: self.rgb[2],
+            a: self.alpha,
+        }
+    }
+
+    pub fn to_color(&self) -> Color {
+        Color {
+            r: Self::convert_color_to_int(self.rgb[0]),
+            g: Self::convert_color_to_int(self.rgb[1]),
+            b: Self::convert_color_to_int(self.rgb[2]),
+            a: Self::convert_color_to_int(self.alpha),
+        }
+    }
+
+    pub fn convert_color_to_float(color: u8) -> f32 {
+        color as f32 / 255.0
+    }
+
+    pub fn convert_color_to_int(color: f32) -> u8 {
+        (color * 255.0) as u8
+    }
+}
+
+pub struct Light {
+    pub color: PS2RgbaInterface,
+    pub direction: Vector,
+}
+
+impl Light {
+    pub fn new(color: ColorF, direction: Vector) -> Self {
+        Self {
+            color: PS2RgbaInterface::build_from_color_f(color),
+            direction,
+        }
+    }
+}
 
 pub struct IconSysViewer {
     title: String,
@@ -12,6 +77,10 @@ pub struct IconSysViewer {
     pub icon_file: String,
     pub icon_copy_file: String,
     pub icon_delete_file: String,
+    pub background_transparency: u32,
+    pub ambient_color: PS2RgbaInterface,
+    pub background_colors: [PS2RgbaInterface; 4],
+    pub lights: [Light; 3],
     pub sys: IconSys,
     pub file_path: PathBuf,
 }
@@ -27,6 +96,19 @@ impl IconSysViewer {
             icon_file: sys.icon_file.clone(),
             icon_copy_file: sys.icon_copy_file.clone(),
             icon_delete_file: sys.icon_delete_file.clone(),
+            background_transparency: sys.background_transparency.clone(),
+            ambient_color: PS2RgbaInterface::build_from_color_f(sys.ambient_color),
+            background_colors: [
+                PS2RgbaInterface::build_from_color(sys.background_colors[0]),
+                PS2RgbaInterface::build_from_color(sys.background_colors[1]),
+                PS2RgbaInterface::build_from_color(sys.background_colors[2]),
+                PS2RgbaInterface::build_from_color(sys.background_colors[3]),
+            ],
+            lights: [
+                Light::new(sys.light_colors[0], sys.light_directions[0]),
+                Light::new(sys.light_colors[1], sys.light_directions[1]),
+                Light::new(sys.light_colors[2], sys.light_directions[2]),
+            ],
             sys,
             file_path: file.file_path.clone(),
             file: file
@@ -65,17 +147,76 @@ impl IconSysViewer {
                 .num_columns(2)
                 .show(ui, |ui| {
                     ui.label("Title");
-                    ui.add(TextEdit::singleline(&mut self.title).desired_width(f32::INFINITY));
+                    ui.add(TextEdit::singleline(&mut self.title));
                     ui.end_row();
-                    ui.label("Icon");
+
+                    Ui::separator(ui);
+                    ui.end_row();
+
+                    ui.label("Icons");
+                    ui.end_row();
+                    ui.label("List");
                     file_select(ui, "list_icon", &mut self.icon_file, &files);
                     ui.end_row();
-                    ui.label("Copy Icon");
+                    ui.label("Copy");
                     file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
                     ui.end_row();
-                    ui.label("Delete Icon");
+                    ui.label("Delete");
                     file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
                     ui.end_row();
+
+                    Ui::separator(ui);
+                    ui.end_row();
+
+                    ui.label("Background Transparency").on_hover_ui(|ui| {
+                        ui.label(
+                            "This is the opposite of opacity, so a value of 100 will make \
+                            the background completely transparent",
+                        );
+                    });
+                    ui.add(egui::Slider::new(&mut self.background_transparency, 0..=100));
+                    ui.end_row();
+                    ui.label("Background Colors");
+                    ui.end_row();
+                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.background_colors[0].rgb);
+                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.background_colors[1].rgb);
+                    ui.end_row();
+                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.background_colors[2].rgb);
+                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.background_colors[3].rgb);
+                    ui.end_row();
+
+                    Ui::separator(ui);
+                    ui.end_row();
+
+                    ui.label("Ambient Color");
+                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.ambient_color.rgb);
+                    ui.end_row();
+
+                    Ui::separator(ui);
+                    ui.end_row();
+
+                    for (index, light) in self.lights.iter_mut().enumerate() {
+                        let human_readable_index = index + 1;
+                        ui.label(format!("Light {human_readable_index}"));
+                        ui.end_row();
+                        ui.label("Color");
+                        egui::widgets::color_picker::color_edit_button_rgb(ui, &mut light.color.rgb);
+                        ui.end_row();
+
+                        ui.label("X");
+                        ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0));
+                        ui.end_row();
+                        ui.label("Y");
+                        ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0));
+                        ui.end_row();
+                        ui.label("Z");
+                        ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0));
+                        ui.end_row();
+
+                        Ui::separator(ui);
+                        ui.end_row();
+                    }
+
                 });
             ui.button("Save")
                 .on_hover_text("Save changes")
@@ -109,6 +250,24 @@ impl Tab for IconSysViewer {
             icon_file: self.icon_file.clone(),
             icon_copy_file: self.icon_copy_file.clone(),
             icon_delete_file: self.icon_delete_file.clone(),
+            background_transparency: self.background_transparency.clone(),
+            ambient_color: self.ambient_color.to_color_f(),
+            background_colors: [
+                self.background_colors[0].to_color(),
+                self.background_colors[1].to_color(),
+                self.background_colors[2].to_color(),
+                self.background_colors[3].to_color(),
+            ],
+            light_colors: [
+                self.lights[0].color.to_color_f(),
+                self.lights[1].color.to_color_f(),
+                self.lights[2].color.to_color_f(),
+            ],
+            light_directions: [
+                self.lights[0].direction,
+                self.lights[1].direction,
+                self.lights[2].direction,
+            ],
             ..self.sys.clone()
         };
         std::fs::write(&self.file_path, new_sys.to_bytes().unwrap()).expect("Failed to save icon");
