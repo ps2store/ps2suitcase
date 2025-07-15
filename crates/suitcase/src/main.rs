@@ -148,10 +148,22 @@ impl PSUBuilderApp {
                     self.show_settings = true;
                 },
                 AppEvent::StartPCSX2 => {
-                    Command::new(self.state.pcsx2_path.clone()).arg("-bios").spawn().expect("Failed to start PCSX2");
+                    let pcsx = if cfg!(target_os = "macos") {
+                        self.state.pcsx2_path.clone() + "/Contents/MacOS/PCSX2"
+                    } else {
+                        self.state.pcsx2_path.clone()
+                    };
+
+                    Command::new(pcsx).arg("-bios").spawn().expect("Failed to start PCSX2");
                 },
                 AppEvent::StartPCSX2Elf(path) => {
-                    Command::new(self.state.pcsx2_path.clone())
+                    let pcsx = if cfg!(target_os = "macos") {
+                        self.state.pcsx2_path.clone() + "/Contents/MacOS/PCSX2"
+                    } else {
+                        self.state.pcsx2_path.clone()
+                    };
+
+                    Command::new(pcsx)
                         .arg("--")
                         .arg(path)
                         .spawn()
@@ -306,16 +318,18 @@ impl eframe::App for PSUBuilderApp {
                     egui::CentralPanel::default().show(ctx, |ui| {
                         Grid::new("settings_grid").num_columns(2).show(ui, |ui| {
                             ui.label("PCSX2 Path:");
-                            let is_windows = cfg!(target_os = "windows");
-                            ui.add_enabled_ui(is_windows, |ui| {
-                                ui.file_picker(
-                                    &mut self.state.pcsx2_path,
-                                    Filters::new().add_filter("PCSX2 Executable", ["exe"]),
-                                );
-                            });
-                            if !is_windows {
-                                ui.label("PCSX2 Path is only configurable on Windows.");
-                            }
+
+                            #[cfg(target_os = "windows")]
+                            let filters = Filters::new().add_filter("PCSX2 Executable", ["exe"]);
+                            #[cfg(target_os = "macos")]
+                            let filters = Filters::new().add_filter("PCSX2 Application", ["app"]);
+                            #[cfg(target_os = "linux")]
+                            let filters = Filters::new();
+
+                            ui.file_picker(
+                                &mut self.state.pcsx2_path,
+                                filters,
+                            );
                             ui.end_row();
                         });
                     });
