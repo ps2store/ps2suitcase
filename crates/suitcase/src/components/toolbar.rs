@@ -13,7 +13,7 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
         ui.set_min_size(Vec2::new(24.0, 24.0));
         if toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_open_dir.png"),
+            include_image!("../../assets/hidpi/main_open_dir.png"),
             "Open a directory",
         )
         .clicked()
@@ -22,7 +22,7 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
         }
         if toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_open_sav.png"),
+            include_image!("../../assets/hidpi/main_open_sav.png"),
             "Open a save file",
         )
         .clicked()
@@ -31,17 +31,17 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
         }
         toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_open_vmc.png"),
+            include_image!("../../assets/hidpi/main_open_vmc.png"),
             "Open a virtual memory card",
         );
         toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_mk_titlecfg.png"),
+            include_image!("../../assets/hidpi/main_mk_titlecfg.png"),
             "Make title configuration",
         );
         if toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_mk_iconsys.png"),
+            include_image!("../../assets/hidpi/main_mk_iconsys.png"),
             "Create ICN file",
         )
         .clicked()
@@ -50,27 +50,27 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
         }
         toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_sav_meta.png"),
+            include_image!("../../assets/hidpi/main_sav_meta.png"),
             "Save metadata",
         );
         toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_extract_all.png"),
+            include_image!("../../assets/hidpi/main_extract_all.png"),
             "Extract all saves",
         );
         toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_mk_sav.png"),
+            include_image!("../../assets/hidpi/main_mk_sav.png"),
             "Make save file",
         );
         toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_mk_vmc.png"),
+            include_image!("../../assets/hidpi/main_mk_vmc.png"),
             "Make virtual memory card",
         );
         toolbar_item(
             ui,
-            include_image!("../../assets/lowdpi/main_valid_ok.png"),
+            include_image!("../../assets/hidpi/main_valid_ok.png"),
             "Validate save file",
         );
 
