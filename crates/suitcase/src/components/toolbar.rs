@@ -29,11 +29,13 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
         {
             app.open_save();
         }
-        toolbar_item(
-            ui,
-            include_image!("../../assets/hidpi/main_open_vmc.png"),
-            "Open a virtual memory card",
-        );
+        ui.add_enabled_ui(false, |ui| {
+            toolbar_item(
+                ui,
+                include_image!("../../assets/hidpi/main_open_vmc.png"),
+                "Open a virtual memory card",
+            );
+        });
         toolbar_item(
             ui,
             include_image!("../../assets/hidpi/main_mk_titlecfg.png"),
@@ -68,15 +70,16 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
             include_image!("../../assets/hidpi/main_mk_vmc.png"),
             "Make virtual memory card",
         );
-        toolbar_item(
+        if toolbar_item(
             ui,
             include_image!("../../assets/hidpi/main_valid_ok.png"),
             "Validate save file",
-        );
+        ).clicked() {
+            app.validate();
+        }
 
         if !app.pcsx2_path.is_empty() {
-            if ui
-                .button("Start PCSX2")
+            if toolbar_item(ui, include_image!("../../assets/hidpi/main_emu_osdsys.png"), "Boot OSDSYS")
                 .clicked()
             {
                 app.start_pcsx2();

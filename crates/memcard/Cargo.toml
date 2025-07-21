@@ -1,0 +1,8 @@
+[package]
+name = "memcard"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+byteorder = "1.5.0"

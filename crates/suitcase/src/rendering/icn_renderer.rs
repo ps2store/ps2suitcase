@@ -175,13 +175,15 @@ impl ICNRenderer {
             weights.push(y);
         }
 
-        for (j, shape) in self.shapes.iter().enumerate() {
-            for (i, vertex) in shape.iter().enumerate() {
-                vertices[i] += *vertex * weights[j]/sum;
+        if !self.timelines.is_empty() {
+            for (j, shape) in self.shapes.iter().enumerate() {
+                for (i, vertex) in shape.iter().enumerate() {
+                    vertices[i] += *vertex * weights[j]/sum;
+                }
             }
+            self.model.buffer(0).set(gl, &vertices);
         }
 
-        self.model.buffer(0).set(gl, &vertices);
 
         unsafe {
             gl.enable(glow::DEPTH_TEST);

@@ -32,6 +32,7 @@ use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
 use std::process::Command;
+use crate::io::validate::validate;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -168,6 +169,9 @@ impl PSUBuilderApp {
                         .arg(path)
                         .spawn()
                         .expect("Failed to start PCSX2 with ELF");
+                },
+                AppEvent::Validate => {
+                    validate(self.state.opened_folder.clone().expect("No opened folder").to_str().unwrap());
                 }
             }
         }
