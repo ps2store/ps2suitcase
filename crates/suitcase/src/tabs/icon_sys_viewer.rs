@@ -1,12 +1,13 @@
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
-use eframe::egui::{CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
+use eframe::egui::{vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui};
+use ps2_filetypes::color::Color;
 use ps2_filetypes::{ColorF, IconSys, Vector};
 use std::ops::Add;
 use std::path::PathBuf;
-use ps2_filetypes::color::Color;
 
+#[derive(Copy, Clone)]
 pub struct PS2RgbaInterface {
     pub rgb: [f32; 3],
     pub alpha: f32,
@@ -54,6 +55,16 @@ impl PS2RgbaInterface {
 
     pub fn convert_color_to_int(color: f32) -> u8 {
         (color * 255.0) as u8
+    }
+}
+
+impl From<PS2RgbaInterface> for Color32 {
+    fn from(value: PS2RgbaInterface) -> Self {
+        Rgba::from_rgb(
+            value.rgb[0],
+           value.rgb[1],
+           value.rgb[2],
+        ).into()
     }
 }
 
@@ -143,81 +154,111 @@ impl IconSysViewer {
             .collect();
 
         ui.vertical(|ui| {
-            eframe::egui::Grid::new(Id::from("IconSysEditor"))
-                .num_columns(2)
-                .show(ui, |ui| {
-                    ui.label("Title");
-                    ui.add(TextEdit::singleline(&mut self.title));
-                    ui.end_row();
+            // eframe::egui::Grid::new(Id::from("IconSysEditor"))
+            //     .num_columns(2)
+            //     .show(ui, |ui| {
+            ui.heading("Icon Configuration");
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label("Title");
+                ui.add(TextEdit::singleline(&mut self.title));
+            });
 
-                    Ui::separator(ui);
-                    ui.end_row();
+            ui.heading("Icons");
+            ui.add_space(4.0);
 
-                    ui.label("Icons");
-                    ui.end_row();
-                    ui.label("List");
-                    file_select(ui, "list_icon", &mut self.icon_file, &files);
-                    ui.end_row();
-                    ui.label("Copy");
-                    file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
-                    ui.end_row();
-                    ui.label("Delete");
-                    file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
-                    ui.end_row();
+            Grid::new("icons").num_columns(2).show(ui, |ui| {
+                ui.label("List");
+                file_select(ui, "list_icon", &mut self.icon_file, &files);
+                ui.end_row();
+                ui.label("Copy");
+                file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
+                ui.end_row();
+                ui.label("Delete");
+                file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
+            });
 
-                    Ui::separator(ui);
-                    ui.end_row();
+            ui.heading("Background");
+            ui.add_space(4.0);
 
-                    ui.label("Background Transparency").on_hover_ui(|ui| {
-                        ui.label(
-                            "This is the opposite of opacity, so a value of 100 will make \
-                            the background completely transparent",
-                        );
-                    });
-                    ui.add(egui::Slider::new(&mut self.background_transparency, 0..=100));
-                    ui.end_row();
-                    ui.label("Background Colors");
-                    ui.end_row();
-                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.background_colors[0].rgb);
-                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.background_colors[1].rgb);
-                    ui.end_row();
-                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.background_colors[2].rgb);
-                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.background_colors[3].rgb);
-                    ui.end_row();
+            const SPACING: f32 = 40.0;
 
-                    Ui::separator(ui);
-                    ui.end_row();
+            ui.add_sized(vec2(SPACING * 3.0, SPACING * 3.0), |ui: &mut Ui| {
+                draw_background(ui, &self.background_colors);
+                ui.spacing_mut().interact_size = vec2(SPACING, SPACING);
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-                    ui.label("Ambient Color");
-                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.ambient_color.rgb);
-                    ui.end_row();
+                ui.columns(3, |cols| {
+                    egui::widgets::color_picker::color_edit_button_rgb(
+                        &mut cols[0],
+                        &mut self.background_colors[0].rgb,
+                    );
+                    cols[1].add_space(SPACING);
+                    egui::widgets::color_picker::color_edit_button_rgb(
+                        &mut cols[2],
+                        &mut self.background_colors[1].rgb,
+                    );
 
-                    Ui::separator(ui);
-                    ui.end_row();
+                    cols[0].add_space(SPACING);
+                    cols[1].add_space(SPACING);
+                    cols[2].add_space(SPACING);
 
-                    for (index, light) in self.lights.iter_mut().enumerate() {
-                        let human_readable_index = index + 1;
-                        ui.label(format!("Light {human_readable_index}"));
-                        ui.end_row();
-                        ui.label("Color");
-                        egui::widgets::color_picker::color_edit_button_rgb(ui, &mut light.color.rgb);
-                        ui.end_row();
-
-                        ui.label("X");
-                        ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0));
-                        ui.end_row();
-                        ui.label("Y");
-                        ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0));
-                        ui.end_row();
-                        ui.label("Z");
-                        ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0));
-                        ui.end_row();
-
-                        Ui::separator(ui);
-                        ui.end_row();
-                    }
-
+                    egui::widgets::color_picker::color_edit_button_rgb(
+                        &mut cols[0],
+                        &mut self.background_colors[2].rgb,
+                    );
+                    cols[1].add_space(SPACING);
+                    egui::widgets::color_picker::color_edit_button_rgb(
+                        &mut cols[2],
+                        &mut self.background_colors[3].rgb,
+                    );
                 });
+                ui.response()
+            });
+
+            Grid::new("background").num_columns(2).show(ui, |ui| {
+                ui.label("Background Transparency").on_hover_ui(|ui| {
+                    ui.label(
+                        "This is the opposite of opacity, so a value of 100 will make \
+                                the background completely transparent",
+                    );
+                });
+                ui.add(egui::Slider::new(
+                    &mut self.background_transparency,
+                    0..=100,
+                ));
+                ui.end_row();
+                ui.label("Ambient Color");
+                egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.ambient_color.rgb);
+                ui.end_row();
+            });
+
+            ui.heading("Lights");
+            ui.add_space(4.0);
+
+            for (index, light) in self.lights.iter_mut().enumerate() {
+                let human_readable_index = index + 1;
+                ui.label(format!("Light {human_readable_index}"));
+                ui.end_row();
+                ui.label("Color");
+                egui::widgets::color_picker::color_edit_button_rgb(ui, &mut light.color.rgb);
+                ui.end_row();
+
+                ui.label("X");
+                ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0));
+                ui.end_row();
+                ui.label("Y");
+                ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0));
+                ui.end_row();
+                ui.label("Z");
+                ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0));
+                ui.end_row();
+
+                Ui::separator(ui);
+                ui.end_row();
+            }
+
+            // });
             ui.button("Save")
                 .on_hover_text("Save changes")
                 .clicked()
@@ -283,23 +324,38 @@ fn set_border_radius(ui: &mut Ui, radius: CornerRadius) {
 
 fn file_select(ui: &mut Ui, name: impl Into<String>, value: &mut String, files: &[String]) {
     let id = Id::from(name.into());
-    let layout_repsonse = ui
-        .horizontal(|ui| {
-            ui.style_mut().spacing.item_spacing.x = 1.0;
+    let layout_repsonse = ui.horizontal(|ui| {
+        ui.style_mut().spacing.item_spacing.x = 1.0;
 
-            set_border_radius(ui, CornerRadius{nw: 2, sw: 2, ne: 0, se: 0});
-            ui.text_edit_singleline(value);
+        set_border_radius(
+            ui,
+            CornerRadius {
+                nw: 2,
+                sw: 2,
+                ne: 0,
+                se: 0,
+            },
+        );
+        ui.text_edit_singleline(value);
 
-            set_border_radius(ui, CornerRadius{nw: 0, sw: 0, ne: 2, se: 2});
-            let response = ui.button("🔽");
-            if response.clicked() {
-                ui.memory_mut(|mem| {
-                    mem.toggle_popup(id);
-                });
-            }
+        set_border_radius(
+            ui,
+            CornerRadius {
+                nw: 0,
+                sw: 0,
+                ne: 2,
+                se: 2,
+            },
+        );
+        let response = ui.button("🔽");
+        if response.clicked() {
+            ui.memory_mut(|mem| {
+                mem.toggle_popup(id);
+            });
+        }
 
-            response
-        });
+        response
+    });
 
     // Small hack to ensure the popup is positioned correctly
     let res = Response {
@@ -315,4 +371,43 @@ fn file_select(ui: &mut Ui, name: impl Into<String>, value: &mut String, files: 
             }
         });
     });
+}
+
+fn draw_background(ui: &mut Ui, colors: &[PS2RgbaInterface; 4]) {
+    let rect = ui.available_rect_before_wrap();
+    let painter = ui.painter_at(rect);
+
+    let top_left = rect.left_top();
+    let top_right = rect.right_top();
+    let bottom_left = rect.left_bottom();
+    let bottom_right = rect.right_bottom();
+
+    let mut mesh = egui::epaint::Mesh::default();
+
+    let i0 = mesh.vertices.len() as u32;
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: top_left,
+        uv: egui::epaint::WHITE_UV,
+        color: colors[0].into(),
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: top_right,
+        uv: egui::epaint::WHITE_UV,
+        color: colors[1].into(),
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: bottom_right,
+        uv: egui::epaint::WHITE_UV,
+        color: colors[3].into(),
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: bottom_left,
+        uv: egui::epaint::WHITE_UV,
+        color: colors[2].into(),
+    });
+
+    mesh.indices
+        .extend_from_slice(&[i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3]);
+
+    painter.add(egui::Shape::mesh(mesh));
 }

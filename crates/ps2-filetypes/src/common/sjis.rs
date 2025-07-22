@@ -31,6 +31,14 @@ pub fn decode_sjis(input: &[u8]) -> String {
                     b'?'
                 }
             }
+            0x0D => {
+                if pair[1] == 0x0A {
+                    // TODO: Technically this should be \r\n, but for now it works
+                    b'\n'
+                } else {
+                    b'?'
+                }
+            }
             0x81 => match pair[1] {
                 0x40 => b' ',
                 0x46 => b':',
@@ -45,7 +53,7 @@ pub fn decode_sjis(input: &[u8]) -> String {
             },
             0x82 => match pair[1] {
                 0x4f..=0x7A => pair[1] - 31,
-                0x81..=0x98 => pair[1] - 32,
+                0x81..=0x99 => pair[1] - 32,
                 0x3F => b' ',
                 _ => b'?',
             },

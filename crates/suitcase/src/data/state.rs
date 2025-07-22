@@ -15,6 +15,7 @@ pub enum AppEvent {
     OpenSettings,
     StartPCSX2,
     StartPCSX2Elf(PathBuf),
+    Validate,
 }
 
 pub struct AppState {
@@ -22,6 +23,9 @@ pub struct AppState {
     pub files: Files,
     pub events: Vec<AppEvent>,
     pub pcsx2_path: String,
+}
+
+impl AppState {
 }
 
 impl AppState {
@@ -57,6 +61,9 @@ impl AppState {
     }
     pub fn start_pcsx2_elf(&mut self, path: PathBuf) {
         self.events.push(AppEvent::StartPCSX2Elf(path));
+    }
+    pub fn validate(&mut self) {
+        self.events.push(AppEvent::Validate);
     }
 }
 

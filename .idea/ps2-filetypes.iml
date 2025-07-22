@@ -9,6 +9,7 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/macros/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/xtask-build-app/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/suitcase/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/memcard/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/crates/ps2-filetypes/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
