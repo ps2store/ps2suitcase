@@ -210,7 +210,9 @@ impl Memcard {
             let entries = self.read_entry_cluster(chain_start as u32);
             for e in entries {
                 if sub_entries.len() < parent_entry.length as usize {
-                    sub_entries.push(e);
+                    if e.name[0] != b'.' {
+                        sub_entries.push(e);
+                    }
                 }
             }
             chain_start = self.get_fat_value(chain_start);
@@ -229,4 +231,49 @@ impl Memcard {
             value
         }
     }
+
+    pub fn print_allocation_table_recursive(&mut self) {
+        // Load root entries if not yet loaded
+        if self.entries_in_root.is_empty() {
+            self.entries_in_root = self.read_entry_cluster(self.rootdir_cluster as u32);
+        }
+
+        println!("File Allocation Table:");
+        println!("{:<50} {:<10} {}", "Path", "Cluster", "Chain Length");
+
+        for entry in self.entries_in_root.clone().iter() {
+            self.print_entry_allocation(entry, "".to_string());
+        }
+    }
+
+    fn print_entry_allocation(&mut self, entry: &DirEntry, path: String) {
+        if entry.is_empty() || entry.is_deleted() {
+            return;
+        }
+
+        let name = entry.name_as_string();
+        let full_path = if path.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", path, name)
+        };
+
+        let mut cluster = entry.cluster;
+        let mut chain = vec![];
+
+        while cluster != 0x7FFFFFFF {
+            chain.push(cluster);
+            cluster = self.get_fat_value(cluster);
+        }
+
+        println!("{:<50} {:<10} {}", full_path, entry.cluster, chain.len());
+
+        if entry.is_directory() {
+            let children = self.find_sub_entries(entry);
+            for child in &children {
+                self.print_entry_allocation(child, full_path.clone());
+            }
+        }
+    }
+
 }

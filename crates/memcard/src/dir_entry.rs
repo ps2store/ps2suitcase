@@ -89,4 +89,22 @@ impl DirEntry {
             name,
         })
     }
+    pub fn is_empty(&self) -> bool {
+        self.name[0] == 0x00
+    }
+
+    pub fn is_deleted(&self) -> bool {
+        self.name[0] == 0xE5
+    }
+
+    pub fn name_as_string(&self) -> String {
+        // Convert Shift-JIS or ASCII depending on your card
+        String::from_utf8_lossy(&self.name)
+            .trim_end_matches('\0')
+            .to_string()
+    }
+
+    pub fn is_directory(&self) -> bool {
+        self.mode & DF_DIRECTORY != 0 // Typical DOS attribute flag for directory
+    }
 }
