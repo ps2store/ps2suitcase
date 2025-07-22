@@ -2,7 +2,7 @@ mod dir_entry;
 mod fat;
 
 fn main() -> std::io::Result<()> {
-    let data = include_bytes!("../NewCard.ps2").to_vec();
+    let data = std::fs::read("../NewCard.ps2").expect("cannot read file");
 
     let mut mc = fat::Memcard::new(data);
 
