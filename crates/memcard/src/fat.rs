@@ -1,32 +1,7 @@
+use crate::dir_entry::DirEntry;
 use byteorder::{ReadBytesExt, LE};
 use std::cmp::min;
-use std::io;
 use std::io::{Cursor, Read, Seek};
-use crate::dir_entry::{DirEntry, DF_EXISTS};
-
-#[derive(Debug)]
-struct FATEntry {
-    next_cluster: u32,
-    occupied: bool,
-    raw: u32,
-}
-
-impl FATEntry {
-    fn from(value: u32) -> Self {
-        Self {
-            next_cluster: value & 0x7FFFFFFF,
-            occupied: value & 0x80000000 > 0,
-            raw: value,
-        }
-    }
-}
-
-pub struct Memcard {
-    c: Cursor<Vec<u8>>,
-    pub superblock: Superblock,
-    ecc_bytes: u32,
-    page_spare_area_size: usize,
-}
 
 #[derive(Debug)]
 pub struct Superblock {
@@ -45,205 +20,6 @@ pub struct Superblock {
     pub bad_block_list: [u32; 32],
     pub card_type: u8,
     pub card_flags: u8,
-}
-
-impl Memcard {
-    pub(crate) fn new(data: Vec<u8>) -> Self {
-        let size = data.len();
-        let mut c = Cursor::new(data);
-        let superblock = read_superblock(&mut c).unwrap();
-
-        let expected_size = superblock.clusters_per_card
-            * superblock.pages_per_cluster as u32
-            * superblock.page_size as u32;
-        let expected_size_with_ecc = (superblock.clusters_per_card
-            * superblock.pages_per_cluster as u32
-            * (superblock.page_size as u32 + 16)) as usize;
-
-        let mut ecc_bytes = 0;
-        let mut page_spare_area_size = 0;
-
-        if size == expected_size_with_ecc {
-            ecc_bytes = 12;
-            page_spare_area_size = 16;
-        }
-
-        Self {
-            c,
-            superblock,
-
-            ecc_bytes,
-            page_spare_area_size,
-        }
-    }
-    fn page_size(&self) -> usize {
-        self.superblock.page_size as usize + self.page_spare_area_size
-    }
-
-    fn page_capacity(&self) -> usize {
-        self.superblock.page_size as usize
-    }
-
-    fn cluster_size(&self) -> usize {
-        self.page_size() * self.superblock.pages_per_cluster as usize
-    }
-
-    fn cluster_capacity(&self) -> usize {
-        self.page_capacity() * self.superblock.pages_per_cluster as usize
-    }
-
-    fn logical_to_physical_offset(&mut self, cluster: u32, offset: usize) -> io::Result<usize> {
-        let k_capacity = self.cluster_capacity();
-        let k_size = self.cluster_size();
-        let p_capacity = self.page_capacity();
-        let p_size = self.page_size();
-
-        let mut cluster = self.seek(cluster, offset / k_capacity)?;
-        assert_ne!(cluster, 0xFFFFFFFF);
-
-        let offset = offset % k_capacity;
-        cluster += self.superblock.alloc_offset;
-
-        Ok(cluster as usize * k_size + offset / p_capacity * p_size)
-    }
-
-    fn get_entry_offest(&mut self, cluster: u32) -> io::Result<u32> {
-        let cluster_capacity = self.cluster_capacity() as u32;
-        let cluster_size = self.cluster_size() as u32;
-
-        let k = cluster_capacity / 4; // 4 = u32
-        let fat_offset = cluster % k;
-        let indirect_index = cluster / k;
-        let indirect_offset = indirect_index % k;
-        let dbl_indirect_index = indirect_index / k;
-        let indirect_cluster_num = self.superblock.ifc_list[dbl_indirect_index as usize];
-        // println!("[get_entry_offset] cluster: {}, k: {}, indirect_index: {}, dbl: {}, indirect_cluster: {:#X}", cluster, k, indirect_index, dbl_indirect_index, indirect_cluster_num);
-
-        let fat_cluster_offest = indirect_cluster_num * cluster_size + indirect_offset * 4;
-        self.c.set_position(fat_cluster_offest as u64);
-        let fat_cluster_num = self.c.read_u32::<LE>()?;
-        // println!("[get_entry_offset] fat_cluster_num: {:#X}", fat_cluster_num);
-
-        Ok(fat_cluster_num * cluster_size + fat_offset * 4)
-    }
-
-    fn get_table_entry(&mut self, cluster: u32) -> io::Result<FATEntry> {
-        let offset = self.get_entry_offest(cluster)? as u64;
-        self.c.set_position(offset);
-        let val = self.c.read_u32::<LE>()?;
-        let entry = FATEntry::from(val);
-        // println!("[get_table_entry] cluster: {:#X}, offset: {}, val: {:#X}, occupied: {}", cluster, offset, val, entry.occupied);
-        Ok(entry)
-    }
-
-    fn seek(&mut self, cluster: u32, count: usize) -> io::Result<u32> {
-        let mut cluster = cluster;
-        // println!("[seek] start cluster = {:#X}, count = {}", cluster, count);
-
-        for i in 0..count {
-            let fat_value = self.get_table_entry(cluster)?;
-            // println!("[seek] hop {}: cluster = {:#X}, next = {:#X}, occupied = {}", i, cluster, fat_value.next_cluster, fat_value.occupied);
-
-            if fat_value.raw == 0xFFFFFFFF || !fat_value.occupied {
-                // println!("[seek] invalid entry at cluster = {:#X}", cluster);
-                return Ok(0xFFFFFFFF);
-            }
-            cluster = fat_value.next_cluster;
-        }
-
-        // println!("[seek] resolved to cluster = {:#X}", cluster);
-        Ok(cluster)
-    }
-
-    fn read_fat(&mut self, cluster: u32, offset: usize, buf_size: usize) -> io::Result<Vec<u8>> {
-        if cluster == 0xFFFFFFFF {
-            return Ok(vec![]);
-        }
-
-        let mut cluster = cluster;
-        let mut offset = offset;
-        let mut buf_offset = 0;
-
-        let k_capacity = self.cluster_capacity();
-        let p_capacity = self.page_capacity();
-        let p_size = self.page_size();
-
-        let mut read_buf = vec![0; buf_size];
-        let mut page_buffer = vec![0u8; p_size];
-
-        while buf_offset < buf_size {
-            if cluster == 0xFFFFFFFF {
-                break;
-            }
-
-            cluster = self.seek(cluster, offset / k_capacity)?;
-            offset %= k_capacity;
-
-            let mc_offset = self.logical_to_physical_offset(cluster, offset)?;
-
-            let buffer_left = buf_size - buf_offset;
-            let page_left = p_capacity - offset % p_capacity;
-            let s = min(buffer_left, page_left);
-
-            // let spare_start = mc_offset + p_capacity;
-
-            self.c.set_position(mc_offset as u64);
-            self.c.read_exact(&mut page_buffer)?;
-
-            // println!("Filled {} / {}", buf_offset, buf_size);
-
-            read_buf[buf_offset..buf_offset + s].copy_from_slice(&page_buffer[..s]);
-
-            buf_offset += s;
-            offset += s;
-        }
-
-        Ok(read_buf)
-    }
-
-    pub fn get_child(&mut self, cluster: u32, count: usize) -> io::Result<DirEntry> {
-        Ok(DirEntry::from_bytes(&self.read_fat(cluster, count * 512, 512)?)?)
-    }
-
-    pub fn ls(&mut self, parent: &DirEntry) -> io::Result<Vec<DirEntry>> {
-        let dirents_per_cluster = self.cluster_capacity() / 512; // DIR_ENTRY_SIZE
-        let mut dirents = Vec::new();
-
-        let mut cluster = parent.cluster;
-
-        for i in 0.. parent.length as usize {
-            if i % dirents_per_cluster == 0 && i != 0 {
-                cluster = self.seek(cluster, 1)?;
-                if cluster == 0xFFFFFFFF {
-                    break
-                }
-            }
-
-            let child = self.get_child(cluster, i % dirents_per_cluster)?;
-
-            if child.mode & DF_EXISTS > 0 {
-                dirents.push(child);
-            } else {
-                // Skip deleted files
-                // eprintln!("Skipping deleted")
-            }
-        }
-
-        Ok(dirents)
-    }
-
-    pub fn read(&mut self, dir_entry: &DirEntry, size: usize, offset: usize) -> io::Result<Vec<u8>> {
-        let mut size = size;
-
-        if offset >= dir_entry.length as usize {
-            return Ok(vec![]);
-        }
-        if offset + size > dir_entry.length as usize {
-            size = dir_entry.length as usize - offset;
-        }
-
-        self.read_fat(dir_entry.cluster, offset, size)
-    }
 }
 
 fn read_superblock(c: &mut Cursor<Vec<u8>>) -> std::io::Result<Superblock> {
@@ -290,4 +66,167 @@ fn read_superblock(c: &mut Cursor<Vec<u8>>) -> std::io::Result<Superblock> {
         card_type,
         card_flags,
     })
+}
+
+pub struct Memcard {
+    c: Cursor<Vec<u8>>,
+    page_size: usize,
+    pages_per_cluster: usize,
+    ifc_list: [u32; 32],
+    pub(crate) rootdir_cluster: usize,
+    alloc_offset: usize,
+    spare_size: usize,
+    raw_page_size: usize,
+    cluster_size: usize,
+    fat_per_cluster: usize,
+    fat_matrix: Vec<Vec<u32>>,
+    root_entry: Option<DirEntry>,
+    entries_in_root: Vec<DirEntry>,
+}
+
+impl Memcard {
+    pub fn new(file: Vec<u8>) -> Memcard {
+        let mut c = Cursor::new(file);
+        let sb = read_superblock(&mut c).unwrap();
+
+        let page_size = sb.page_size as usize;
+        let pages_per_cluster = sb.pages_per_cluster as usize;
+        let ifc_list: [u32; 32] = sb.ifc_list;
+        let rootdir_cluster = sb.rootdir_cluster as usize;
+        let alloc_offset = sb.alloc_offset as usize;
+        let spare_size = (page_size / 128) * 4;
+        let raw_page_size = page_size + spare_size;
+        let cluster_size = page_size * pages_per_cluster;
+        let fat_per_cluster = cluster_size / 4;
+
+        let mut mc = Memcard {
+            c,
+            page_size,
+            pages_per_cluster,
+            ifc_list,
+            rootdir_cluster,
+            alloc_offset,
+            spare_size,
+            raw_page_size,
+            cluster_size,
+            fat_per_cluster,
+            fat_matrix: vec![],
+            root_entry: None,
+            entries_in_root: vec![],
+        };
+
+        mc.build_fat_matrix();
+
+        mc
+    }
+
+    fn build_matrix(&mut self, cluster_list: Vec<u32>) -> Vec<Vec<u32>> {
+        let mut matrix = vec![vec![0; self.fat_per_cluster]; cluster_list.len()];
+
+        for (i, cluster) in cluster_list.iter().enumerate() {
+            let mut cluster_value = Cursor::new(self.read_cluster(*cluster));
+
+            cluster_value
+                .read_u32_into::<LE>(&mut matrix[i])
+                .expect("Failed to read cluster");
+        }
+
+        matrix
+    }
+    fn build_fat_matrix(&mut self) {
+        let indirect_fat_matrix = self.build_matrix(self.ifc_list.to_vec());
+        let indirect_fat_matrix = Self::flatten_matrix(indirect_fat_matrix);
+
+        let indirect_fat_matrix = indirect_fat_matrix
+            .iter()
+            .filter(|f| **f != 0xFFFFFFFF)
+            .cloned()
+            .collect();
+
+        self.fat_matrix = self.build_matrix(indirect_fat_matrix);
+    }
+
+    fn flatten_matrix(matrix: Vec<Vec<u32>>) -> Vec<u32> {
+        matrix.iter().flatten().cloned().collect()
+    }
+
+    fn read_cluster(&mut self, n: u32) -> Vec<u8> {
+        let page_index = n as usize * self.pages_per_cluster;
+        let mut buffer = vec![];
+        for i in 0..self.pages_per_cluster {
+            buffer.extend(self.read_page((page_index + i) as u32));
+        }
+
+        buffer
+    }
+
+    fn read_page(&mut self, n: u32) -> Vec<u8> {
+        let offset = self.raw_page_size * n as usize;
+        self.c.set_position(offset as u64);
+        let mut buffer = vec![0u8; self.page_size];
+        self.c.read(&mut buffer).unwrap();
+
+        buffer
+    }
+
+    pub fn read_entry_cluster(&mut self, cluster_offset: u32) -> Vec<DirEntry> {
+        let buffer = self.read_cluster((cluster_offset as usize + self.alloc_offset) as u32);
+
+        let entry_count = buffer.len() / 512;
+        let mut entries = vec![];
+
+        for i in 0..entry_count {
+            entries.push(
+                DirEntry::from_bytes(&buffer[i * 512..(i + 1) * 512])
+                    .expect("Failed to read entry"),
+            );
+        }
+
+        entries
+    }
+
+    pub fn read_data_cluster(&mut self, entry: &DirEntry) -> Vec<u8> {
+        let mut buffer = vec![];
+        let mut chain_start = entry.cluster;
+        let mut bytes_read = 0;
+
+        while chain_start != 0x7FFFFFFF {
+            let to_read = min(entry.length as usize - bytes_read, self.cluster_size);
+            buffer.extend_from_slice(
+                &self.read_cluster(chain_start + self.alloc_offset as u32)[..to_read],
+            );
+            bytes_read += to_read;
+            chain_start = self.get_fat_value(chain_start);
+        }
+
+        buffer
+    }
+
+    pub fn find_sub_entries(&mut self, parent_entry: &DirEntry) -> Vec<DirEntry> {
+        let mut chain_start = parent_entry.cluster;
+        let mut sub_entries = vec![];
+
+        while chain_start != 0x7FFFFFFF {
+            let entries = self.read_entry_cluster(chain_start as u32);
+            for e in entries {
+                if sub_entries.len() < parent_entry.length as usize {
+                    sub_entries.push(e);
+                }
+            }
+            chain_start = self.get_fat_value(chain_start);
+        }
+
+        sub_entries
+    }
+
+    fn get_fat_value(&self, n: u32) -> u32 {
+        let value = self.fat_matrix[(n as usize / self.fat_per_cluster) % self.fat_per_cluster]
+            [n as usize % self.fat_per_cluster];
+
+        if value & 0x80000000 > 0 {
+            value ^ 0x80000000
+        } else {
+            value
+        }
+    }
 }

@@ -1,30 +1,35 @@
-use std::io::Read;
-use std::io::Seek;
-use crate::dir_entry::DF_DIRECTORY;
-
-mod fat;
 mod dir_entry;
+mod fat;
 
 fn main() -> std::io::Result<()> {
     let data = include_bytes!("../NewCard.ps2").to_vec();
 
     let mut mc = fat::Memcard::new(data);
 
-    let root = mc.get_child(mc.superblock.rootdir_cluster, 0)?;
-    let folders = mc.ls(&root)?;
+    let folders = mc.read_entry_cluster(mc.rootdir_cluster as u32);
+    let root = folders[0];
+
+    eprintln!("{:#?}", root);
+
+    let folders = mc.find_sub_entries(&root);
 
     for folder in folders {
-        eprintln!("{}", String::from_utf8(folder.name.to_vec()).unwrap());
+        let str = String::from_utf8(folder.name.to_vec())
+            .unwrap()
+            .trim_end_matches('\0')
+            .to_string();
 
-        if folder.mode & DF_DIRECTORY > 0 {
-            for file in mc.ls(&folder)? {
-                let name = String::from_utf8(file.name.to_vec()).unwrap().trim_end_matches(|c| c == '\0').to_owned();
-                if name == "icon.sys" {
-                    println!("Reading icon.sys");
-                    std::fs::write("icon.sys", mc.read(&file, file.length as usize, 0)?)?;
-                    return Ok(());
+        if str == "BISLPM-65880DMC3" {
+            for file in mc.find_sub_entries(&folder) {
+                let str = String::from_utf8(file.name.to_vec())
+                    .unwrap()
+                    .trim_end_matches('\0')
+                    .to_string();
+
+                if str == "icon00.ico" {
+                    let data = mc.read_data_cluster(&file);
+                    std::fs::write("icon00.ico", data).expect("Unable to write file");
                 }
-                eprintln!("\t{}", name);
             }
         }
     }

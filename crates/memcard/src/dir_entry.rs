@@ -12,7 +12,7 @@ pub const DF_0400: u16 =  0x0400;
 pub const DF_EXISTS: u16 = 0x8000;
 pub const DF_HIDDEN: u16 = 0x2000;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct DateTime {
     seconds: u8,
     minutes: u8,
@@ -42,7 +42,7 @@ impl DateTime {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct DirEntry {
     pub(crate) mode: u16,
     pub(crate) length: u32,
