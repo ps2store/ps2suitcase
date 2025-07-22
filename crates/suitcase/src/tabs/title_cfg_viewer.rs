@@ -4,6 +4,8 @@ use eframe::egui::Ui;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use relative_path::PathExt;
+use crate::data::state::AppState;
 
 pub struct TitleCfgViewer {
     file: String,
@@ -14,7 +16,7 @@ pub struct TitleCfgViewer {
 }
 
 impl TitleCfgViewer {
-    pub fn new(file: &VirtualFile) -> Self {
+    pub fn new(file: &VirtualFile, state: &AppState) -> Self {
         let buf = std::fs::read(&file.file_path)
             .expect("Failed to read file");
 
@@ -22,7 +24,11 @@ impl TitleCfgViewer {
         let encoding_error = contents.is_none();
 
         Self {
-            file: file.name.clone(),
+            file: file
+                .file_path
+                .relative_to(state.opened_folder.clone().unwrap())
+                .unwrap()
+                .to_string(),
             file_path: file.file_path.clone(),
             contents: contents.unwrap_or_default(),
             encoding_error,

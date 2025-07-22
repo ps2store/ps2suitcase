@@ -16,6 +16,7 @@ wavefront_obj = "11.0.0"
 bytesize = "2.0.1"
 serde = { version = "1.0.219", features = ["derive"] }
 notify = "8.1.0"
+relative-path = "2.0.1"
 
 [build-dependencies]
 winresource = "0.1.20"

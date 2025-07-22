@@ -82,4 +82,8 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
         }
         true
     }
+
+    fn allowed_in_windows(&self, _tab: &mut Self::Tab) -> bool {
+        false
+    }
 }
