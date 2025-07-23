@@ -321,7 +321,7 @@ fn set_border_radius(ui: &mut Ui, radius: CornerRadius) {
 
 fn file_select(ui: &mut Ui, name: impl Into<String>, value: &mut String, files: &[String]) {
     let id = Id::from(name.into());
-    let layout_repsonse = ui.horizontal(|ui| {
+    let layout_response = ui.horizontal(|ui| {
         ui.style_mut().spacing.item_spacing.x = 1.0;
 
         set_border_radius(
@@ -356,8 +356,8 @@ fn file_select(ui: &mut Ui, name: impl Into<String>, value: &mut String, files: 
 
     // Small hack to ensure the popup is positioned correctly
     let res = Response {
-        rect: layout_repsonse.response.rect,
-        ..layout_repsonse.inner
+        rect: layout_response.response.rect,
+        ..layout_response.inner
     };
 
     egui::popup_below_widget(ui, id, &res, PopupCloseBehavior::CloseOnClick, |ui| {
