@@ -1,4 +1,6 @@
+use crate::data::state::AppState;
 use crate::rendering::icn_renderer::ICNRenderer;
+use crate::tabs::PS2RgbaInterface;
 use crate::{
     components::{buttons::CustomButtons, dialogs::Dialogs},
     rendering::orbit_camera::OrbitCamera,
@@ -7,7 +9,7 @@ use crate::{
 };
 use cgmath::Vector3;
 use eframe::egui::load::SizedTexture;
-use eframe::egui::{vec2, ColorImage, ComboBox, Grid, Id, Image, ImageData, ImageSource, Sense, Stroke, TextureId, TextureOptions, WidgetText};
+use eframe::egui::{vec2, ColorImage, ComboBox, Grid, Id, ImageData, ImageSource, Stroke, TextureId, TextureOptions, WidgetText};
 use eframe::{
     egui,
     egui::{include_image, menu, Color32, Ui},
@@ -16,6 +18,7 @@ use eframe::{
 use egui_dock::{DockArea, DockState, NodeIndex, SurfaceIndex, TabViewer};
 use image::ImageReader;
 use ps2_filetypes::{color::Color, BinReader, BinWriter, ColorF, ICNWriter, IconSys, Vector, ICN};
+use relative_path::PathExt;
 use std::time::Instant;
 use std::{
     fs::File,
@@ -23,9 +26,6 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use relative_path::PathExt;
-use crate::data::state::AppState;
-use crate::tabs::PS2RgbaInterface;
 
 enum ICNTab {
     IconProperties,
