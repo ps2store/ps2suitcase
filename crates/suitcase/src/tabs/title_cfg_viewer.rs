@@ -1,12 +1,12 @@
+use crate::data::state::AppState;
 use crate::tabs::Tab;
 use crate::VirtualFile;
-use eframe::egui::{CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
+use eframe::egui::{CornerRadius, Id, InnerResponse, PopupCloseBehavior, Response, TextEdit, Ui};
 use ps2_filetypes::TitleCfg;
+use relative_path::PathExt;
 use std::ops::Add;
 use std::path::PathBuf;
 use toml::Value;
-use relative_path::PathExt;
-use crate::data::state::AppState;
 
 pub struct TitleCfgViewer {
     file: String,
@@ -18,8 +18,7 @@ pub struct TitleCfgViewer {
 
 impl TitleCfgViewer {
     pub fn new(file: &VirtualFile, state: &AppState) -> Self {
-        let buf = std::fs::read(&file.file_path)
-            .expect("Failed to read file");
+        let buf = std::fs::read(&file.file_path).expect("Failed to read file");
 
         let contents = String::from_utf8(buf).ok();
         let encoding_error = contents.is_none();
@@ -60,16 +59,12 @@ impl TitleCfgViewer {
                     }
 
                     for (key, value) in self.title_cfg.index_map.iter_mut() {
-                        let key_helper = self.title_cfg
-                            .helper
-                            .get(key);
+                        let key_helper = self.title_cfg.helper.get(key);
 
                         let mut tooltip_content = format!("");
                         if key_helper.is_some_and(|key| key.get("tooltip").is_some()) {
-                            tooltip_content = key_helper.unwrap()
-                                .get("tooltip")
-                                .unwrap()
-                                .to_string();
+                            tooltip_content =
+                                key_helper.unwrap().get("tooltip").unwrap().to_string();
                         }
 
                         let key_label = ui.label(format!("{key}"));
@@ -80,24 +75,29 @@ impl TitleCfgViewer {
                         }
 
                         if value == "Description" {
-                            ui.add(TextEdit::singleline(value).desired_rows(4)).changed().then(|| self.modified = true);
+                            ui.add(TextEdit::singleline(value).desired_rows(4))
+                                .changed()
+                                .then(|| self.modified = true);
                         } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
-                            value_select(
+                            let response = value_select(
                                 ui,
-                                format!("{key}"),
+                                key,
                                 value,
-                                key_helper.unwrap()
-                                    .get("values")
-                                    .unwrap(),
+                                key_helper.unwrap().get("values").unwrap(),
                             );
+                            if response.0.changed() {
+                                eprintln!("Textbox changed");
+                            }
                         } else {
-                            ui.add(TextEdit::singleline(value)).changed().then(|| self.modified = true);
+                            ui.add(TextEdit::singleline(value))
+                                .changed()
+                                .then(|| self.modified = true);
                         }
 
                         ui.end_row();
                     }
 
-                    ui.button("Save").clicked().then(|| { self.save() });
+                    ui.button("Save").clicked().then(|| self.save());
                 });
         });
     }
@@ -127,7 +127,12 @@ fn set_border_radius(ui: &mut Ui, radius: CornerRadius) {
     ui.style_mut().visuals.widgets.active.corner_radius = radius;
 }
 
-fn value_select(ui: &mut Ui, name: impl Into<String>, selected_value: &mut String, values: &Value) {
+fn value_select(
+    ui: &mut Ui,
+    name: impl Into<String>,
+    selected_value: &mut String,
+    values: &Value,
+) -> (Response, Response) {
     let id = Id::from(name.into());
     let layout_response = ui.horizontal(|ui| {
         ui.style_mut().spacing.item_spacing.x = 1.0;
@@ -141,7 +146,7 @@ fn value_select(ui: &mut Ui, name: impl Into<String>, selected_value: &mut Strin
                 se: 0,
             },
         );
-        ui.text_edit_singleline(selected_value).changed();
+        let edit_response = ui.text_edit_singleline(selected_value);
 
         set_border_radius(
             ui,
@@ -152,20 +157,20 @@ fn value_select(ui: &mut Ui, name: impl Into<String>, selected_value: &mut Strin
                 se: 2,
             },
         );
-        let response = ui.button("🔽");
-        if response.clicked() {
+        let button_response = ui.button("🔽");
+        if button_response.clicked() {
             ui.memory_mut(|mem| {
                 mem.toggle_popup(id);
             });
         }
 
-        response
+        (edit_response, button_response)
     });
 
     // Small hack to ensure the popup is positioned correctly
     let res = Response {
         rect: layout_response.response.rect,
-        ..layout_response.inner
+        ..layout_response.inner.1.clone()
     };
 
     let values = parse_values(values).unwrap_or_default();
@@ -178,6 +183,8 @@ fn value_select(ui: &mut Ui, name: impl Into<String>, selected_value: &mut Strin
             }
         }
     });
+
+    layout_response.inner
 }
 
 fn parse_values(value: &Value) -> Option<Vec<String>> {
