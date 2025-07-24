@@ -15,7 +15,7 @@ use eframe::{
 };
 use egui_dock::{DockArea, DockState, NodeIndex, SurfaceIndex, TabViewer};
 use image::ImageReader;
-use ps2_filetypes::{color::Color, BinReader, BinWriter, ICNWriter, ICN};
+use ps2_filetypes::{color::Color, BinReader, BinWriter, ColorF, ICNWriter, IconSys, Vector, ICN};
 use std::time::Instant;
 use std::{
     fs::File,
@@ -25,6 +25,7 @@ use std::{
 };
 use relative_path::PathExt;
 use crate::data::state::AppState;
+use crate::tabs::PS2RgbaInterface;
 
 enum ICNTab {
     IconProperties,
@@ -113,6 +114,10 @@ pub struct ICNViewer {
     start_time: Instant,
     pub playing: bool,
     pub texture: Option<TextureId>,
+    pub background_colors: [Color32; 4],
+    light_colors: [ColorF; 3],
+    light_positions: [Vector; 3],
+    ambient_color: ColorF,
 }
 
 impl ICNViewer {
@@ -133,7 +138,21 @@ impl ICNViewer {
 
 impl ICNViewer {
     pub fn new(file: &VirtualFile, state: &AppState) -> Self {
+        let mut background_colors = [Color32::DARK_GRAY; 4];
+        let mut light_colors = [ColorF{r: 0.0, g: 0.0, b: 0.0, a: 0.0}; 3];
+        let mut light_positions = [Vector{x: 0.0, y: 0.0, z: 0.0, w: 0.0}; 3];
+        let mut ambient_color = ColorF{r: 0.1, g: 0.1, b: 0.1, a: 0.0};
+
         let buf = std::fs::read(&file.file_path).expect("File not found");
+        let icon_sys = file.file_path.clone().parent().unwrap().join("icon.sys");
+
+        if icon_sys.exists() {
+            let icon_sys = IconSys::new(std::fs::read(icon_sys).unwrap());
+            background_colors = icon_sys.background_colors.map(|c| PS2RgbaInterface::build_from_color(c).into());
+            light_colors = icon_sys.light_colors;
+            light_positions = icon_sys.light_directions;
+        }
+
         let icn = ps2_filetypes::ICNParser::read(&buf.clone()).unwrap();
         let mut dock_state =
             DockState::new(vec![ICNTab::IconProperties]);
@@ -166,6 +185,10 @@ impl ICNViewer {
             start_time: Instant::now(),
             playing: false,
             texture: None,
+            background_colors,
+            light_colors,
+            light_positions,
+            ambient_color,
         }
     }
 
@@ -202,7 +225,7 @@ impl ICNViewer {
             delta_pitch += delta.y * 0.01;
         }
 
-        if input.raw_scroll_delta.y != 0.0 {
+        if response.contains_pointer() && input.raw_scroll_delta.y != 0.0 {
             delta_zoom += input.raw_scroll_delta.y * 0.1;
         }
 
@@ -216,6 +239,9 @@ impl ICNViewer {
         let camera = self.camera.clone();
         let aspect_ratio = rect.width() / rect.height();
         let frame = self.frame;
+        let light_colors = self.light_colors.clone();
+        let light_positions = self.light_positions.clone();
+        let ambient_color = self.ambient_color.clone();
 
         let callback = egui::PaintCallback {
             rect,
@@ -231,7 +257,7 @@ impl ICNViewer {
                 if closing {
                     renderer.drop(painter.gl())
                 } else {
-                    renderer.paint(painter.gl(), aspect_ratio, camera, frame);
+                    renderer.paint(painter.gl(), aspect_ratio, camera, frame, light_colors, light_positions, ambient_color);
                 }
             })),
         };
@@ -332,7 +358,8 @@ impl ICNViewer {
             ui.vertical(|ui| {
                 ui.set_height(ui.available_size_before_wrap().y - 28.0);
 
-                egui::Frame::canvas(ui.style()).fill(fill).stroke(Stroke::NONE).corner_radius(0).show(ui, |ui| {
+                egui::Frame::canvas(ui.style()).stroke(Stroke::NONE).corner_radius(0).show(ui, |ui| {
+                    draw_background(ui, &self.background_colors);
                     self.custom_painting(ui);
                 });
             });
@@ -387,4 +414,43 @@ impl Tab for ICNViewer {
         file.write_all(&bytes).expect("Failed to write to file");
         self.modified = false;
     }
+}
+
+fn draw_background(ui: &mut Ui, colors: &[Color32; 4]) {
+    let rect = ui.available_rect_before_wrap();
+    let painter = ui.painter_at(rect);
+
+    let top_left = rect.left_top();
+    let top_right = rect.right_top();
+    let bottom_left = rect.left_bottom();
+    let bottom_right = rect.right_bottom();
+
+    let mut mesh = egui::epaint::Mesh::default();
+
+    let i0 = mesh.vertices.len() as u32;
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: top_left,
+        uv: egui::epaint::WHITE_UV,
+        color: colors[0],
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: top_right,
+        uv: egui::epaint::WHITE_UV,
+        color: colors[1],
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: bottom_right,
+        uv: egui::epaint::WHITE_UV,
+        color: colors[3],
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: bottom_left,
+        uv: egui::epaint::WHITE_UV,
+        color: colors[2],
+    });
+
+    mesh.indices
+        .extend_from_slice(&[i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3]);
+
+    painter.add(egui::Shape::mesh(mesh));
 }
