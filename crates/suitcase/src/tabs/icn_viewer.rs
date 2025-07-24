@@ -6,11 +6,14 @@ use crate::{
     VirtualFile,
 };
 use cgmath::Vector3;
+use eframe::egui::load::SizedTexture;
+use eframe::egui::{vec2, ColorImage, ComboBox, Grid, Id, Image, ImageData, ImageSource, Sense, Stroke, TextureId, TextureOptions, WidgetText};
 use eframe::{
     egui,
     egui::{include_image, menu, Color32, Ui},
     egui_glow,
 };
+use egui_dock::{DockArea, DockState, NodeIndex, SurfaceIndex, TabViewer};
 use image::ImageReader;
 use ps2_filetypes::{color::Color, BinReader, BinWriter, ICNWriter, ICN};
 use std::time::Instant;
@@ -20,8 +23,83 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
+use relative_path::PathExt;
+use crate::data::state::AppState;
+
+enum ICNTab {
+    IconProperties,
+    IconSysProperties,
+}
+
+struct ICNTabViewer<'a> {
+    added_tabs: &'a mut Vec<ICNTab>,
+    texture: Option<TextureId>,
+}
+
+impl<'a> TabViewer for ICNTabViewer<'a> {
+    type Tab = ICNTab;
+
+    fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
+        match tab {
+            ICNTab::IconProperties => "Properties",
+            ICNTab::IconSysProperties => "Icon.sys",
+        }
+        .into()
+    }
+
+    fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
+        match tab {
+            ICNTab::IconProperties => {
+                Grid::new("icon_properties_grid")
+                    .num_columns(2)
+                    .spacing(vec2(4.0, 4.0))
+                    .show(ui, |ui| {
+                        ui.label("Texture");
+                        if let Some(texture) = self.texture {
+                            ui.image(ImageSource::Texture(SizedTexture::new(
+                                texture,
+                                vec2(128.0, 128.0),
+                            )));
+                        }
+                        ui.end_row();
+                        ui.label("Compression");
+                        ComboBox::from_id_salt("compression").selected_text("On").show_ui(ui, |ui| {
+                            ui.selectable_label(true, "On");
+                        })
+                    });
+            }
+            ICNTab::IconSysProperties => {
+                ui.heading("Icon.sys");
+            }
+        }
+    }
+
+    fn id(&mut self, tab: &mut Self::Tab) -> Id {
+        Id::new(
+            "icon_".to_owned()
+                + match tab {
+                    ICNTab::IconProperties => "props",
+                    ICNTab::IconSysProperties => "sys",
+                },
+        )
+    }
+
+    fn add_popup(&mut self, ui: &mut Ui, _surface: SurfaceIndex, _node: NodeIndex) {
+        ui.set_min_width(120.0);
+        ui.style_mut().visuals.button_frame = false;
+
+        if ui.button("Properties").clicked() {
+            self.added_tabs.push(ICNTab::IconProperties {});
+        }
+
+        if ui.button("Icon.sys").clicked() {
+            self.added_tabs.push(ICNTab::IconSysProperties);
+        }
+    }
+}
 
 pub struct ICNViewer {
+    dock_state: DockState<ICNTab>,
     renderer: Arc<Mutex<Option<ICNRenderer>>>,
     file: String,
     path: PathBuf,
@@ -34,6 +112,7 @@ pub struct ICNViewer {
     frame: u32,
     start_time: Instant,
     pub playing: bool,
+    pub texture: Option<TextureId>,
 }
 
 impl ICNViewer {
@@ -53,13 +132,22 @@ impl ICNViewer {
 }
 
 impl ICNViewer {
-    pub fn new(file: &VirtualFile) -> Self {
+    pub fn new(file: &VirtualFile, state: &AppState) -> Self {
         let buf = std::fs::read(&file.file_path).expect("File not found");
         let icn = ps2_filetypes::ICNParser::read(&buf.clone()).unwrap();
+        let mut dock_state =
+            DockState::new(vec![ICNTab::IconProperties]);
+
+        dock_state.main_surface_mut().split_below(NodeIndex::root(), 0.5, vec![ICNTab::IconSysProperties]);
 
         Self {
+            dock_state,
             renderer: Arc::new(Mutex::new(None)),
-            file: file.name.clone(),
+            file: file
+                .file_path
+                .relative_to(state.opened_folder.clone().unwrap())
+                .unwrap()
+                .to_string(),
             path: file.file_path.clone(),
             camera: OrbitCamera {
                 target: Vector3::new(0.0, 2.5, 0.0),
@@ -77,23 +165,39 @@ impl ICNViewer {
             frame: 0,
             start_time: Instant::now(),
             playing: false,
+            texture: None,
         }
     }
+
+    fn make_texture(&mut self, ui: &mut Ui) {
+        let mut pixels = vec![];
+        for pixel in self.icn.texture.pixels {
+            let color: Color = pixel.into();
+            pixels.extend_from_slice(&[color.r, color.g, color.b]);
+        }
+
+        let image_data = ImageData::from(ColorImage::from_rgb([128, 128], &pixels));
+
+        let id = ui.ctx().tex_manager().write().alloc(
+            self.file.clone(),
+            image_data,
+            TextureOptions::default(),
+        );
+
+        self.texture = Some(id);
+    }
+
     fn custom_painting(&mut self, ui: &mut Ui) {
-        let (rect, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
+        let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
         let input = ui.input(|i| i.clone());
 
         let mut delta_yaw = 0.0;
         let mut delta_pitch = 0.0;
         let mut delta_zoom = 0.0;
 
-        if input.pointer.primary_down()
-            && input
-                .pointer
-                .interact_pos()
-                .is_some_and(|p| rect.contains(p))
+        if response.dragged()
         {
-            let delta = input.pointer.delta();
+            let delta = response.drag_delta();
             delta_yaw -= delta.x * 0.01;
             delta_pitch += delta.y * 0.01;
         }
@@ -140,6 +244,7 @@ impl ICNViewer {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
+        let mut tabs = vec![];
         if self.playing {
             let elapsed = self.start_time.elapsed().as_secs_f32();
             let loop_duration = self.icn.animation_header.frame_length as f32 / 60.0;
@@ -147,8 +252,29 @@ impl ICNViewer {
             self.frame = (time_in_cycle * 60.0).floor() as u32;
             ui.ctx().request_repaint();
         }
+
+        if self.texture.is_none() {
+            self.make_texture(ui);
+        }
+
+        egui::SidePanel::right("icn_properties").show_inside(ui, |ui| {
+            DockArea::new(&mut self.dock_state)
+                .id(Id::new(&self.file).with("properties"))
+                .show_leaf_close_all_buttons(false)
+                .show_leaf_collapse_buttons(false)
+                .show_add_buttons(true)
+                .show_add_popup(true)
+                .show_inside(
+                    ui,
+                    &mut ICNTabViewer {
+                        added_tabs: &mut tabs,
+                        texture: self.texture,
+                    },
+                );
+        });
         ui.vertical(|ui| {
             menu::bar(ui, |ui| {
+                ui.set_height(50.0);
                 if ui
                     .icon_text_button(
                         include_image!("../../assets/icons/file-arrow-right.svg"),
@@ -199,14 +325,14 @@ impl ICNViewer {
             });
 
             let fill = if self.dark_mode {
-                ui.style().visuals.window_fill
+                ui.style().visuals.code_bg_color
             } else {
                 Color32::from_rgb(0xAA, 0xAA, 0xAA)
             };
             ui.vertical(|ui| {
                 ui.set_height(ui.available_size_before_wrap().y - 28.0);
 
-                egui::Frame::canvas(ui.style()).fill(fill).show(ui, |ui| {
+                egui::Frame::canvas(ui.style()).fill(fill).stroke(Stroke::NONE).corner_radius(0).show(ui, |ui| {
                     self.custom_painting(ui);
                 });
             });
@@ -232,6 +358,10 @@ impl ICNViewer {
                 });
                 ui.add_space(4.0);
             }
+        });
+
+        tabs.drain(..).for_each(|tab| {
+            self.dock_state.push_to_focused_leaf(tab);
         });
     }
 }

@@ -10,7 +10,7 @@ fn toolbar_item(ui: &mut Ui, source: ImageSource, tooltip: impl Into<String>) ->
 
 pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
     menu::bar(ui, |ui| {
-        ui.set_min_size(Vec2::new(24.0, 24.0));
+        ui.set_min_height(32.0);
         if toolbar_item(
             ui,
             include_image!("../../assets/hidpi/main_open_dir.png"),

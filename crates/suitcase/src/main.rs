@@ -25,11 +25,9 @@ use crate::{
     tabs::{ICNViewer, IconSysViewer, TitleCfgViewer},
     wizards::create_icn::create_icn_wizard,
 };
-use eframe::egui::{
-    vec2, Context, Frame, Grid, IconData, Rect, ViewportBuilder, ViewportCommand, ViewportId,
-};
+use eframe::egui::{vec2, Context, Frame, Grid, IconData, Margin, Rect, ViewportBuilder, ViewportCommand, ViewportId};
 use eframe::{egui, NativeOptions, Storage};
-use egui_dock::{DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
+use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
 use std::process::Command;
 use crate::io::validate::validate;
@@ -37,7 +35,7 @@ use crate::io::validate::validate;
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 720.0])
+            .with_inner_size([1920.0, 1080.0])
             .with_icon({
                 let icon = include_bytes!("../assets/ps2.png");
                 let result = image::load_from_memory(icon).expect("Failed to load icon");
@@ -201,10 +199,10 @@ impl PSUBuilderApp {
         let name: PathBuf = file.name.clone().into();
         if let Some(extension) = name.extension() {
             let editor: Option<TabType> = match extension.to_ascii_lowercase().to_str().unwrap() {
-                "icn" | "ico" => Some(TabType::ICNViewer(ICNViewer::new(&file))),
-                "sys" => Some(TabType::IconSysViewer(IconSysViewer::new(&file))),
+                "icn" | "ico" => Some(TabType::ICNViewer(ICNViewer::new(&file, &self.state))),
+                "sys" => Some(TabType::IconSysViewer(IconSysViewer::new(&file, &self.state))),
                 "cfg" | "cnf" | "dat" | "txt" => {
-                    Some(TabType::TitleCfgViewer(TitleCfgViewer::new(&file)))
+                    Some(TabType::TitleCfgViewer(TitleCfgViewer::new(&file, &self.state)))
                 }
                 _ => None,
             };
@@ -262,6 +260,7 @@ impl PSUBuilderApp {
                 .to_string(),
         );
         self.file_watcher.change_path(&folder);
+        self.file_tree.index_folder(&folder);
         self.state.files = read_folder(folder)?;
 
         Ok(())
@@ -284,6 +283,7 @@ impl eframe::App for PSUBuilderApp {
 
         if self.state.opened_folder.is_some() {
             egui::SidePanel::left("side_panel").show(ctx, |ui| {
+                ui.set_min_width(200.0);
                 self.file_tree.show(ui, &mut self.state);
             });
         }
@@ -292,10 +292,15 @@ impl eframe::App for PSUBuilderApp {
             .frame(Frame::central_panel(&ctx.style()).inner_margin(0))
             .show(ctx, |ui| {
                 if self.tree.iter_all_tabs().count() > 0 {
+                    let mut style = egui_dock::Style::from_egui(ctx.style().as_ref());
+                    style.tab.tab_body.inner_margin = Margin::same(4);
+                    style.tab_bar.height = 32.0;
+                    style.tab.minimum_width = Some(200.0);
                     DockArea::new(&mut self.tree)
                         .show_leaf_close_all_buttons(false)
                         .show_leaf_collapse_buttons(false)
-                        .style(Style::from_egui(ctx.style().as_ref()))
+                        .allowed_splits(AllowedSplits::None)
+                        .style(style)
                         .show_inside(
                             ui,
                             &mut TabViewer {
@@ -307,43 +312,43 @@ impl eframe::App for PSUBuilderApp {
                 }
             });
 
-        if self.show_settings {
-            let rect = ctx.input(|i| i.viewport().outer_rect.unwrap_or(Rect::ZERO));
-            let center = rect.center();
-            let window_size = vec2(600.0, 400.0);
-
-            ctx.show_viewport_immediate(
-                ViewportId::from_hash_of("settings"),
-                ViewportBuilder::default()
-                    .with_title("Settings")
-                    .with_position(center - window_size / 2.0)
-                    .with_inner_size(window_size),
-                |ctx, _class| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        Grid::new("settings_grid").num_columns(2).show(ui, |ui| {
-                            ui.label("PCSX2 Path:");
-
-                            #[cfg(target_os = "windows")]
-                            let filters = Filters::new().add_filter("PCSX2 Executable", ["exe"]);
-                            #[cfg(target_os = "macos")]
-                            let filters = Filters::new().add_filter("PCSX2 Application", ["app"]);
-                            #[cfg(target_os = "linux")]
-                            let filters = Filters::new();
-
-                            ui.file_picker(
-                                &mut self.state.pcsx2_path,
-                                filters,
-                            );
-                            ui.end_row();
-                        });
-                    });
-
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        self.show_settings = false;
-                    }
-                },
-            );
-        }
+        // if self.show_settings {
+        //     let rect = ctx.input(|i| i.viewport().outer_rect.unwrap_or(Rect::ZERO));
+        //     let center = rect.center();
+        //     let window_size = vec2(600.0, 400.0);
+        //
+        //     ctx.show_viewport_immediate(
+        //         ViewportId::from_hash_of("settings"),
+        //         ViewportBuilder::default()
+        //             .with_title("Settings")
+        //             .with_position(center - window_size / 2.0)
+        //             .with_inner_size(window_size),
+        //         |ctx, _class| {
+        //             egui::CentralPanel::default().show(ctx, |ui| {
+        //                 Grid::new("settings_grid").num_columns(2).show(ui, |ui| {
+        //                     ui.label("PCSX2 Path:");
+        //
+        //                     #[cfg(target_os = "windows")]
+        //                     let filters = Filters::new().add_filter("PCSX2 Executable", ["exe"]);
+        //                     #[cfg(target_os = "macos")]
+        //                     let filters = Filters::new().add_filter("PCSX2 Application", ["app"]);
+        //                     #[cfg(target_os = "linux")]
+        //                     let filters = Filters::new();
+        //
+        //                     ui.file_picker(
+        //                         &mut self.state.pcsx2_path,
+        //                         filters,
+        //                     );
+        //                     ui.end_row();
+        //                 });
+        //             });
+        //
+        //             if ctx.input(|i| i.viewport().close_requested()) {
+        //                 self.show_settings = false;
+        //             }
+        //         },
+        //     );
+        // }
 
         handle_accelerators(ctx, &mut self.state);
 

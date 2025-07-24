@@ -1,9 +1,12 @@
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
-use eframe::egui::{vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui};
+use eframe::egui::{
+    vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui,
+};
 use ps2_filetypes::color::Color;
 use ps2_filetypes::{ColorF, IconSys, Vector};
+use relative_path::PathExt;
 use std::ops::Add;
 use std::path::PathBuf;
 
@@ -60,11 +63,7 @@ impl PS2RgbaInterface {
 
 impl From<PS2RgbaInterface> for Color32 {
     fn from(value: PS2RgbaInterface) -> Self {
-        Rgba::from_rgb(
-            value.rgb[0],
-           value.rgb[1],
-           value.rgb[2],
-        ).into()
+        Rgba::from_rgb(value.rgb[0], value.rgb[1], value.rgb[2]).into()
     }
 }
 
@@ -97,7 +96,7 @@ pub struct IconSysViewer {
 }
 
 impl IconSysViewer {
-    pub fn new(file: &VirtualFile) -> Self {
+    pub fn new(file: &VirtualFile, state: &AppState) -> Self {
         let buf = std::fs::read(&file.file_path).expect("File not found");
 
         let sys = IconSys::new(buf);
@@ -124,9 +123,7 @@ impl IconSysViewer {
             file_path: file.file_path.clone(),
             file: file
                 .file_path
-                .file_name()
-                .unwrap()
-                .to_str()
+                .relative_to(state.opened_folder.clone().unwrap())
                 .unwrap()
                 .to_string(),
         }
