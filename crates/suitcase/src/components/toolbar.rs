@@ -1,6 +1,6 @@
 use crate::components::buttons::CustomButtons;
 use crate::data::state::AppState;
-use eframe::egui::{include_image, menu, ImageSource, Response, Ui, Vec2};
+use eframe::egui::{include_image, menu, ImageSource, Response, Ui};
 
 fn toolbar_item(ui: &mut Ui, source: ImageSource, tooltip: impl Into<String>) -> Response {
     ui.icon_button(source).on_hover_ui(|ui| {

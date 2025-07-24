@@ -7,11 +7,9 @@ mod rendering;
 mod tabs;
 mod wizards;
 
-use crate::components::dialogs::Filters;
 use crate::{
     components::bottom_bar::bottom_bar,
     components::dialogs::Dialogs,
-    components::file_picker::FilePicker,
     components::file_tree::FileTree,
     components::greeting::greeting,
     components::menu_bar::{handle_accelerators, menu_bar},
@@ -25,9 +23,9 @@ use crate::{
     tabs::{ICNViewer, IconSysViewer, TitleCfgViewer},
     wizards::create_icn::create_icn_wizard,
 };
-use eframe::egui::{vec2, Context, Frame, Grid, IconData, Margin, Rect, ViewportBuilder, ViewportCommand, ViewportId};
+use eframe::egui::{Context, Frame, IconData, Margin, ViewportCommand};
 use eframe::{egui, NativeOptions, Storage};
-use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabIndex};
+use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, SurfaceIndex, TabIndex};
 use std::path::PathBuf;
 use std::process::Command;
 use crate::io::validate::validate;

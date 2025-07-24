@@ -1,7 +1,7 @@
-use cgmath::{vec3, Matrix4, Vector3};
+use cgmath::{vec3, Matrix4, Vector3, Vector4};
 use eframe::glow;
 use ps2_filetypes::color::Color;
-use ps2_filetypes::{Key, ICN};
+use ps2_filetypes::{ColorF, Key, Vector, ICN};
 use crate::rendering::animation::Timeline;
 use crate::rendering::buffer::Buffer;
 use crate::rendering::orbit_camera::OrbitCamera;
@@ -76,10 +76,10 @@ impl ICNRenderer {
                     let normal = icn.normals[i];
                     let uv = icn.uvs[i];
                     [
-                        color.r as f32 / 255.0,
-                        color.g as f32 / 255.0,
-                        color.b as f32 / 255.0,
-                        color.a as f32 / 255.0,
+                        // color.r as f32 / 255.0,
+                        // color.g as f32 / 255.0,
+                        // color.b as f32 / 255.0,
+                        // color.a as f32 / 255.0,
                         normal.x as f32 / 4096.0,
                         -normal.y as f32 / 4096.0,
                         -normal.z as f32 / 4096.0,
@@ -99,7 +99,7 @@ impl ICNRenderer {
                 ), (
                     Buffer::new(gl, &data),
                     attributes()
-                        .float("color", 4)
+                        // .float("color", 4)
                         .float("normal", 3)
                         .float("uv", 2),
                     )],
@@ -156,7 +156,7 @@ impl ICNRenderer {
         self.model_texture.set(gl, &image);
     }
 
-    pub fn paint(&mut self, gl: &glow::Context, aspect_ratio: f32, orbit_camera: OrbitCamera, frame: u32) {
+    pub fn paint(&mut self, gl: &glow::Context, aspect_ratio: f32, orbit_camera: OrbitCamera, frame: u32, light_colors: [ColorF; 3], light_positions: [Vector; 3], ambient_color: ColorF) {
         use glow::HasContext as _;
 
         let projection = cgmath::perspective(cgmath::Deg(45.0), aspect_ratio, 0.1, 100.0);
@@ -208,6 +208,13 @@ impl ICNRenderer {
             self.model_shader.set(gl, "projection", projection);
             self.model_shader.set(gl, "view", view);
             self.model_shader.set(gl, "model", model);
+            self.model_shader.set(gl, "ambient", Vector4::new(ambient_color.r, ambient_color.g, ambient_color.b, ambient_color.a));
+
+            for i in 0..3 {
+                self.model_shader.set(gl, format!("lights[{i}].color").as_str(), Vector4::new(light_colors[i].r, light_colors[i].g, light_colors[i].b, light_colors[i].a));
+                self.model_shader.set(gl, format!("lights[{i}].position").as_str(), Vector4::new(light_positions[i].x, 1.0-light_positions[i].y, 1.0-light_positions[i].z, light_positions[i].w));
+            }
+
             self.model.render(gl);
         }
     }

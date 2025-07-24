@@ -1,21 +1,14 @@
 use crate::data::virtual_file::VirtualFile;
-use crate::io::calculate_size::calc_size;
-use crate::io::reveal_file_in_explorer::reveal_file_in_explorer;
 use crate::AppState;
-use bytesize::ByteSize;
-use eframe::egui;
 use eframe::egui::collapsing_header::CollapsingState;
 use eframe::egui::{
-    include_image, vec2, Align, Button, Checkbox, CollapsingHeader, Color32, Id, Image,
-    ImageSource, Label, Layout, ScrollArea, Stroke, Style, TextWrapMode, Ui,
+    include_image, vec2, Align, Button, Color32, Id, ImageSource, Layout, ScrollArea, Stroke,
+    Style, TextWrapMode, Ui,
 };
-use egui_extras::{Column, TableBuilder};
-use ps2_filetypes::chrono::{DateTime, Local};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub struct FileTree {
-    selection: std::collections::HashSet<usize>,
     show_timestamp: bool,
     show_attributes: bool,
     id: Id,
@@ -34,7 +27,6 @@ fn set_menu_style(style: &mut Style) {
 impl FileTree {
     pub fn new() -> Self {
         Self {
-            selection: std::collections::HashSet::new(),
             show_timestamp: false,
             show_attributes: false,
             id: Id::new("file_tree"),
@@ -69,32 +61,41 @@ impl FileTree {
     pub fn show_folder(&mut self, ui: &mut Ui, path: PathBuf, state: &mut AppState) {
         let file_name = path.file_name().unwrap().to_str().unwrap().to_owned();
 
-        CollapsingState::load_with_default_open(ui.ctx(), Id::new(&path), false)
-            .show_header(ui, |ui| {
-                ui.with_layout(
-                    Layout::top_down(Align::Min).with_cross_justify(true),
-                    |ui| {
-                        ui.add(
-                            Button::image_and_text(
-                                include_image!("../../assets/hidpi/fm_file.png"),
-                                file_name,
+        let (_, response, _) =
+            CollapsingState::load_with_default_open(ui.ctx(), Id::new(&path), false)
+                .show_header(ui, |ui| {
+                    ui.with_layout(
+                        Layout::top_down(Align::Min).with_cross_justify(true),
+                        |ui| {
+                            ui.add(
+                                // Button::image_and_text(
+                                //     include_image!("../../assets/hidpi/fm_file.png"),
+                                //     file_name,
+                                // )
+                                Button::new(file_name).wrap_mode(TextWrapMode::Extend),
                             )
-                            .wrap_mode(TextWrapMode::Extend),
-                        )
-                    },
-                )
-            })
-            .body(|ui| {
-                let children = self.dir_cache.get(&path).cloned().unwrap_or(vec![]);
+                        },
+                    )
+                    .inner
+                })
+                .body(|ui| {
+                    let children = self.dir_cache.get(&path).cloned().unwrap_or(vec![]);
 
-                for child in children {
-                    if self.dir_cache.contains_key(&child) {
-                        self.show_folder(ui, child.clone(), state);
-                    } else {
-                        self.show_file(ui, child.clone(), state);
+                    for child in children {
+                        if self.dir_cache.contains_key(&child) {
+                            self.show_folder(ui, child.clone(), state);
+                        } else {
+                            self.show_file(ui, child.clone(), state);
+                        }
                     }
-                }
-            });
+                });
+
+        response.inner.context_menu(|ui| {
+            ui.set_min_width(100.0);
+            ui.button("Export");
+            ui.separator();
+            ui.button("Delete");
+        });
     }
 
     pub fn show_file(&mut self, ui: &mut Ui, path: PathBuf, state: &mut AppState) {
@@ -114,7 +115,7 @@ impl FileTree {
         }
     }
 
-    pub fn index_folder(&mut self, root: &PathBuf) {
+    fn index_folder_internal(&mut self, root: &PathBuf) {
         let mut folders = Vec::new();
         let mut files = Vec::new();
         let children = std::fs::read_dir(&root).expect("failed to read root directory");
@@ -122,7 +123,7 @@ impl FileTree {
         for entry in children {
             let path = entry.unwrap().path();
             if path.is_dir() {
-                self.index_folder(&path);
+                self.index_folder_internal(&path);
                 folders.push(path);
             } else {
                 files.push(path);
@@ -131,6 +132,11 @@ impl FileTree {
 
         self.dir_cache
             .insert(root.clone(), [folders, files].concat());
+    }
+
+    pub fn index_folder(&mut self, root: &PathBuf) {
+        self.dir_cache.clear();
+        self.index_folder_internal(root);
     }
 
     // pub fn show(&mut self, ui: &mut Ui, app: &mut AppState) {
