@@ -2,8 +2,6 @@ use crate::tabs::Tab;
 use crate::VirtualFile;
 use eframe::egui::{CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
 use ps2_filetypes::TitleCfg;
-use std::fs::File;
-use std::io::Write;
 use std::ops::Add;
 use std::path::PathBuf;
 use toml::Value;
@@ -13,7 +11,6 @@ use crate::data::state::AppState;
 pub struct TitleCfgViewer {
     file: String,
     file_path: PathBuf,
-    contents: String,
     title_cfg: TitleCfg,
     modified: bool,
     encoding_error: bool,
@@ -24,7 +21,7 @@ impl TitleCfgViewer {
         let buf = std::fs::read(&file.file_path)
             .expect("Failed to read file");
 
-        let contents = String::from_utf8(buf.clone()).ok();
+        let contents = String::from_utf8(buf).ok();
         let encoding_error = contents.is_none();
 
         Self {
@@ -34,7 +31,6 @@ impl TitleCfgViewer {
                 .unwrap()
                 .to_string(),
             file_path: file.file_path.clone(),
-            contents: contents.clone().unwrap_or_default(),
             title_cfg: TitleCfg::new(contents.unwrap_or_default()),
             encoding_error,
             modified: false,
@@ -56,9 +52,10 @@ impl TitleCfgViewer {
 
                     if !self.title_cfg.has_mandatory_fields() {
                         ui.colored_label(eframe::egui::Color32::RED, "Missing mandatory fields.");
-                        if ui.button("Fix").clicked() {
+                        ui.button("Fix").clicked().then(|| {
                             self.title_cfg.fix_missing_fields();
-                        }
+                            self.modified = true;
+                        });
                         ui.end_row();
                     }
 
@@ -83,7 +80,7 @@ impl TitleCfgViewer {
                         }
 
                         if value == "Description" {
-                            ui.add(TextEdit::singleline(value).desired_rows(4));
+                            ui.add(TextEdit::singleline(value).desired_rows(4)).changed().then(|| self.modified = true);
                         } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
                             value_select(
                                 ui,
@@ -94,15 +91,13 @@ impl TitleCfgViewer {
                                     .unwrap(),
                             );
                         } else {
-                            ui.add(TextEdit::singleline(value));
+                            ui.add(TextEdit::singleline(value)).changed().then(|| self.modified = true);
                         }
 
                         ui.end_row();
                     }
 
-                    if ui.button("Save").clicked() {
-                        self.save();
-                    }
+                    ui.button("Save").clicked().then(|| { self.save() });
                 });
         });
     }
@@ -121,8 +116,6 @@ impl Tab for TitleCfgViewer {
     }
 
     fn save(&mut self) {
-        let mut output = File::create(&self.file_path).expect("File not found");
-        output.write_all(self.contents.as_bytes()).unwrap();
         std::fs::write(&self.file_path, self.title_cfg.to_bytes()).expect("Failed to title.cfg");
         self.modified = false;
     }
@@ -148,7 +141,7 @@ fn value_select(ui: &mut Ui, name: impl Into<String>, selected_value: &mut Strin
                 se: 0,
             },
         );
-        ui.text_edit_singleline(selected_value);
+        ui.text_edit_singleline(selected_value).changed();
 
         set_border_radius(
             ui,
