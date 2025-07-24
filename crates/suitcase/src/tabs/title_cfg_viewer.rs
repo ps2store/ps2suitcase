@@ -1,7 +1,7 @@
 use crate::data::state::AppState;
 use crate::tabs::Tab;
 use crate::VirtualFile;
-use eframe::egui::{CornerRadius, Id, InnerResponse, PopupCloseBehavior, Response, TextEdit, Ui};
+use eframe::egui::{CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
 use ps2_filetypes::TitleCfg;
 use relative_path::PathExt;
 use std::ops::Add;
@@ -79,15 +79,14 @@ impl TitleCfgViewer {
                                 .changed()
                                 .then(|| self.modified = true);
                         } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
-                            let response = value_select(
+                            value_select(
                                 ui,
                                 key,
                                 value,
                                 key_helper.unwrap().get("values").unwrap(),
-                            );
-                            if response.0.changed() {
-                                eprintln!("Textbox changed");
-                            }
+                            )
+                            .changed()
+                            .then(|| self.modified = true);
                         } else {
                             ui.add(TextEdit::singleline(value))
                                 .changed()
@@ -132,9 +131,9 @@ fn value_select(
     name: impl Into<String>,
     selected_value: &mut String,
     values: &Value,
-) -> (Response, Response) {
+) -> Response {
     let id = Id::from(name.into());
-    let layout_response = ui.horizontal(|ui| {
+    let mut layout_response = ui.horizontal(|ui| {
         ui.style_mut().spacing.item_spacing.x = 1.0;
 
         set_border_radius(
@@ -146,7 +145,7 @@ fn value_select(
                 se: 0,
             },
         );
-        let edit_response = ui.text_edit_singleline(selected_value);
+        let mut edit_response = ui.text_edit_singleline(selected_value);
 
         set_border_radius(
             ui,
@@ -158,11 +157,11 @@ fn value_select(
             },
         );
         let button_response = ui.button("🔽");
-        if button_response.clicked() {
+        button_response.clicked().then(|| {
             ui.memory_mut(|mem| {
                 mem.toggle_popup(id);
             });
-        }
+        });
 
         (edit_response, button_response)
     });
@@ -170,7 +169,7 @@ fn value_select(
     // Small hack to ensure the popup is positioned correctly
     let res = Response {
         rect: layout_response.response.rect,
-        ..layout_response.inner.1.clone()
+        ..layout_response.inner.1
     };
 
     let values = parse_values(values).unwrap_or_default();
@@ -178,13 +177,14 @@ fn value_select(
     eframe::egui::popup_below_widget(ui, id, &res, PopupCloseBehavior::CloseOnClick, |ui| {
         ui.set_min_width(200.0);
         for value in values {
-            if ui.selectable_label(false, &value).clicked() {
+            ui.selectable_label(false, &value).clicked().then(|| {
                 *selected_value = value;
-            }
+                layout_response.inner.0.mark_changed();
+            });
         }
     });
 
-    layout_response.inner
+    layout_response.inner.0
 }
 
 fn parse_values(value: &Value) -> Option<Vec<String>> {
