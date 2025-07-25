@@ -1,7 +1,7 @@
 use crate::data::state::AppState;
 use crate::tabs::Tab;
 use crate::VirtualFile;
-use eframe::egui::{CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
+use eframe::egui::{menu, CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
 use ps2_filetypes::TitleCfg;
 use relative_path::PathExt;
 use std::ops::Add;
@@ -14,6 +14,7 @@ pub struct TitleCfgViewer {
     title_cfg: TitleCfg,
     modified: bool,
     encoding_error: bool,
+    is_raw_editor: bool,
 }
 
 impl TitleCfgViewer {
@@ -33,72 +34,98 @@ impl TitleCfgViewer {
             title_cfg: TitleCfg::new(contents.unwrap_or_default()),
             encoding_error,
             modified: false,
+            is_raw_editor: false,
         }
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
         ui.vertical(|ui| {
-            eframe::egui::Grid::new(Id::from("IconSysEditor"))
-                .num_columns(2)
-                .show(ui, |ui| {
-                    if self.encoding_error {
-                        ui.colored_label(
-                            eframe::egui::Color32::RED,
-                            "Encoding error, please use valid ASCII or UTF-8 encoding.",
-                        );
-                        return;
-                    }
-
-                    if !self.title_cfg.has_mandatory_fields() {
-                        ui.colored_label(eframe::egui::Color32::RED, "Missing mandatory fields.");
-                        ui.button("Fix").clicked().then(|| {
-                            self.title_cfg.fix_missing_fields();
-                            self.modified = true;
-                        });
-                        ui.end_row();
-                    }
-
-                    for (key, value) in self.title_cfg.index_map.iter_mut() {
-                        let key_helper = self.title_cfg.helper.get(key);
-
-                        let mut tooltip_content = format!("");
-                        if key_helper.is_some_and(|key| key.get("tooltip").is_some()) {
-                            tooltip_content =
-                                key_helper.unwrap().get("tooltip").unwrap().to_string();
-                        }
-
-                        let key_label = ui.label(format!("{key}"));
-                        if !tooltip_content.is_empty() {
-                            key_label.on_hover_ui(|ui| {
-                                ui.label(tooltip_content);
-                            });
-                        }
-
-                        if value == "Description" {
-                            ui.add(TextEdit::singleline(value).desired_rows(4))
-                                .changed()
-                                .then(|| self.modified = true);
-                        } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
-                            value_select(
-                                ui,
-                                key,
-                                value,
-                                key_helper.unwrap().get("values").unwrap(),
-                            )
-                            .changed()
-                            .then(|| self.modified = true);
-                        } else {
-                            ui.add(TextEdit::singleline(value))
-                                .changed()
-                                .then(|| self.modified = true);
-                        }
-
-                        ui.end_row();
-                    }
-
-                    ui.button("Save").clicked().then(|| self.save());
+            menu::bar(ui, |ui| {
+                ui.set_height(25.0);
+                ui.button("Save").clicked().then(|| self.save());
+                ui.button("Toggle Raw Editor").clicked().then(|| {
+                    self.toggle_editors();
                 });
+            });
+            ui.separator();
+
+            if self.is_raw_editor {
+                ui.text_edit_multiline(&mut self.title_cfg.contents)
+                    .changed()
+                    .then(|| self.modified = true);
+            } else {
+                eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        if self.encoding_error {
+                            ui.colored_label(
+                                eframe::egui::Color32::RED,
+                                "Encoding error, please use valid ASCII or UTF-8 encoding.",
+                            );
+                            return;
+                        }
+
+                        if !self.title_cfg.has_mandatory_fields() {
+                            ui.colored_label(
+                                eframe::egui::Color32::RED,
+                                "Missing mandatory fields.",
+                            );
+                            ui.button("Fix").clicked().then(|| {
+                                self.title_cfg.fix_missing_fields();
+                                self.modified = true;
+                            });
+                            ui.end_row();
+                        }
+
+                        for (key, value) in self.title_cfg.index_map.iter_mut() {
+                            let key_helper = self.title_cfg.helper.get(key);
+
+                            let mut tooltip_content = "".to_string();
+                            if key_helper.is_some_and(|key| key.get("tooltip").is_some()) {
+                                tooltip_content =
+                                    key_helper.unwrap().get("tooltip").unwrap().to_string();
+                            }
+
+                            let key_label = ui.label(key.to_string());
+                            if !tooltip_content.is_empty() {
+                                key_label.on_hover_ui(|ui| {
+                                    ui.label(tooltip_content);
+                                });
+                            }
+
+                            if value == "Description" {
+                                ui.add(TextEdit::singleline(value).desired_rows(4))
+                                    .changed()
+                                    .then(|| self.modified = true);
+                            } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
+                                value_select(
+                                    ui,
+                                    key,
+                                    value,
+                                    key_helper.unwrap().get("values").unwrap(),
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
+                            } else {
+                                ui.add(TextEdit::singleline(value))
+                                    .changed()
+                                    .then(|| self.modified = true);
+                            }
+
+                            ui.end_row();
+                        }
+                    });
+            }
         });
+    }
+
+    pub fn toggle_editors(&mut self) {
+        if self.is_raw_editor {
+            self.title_cfg.sync_contents_to_index_map();
+        } else {
+            self.title_cfg.sync_index_map_to_contents()
+        }
+        self.is_raw_editor ^= true;
     }
 }
 
@@ -115,7 +142,12 @@ impl Tab for TitleCfgViewer {
     }
 
     fn save(&mut self) {
-        std::fs::write(&self.file_path, self.title_cfg.to_bytes()).expect("Failed to title.cfg");
+        if self.is_raw_editor {
+            self.title_cfg.sync_contents_to_index_map();
+        }
+        std::fs::write(&self.file_path, self.title_cfg.to_string().into_bytes())
+            .expect("Failed to title.cfg");
+
         self.modified = false;
     }
 }
@@ -145,7 +177,7 @@ fn value_select(
                 se: 0,
             },
         );
-        let mut edit_response = ui.text_edit_singleline(selected_value);
+        let edit_response = ui.text_edit_singleline(selected_value);
 
         set_border_radius(
             ui,
@@ -192,8 +224,7 @@ fn parse_values(value: &Value) -> Option<Vec<String>> {
         value
             .as_array()?
             .iter()
-            .map(|v| v.as_str().and_then(|s| Some(s.to_owned())))
-            .flatten()
+            .filter_map(|v| v.as_str().map(|s| s.to_owned()))
             .collect(),
     )
 }
