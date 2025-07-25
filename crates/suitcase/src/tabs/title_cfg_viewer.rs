@@ -8,6 +8,8 @@ use std::ops::Add;
 use std::path::PathBuf;
 use toml::Value;
 
+const MAXIMUM_DESCRIPTION_LENGTH: usize = 250;
+
 pub struct TitleCfgViewer {
     file: String,
     file_path: PathBuf,
@@ -58,13 +60,12 @@ impl TitleCfgViewer {
                             TextEdit::multiline(&mut self.title_cfg.contents)
                                 .desired_width(ui.available_width()),
                         )
-                        .changed()
-                        .then(|| self.modified = true);
+                            .changed()
+                            .then(|| self.modified = true);
                     });
             } else {
                 eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
-                    .num_columns(2)
-                    .striped(true)
+                    .num_columns(3)
                     .min_col_width(200.0)
                     .max_col_width(ui.available_width())
                     .show(ui, |ui| {
@@ -108,6 +109,16 @@ impl TitleCfgViewer {
                                 ui.add(TextEdit::multiline(value).desired_rows(6))
                                     .changed()
                                     .then(|| self.modified = true);
+                                if value.len() > MAXIMUM_DESCRIPTION_LENGTH {
+                                    ui.colored_label(
+                                        eframe::egui::Color32::RED,
+                                        format!(
+                                            "Description too long, it will be truncated in OPL. {}/{}",
+                                            value.len(),
+                                            MAXIMUM_DESCRIPTION_LENGTH,
+                                        ),
+                                    );
+                                }
                             } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
                                 value_select(
                                     ui,
@@ -115,8 +126,8 @@ impl TitleCfgViewer {
                                     value,
                                     key_helper.unwrap().get("values").unwrap(),
                                 )
-                                .changed()
-                                .then(|| self.modified = true);
+                                    .changed()
+                                    .then(|| self.modified = true);
                             } else {
                                 ui.text_edit_singleline(value)
                                     .changed()
