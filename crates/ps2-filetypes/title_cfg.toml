@@ -1,0 +1,156 @@
+[title]
+tooltip = "The title displayed in the list of official OPL and PSBBN. SAS prefix should be included."
+hint = "[APP] Foobar"
+
+[boot]
+tooltip = "The filename of the app to be launched. Case sensitve."
+hint = "foobar.elf"
+
+[Title]
+tooltip = "The title displayed in the list of OPL db."
+hint = "Foobar"
+
+[CfgVersion]
+tooltip = "The version number of this config file. Badly documented. Usually 8."
+hint = "8"
+
+["$ConfigSource"]
+tooltip = "The source of the config file. 0=defaults by OPL, 1=user-modified within OPL, 2=downloaded"
+values = ["0", "1", "2"]
+
+[Version]
+tooltip = "The version number of the app. If no version number exists, commit hash may be used."
+hint = "1.0.0"
+
+[Release]
+tooltip = "When the app was released, formatted as 'January 31st, 2025'."
+hint = "January 31st, 2025"
+
+[Developer]
+tooltip = "The developer or team that coded the app."
+hint = "Dev Inc."
+
+[Genre]
+tooltip = "Genre of the game/app. Usually 'Homebrew' for apps."
+hint = "Homebrew"
+
+[Description]
+tooltip = "A short description of the app. Must be less than 255 characters or it will be truncated in OPL."
+
+[Notes]
+tooltip = "A free text field. Not used in most cases."
+
+[source]
+tooltip = "The url of the project. It can be a git repository, forum thread, website of the app, etc."
+
+[Parental]
+tooltip = "The theme icon to be used to represent the age rating. Irrelevant for apps, can be set to esrb/e."
+hint = "esrb/e"
+
+[ParentalText]
+tooltip = "The age rating of the game. Irrelevant for apps, can be set to E."
+hint = "E"
+
+[Vmode]
+tooltip = "The theme icon to be used to represent the video mode of the app."
+values = ["vmode/ntsc", "vmode/pal", "vmode/multi"]
+
+[VmodeText]
+tooltip = "The video mode of the app. Either NTSC, PAL, or Mutli."
+values = ["NTSC", "PAL", "MULTI"]
+
+[Players]
+tooltip = "The theme icon to be used to represent the maximum number of players. Usually players/1."
+values = ["players/1", "players/2", "players/3", "players/4"]
+
+[PlayersText]
+tooltip = "The maximum number of players. Usually 1 for apps."
+values = ["1", "2", "3", "4"]
+
+[Aspect]
+tooltip = "The theme icon to be used to represent the default aspect ratio of the app. Usually aspect/s."
+values = ["aspect/s", "aspect/w", "aspect/w1", "aspect/w2"]
+
+[AspectText]
+tooltip = "The default aspect ratio of the app. Usually 4:3."
+values = ["4:3", "16:9", "16:9 (ps2rd)", "16:9 (HexISO)"]
+
+[Scan]
+tooltip = "The theme icon to be used to represent the highest display mode the app is capable of."
+values = [
+    "scan/240p",
+    "scan/240p1",
+    "scan/480i",
+    "scan/480p",
+    "scan/480p1",
+    "scan/480p2",
+    "scan/480p3",
+    "scan/480p4",
+    "scan/480p5",
+    "scan/576i",
+    "scan/576p",
+    "scan/720p",
+    "scan/1080i",
+    "scan/1080i2",
+    "scan/1080p",
+]
+
+[ScanText]
+tooltip = "The highest display mode the app is capable of."
+values = [
+    "240p",
+    "240p (HexISO)",
+    "480i",
+    "480p",
+    "480p (Triangle + Cross)",
+    "480p (Circle + Cross)",
+    "480p (GSM)",
+    "480p (ps2rd)",
+    "480p (HexISO)",
+    "576i",
+    "576p (GSM)",
+    "720p (GSM)",
+    "1080i",
+    "1080i (GSM)",
+    "1080p (GSM)",
+]
+
+[Device]
+tooltip = """
+The theme icon to be used to represent the devices supported by the app.
+device/1 -> USB
+device/2 -> USB + ETH
+device/3 -> USB + HDD
+device/4 -> ETH + HDD
+device/5 -> ETH
+device/6 -> HDD
+device/all -> USB + ETH + HDD"""
+values = [
+    "device/1", # USB
+    "device/2", # USB + ETH
+    "device/3", # USB + HDD
+    "device/4", # ETH + HDD
+    "device/5", # ETH
+    "device/6", # HDD
+    "device/all", # USB + ETH + HDD
+]
+
+[DeviceText]
+tooltip = "The devices supported by the app."
+values = [
+    "USB",
+    "USB + ETH",
+    "USB + HDD",
+    "ETH + HDD",
+    "ETH",
+    "HDD",
+    "USB + ETH + HDD",
+]
+
+[Rating]
+tooltip = "The theme icon to be used to represent the five star rating of the app."
+values = ["rating/1", "rating/2", "rating/3", "rating/4", "rating/5"]
+
+[RatingText]
+tooltip = "A five star rating of the app."
+values = ["1", "2", "3", "4", "5"]
