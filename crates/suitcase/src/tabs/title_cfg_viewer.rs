@@ -50,12 +50,23 @@ impl TitleCfgViewer {
             ui.separator();
 
             if self.is_raw_editor {
-                ui.text_edit_multiline(&mut self.title_cfg.contents)
-                    .changed()
-                    .then(|| self.modified = true);
+                eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
+                    .num_columns(1)
+                    .min_col_width(ui.available_width())
+                    .show(ui, |ui| {
+                        ui.add(
+                            TextEdit::multiline(&mut self.title_cfg.contents)
+                                .desired_width(ui.available_width()),
+                        )
+                        .changed()
+                        .then(|| self.modified = true);
+                    });
             } else {
                 eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
                     .num_columns(2)
+                    .striped(true)
+                    .min_col_width(200.0)
+                    .max_col_width(ui.available_width())
                     .show(ui, |ui| {
                         if self.encoding_error {
                             ui.colored_label(
@@ -93,8 +104,8 @@ impl TitleCfgViewer {
                                 });
                             }
 
-                            if value == "Description" {
-                                ui.add(TextEdit::singleline(value).desired_rows(4))
+                            if key == "Description" {
+                                ui.add(TextEdit::multiline(value).desired_rows(6))
                                     .changed()
                                     .then(|| self.modified = true);
                             } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
@@ -107,7 +118,7 @@ impl TitleCfgViewer {
                                 .changed()
                                 .then(|| self.modified = true);
                             } else {
-                                ui.add(TextEdit::singleline(value))
+                                ui.text_edit_singleline(value)
                                     .changed()
                                     .then(|| self.modified = true);
                             }
