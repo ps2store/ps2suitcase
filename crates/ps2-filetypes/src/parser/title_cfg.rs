@@ -51,12 +51,13 @@ impl TitleCfg {
         true
     }
 
-    pub fn fix_missing_fields(&mut self) {
+    pub fn add_missing_fields(&mut self) -> &Self {
         for (_, key) in MANDATORY_KEYS.iter().enumerate() {
             if !self.index_map.contains_key(key.to_owned()) {
                 self.index_map.insert(key.to_string(), "".to_string());
             }
         }
+        self
     }
 }
 

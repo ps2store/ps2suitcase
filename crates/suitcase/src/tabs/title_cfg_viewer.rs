@@ -83,7 +83,7 @@ impl TitleCfgViewer {
                                 "Missing mandatory fields.",
                             );
                             ui.button("Fix").clicked().then(|| {
-                                self.title_cfg.fix_missing_fields();
+                                self.title_cfg.add_missing_fields();
                                 self.modified = true;
                             });
                             ui.end_row();
