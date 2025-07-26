@@ -12,6 +12,7 @@ pub enum AppEvent {
     SaveFile,
     OpenSave,
     CreateICN,
+    CreateTitleCfg,
     OpenSettings,
     StartPCSX2,
     StartPCSX2Elf(PathBuf),
@@ -25,8 +26,7 @@ pub struct AppState {
     pub pcsx2_path: String,
 }
 
-impl AppState {
-}
+impl AppState {}
 
 impl AppState {
     pub fn open_file(&mut self, file: VirtualFile) {
@@ -52,6 +52,9 @@ impl AppState {
     }
     pub fn create_icn(&mut self) {
         self.events.push(AppEvent::CreateICN);
+    }
+    pub fn create_title_cfg(&mut self) {
+        self.events.push(AppEvent::CreateTitleCfg);
     }
     pub fn open_settings(&mut self) {
         self.events.push(AppEvent::OpenSettings);
