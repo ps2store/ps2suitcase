@@ -40,7 +40,9 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
             ui,
             include_image!("../../assets/hidpi/main_mk_titlecfg.png"),
             "Make title configuration",
-        );
+        )
+        .clicked()
+        .then(|| app.create_title_cfg());
         if toolbar_item(
             ui,
             include_image!("../../assets/hidpi/main_mk_iconsys.png"),
@@ -74,13 +76,19 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
             ui,
             include_image!("../../assets/hidpi/main_valid_ok.png"),
             "Validate save file",
-        ).clicked() {
+        )
+        .clicked()
+        {
             app.validate();
         }
 
         if !app.pcsx2_path.is_empty() {
-            if toolbar_item(ui, include_image!("../../assets/hidpi/main_emu_osdsys.png"), "Boot OSDSYS")
-                .clicked()
+            if toolbar_item(
+                ui,
+                include_image!("../../assets/hidpi/main_emu_osdsys.png"),
+                "Boot OSDSYS",
+            )
+            .clicked()
             {
                 app.start_pcsx2();
             }

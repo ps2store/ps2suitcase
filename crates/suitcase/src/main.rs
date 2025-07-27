@@ -7,6 +7,7 @@ mod rendering;
 mod tabs;
 mod wizards;
 
+use crate::io::validate::validate;
 use crate::{
     components::bottom_bar::bottom_bar,
     components::dialogs::Dialogs,
@@ -26,9 +27,9 @@ use crate::{
 use eframe::egui::{Context, Frame, IconData, Margin, ViewportCommand};
 use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, SurfaceIndex, TabIndex};
+use ps2_filetypes::TitleCfg;
 use std::path::PathBuf;
 use std::process::Command;
-use crate::io::validate::validate;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions {
@@ -141,9 +142,12 @@ impl PSUBuilderApp {
                 AppEvent::CreateICN => {
                     self.show_create_icn = true;
                 }
+                AppEvent::CreateTitleCfg => {
+                    self.create_title_cfg();
+                }
                 AppEvent::OpenSettings => {
                     self.show_settings = true;
-                },
+                }
                 AppEvent::StartPCSX2 => {
                     let pcsx = if cfg!(target_os = "macos") {
                         self.state.pcsx2_path.clone() + "/Contents/MacOS/PCSX2"
@@ -151,8 +155,11 @@ impl PSUBuilderApp {
                         self.state.pcsx2_path.clone()
                     };
 
-                    Command::new(pcsx).arg("-bios").spawn().expect("Failed to start PCSX2");
-                },
+                    Command::new(pcsx)
+                        .arg("-bios")
+                        .spawn()
+                        .expect("Failed to start PCSX2");
+                }
                 AppEvent::StartPCSX2Elf(path) => {
                     let pcsx = if cfg!(target_os = "macos") {
                         self.state.pcsx2_path.clone() + "/Contents/MacOS/PCSX2"
@@ -165,9 +172,16 @@ impl PSUBuilderApp {
                         .arg(path)
                         .spawn()
                         .expect("Failed to start PCSX2 with ELF");
-                },
+                }
                 AppEvent::Validate => {
-                    validate(self.state.opened_folder.clone().expect("No opened folder").to_str().unwrap());
+                    validate(
+                        self.state
+                            .opened_folder
+                            .clone()
+                            .expect("No opened folder")
+                            .to_str()
+                            .unwrap(),
+                    );
                 }
             }
         }
@@ -198,10 +212,13 @@ impl PSUBuilderApp {
         if let Some(extension) = name.extension() {
             let editor: Option<TabType> = match extension.to_ascii_lowercase().to_str().unwrap() {
                 "icn" | "ico" => Some(TabType::ICNViewer(ICNViewer::new(&file, &self.state))),
-                "sys" => Some(TabType::IconSysViewer(IconSysViewer::new(&file, &self.state))),
-                "cfg" | "cnf" | "dat" | "txt" => {
-                    Some(TabType::TitleCfgViewer(TitleCfgViewer::new(&file, &self.state)))
-                }
+                "sys" => Some(TabType::IconSysViewer(IconSysViewer::new(
+                    &file,
+                    &self.state,
+                ))),
+                "cfg" | "cnf" | "dat" | "txt" => Some(TabType::TitleCfgViewer(
+                    TitleCfgViewer::new(&file, &self.state),
+                )),
                 _ => None,
             };
 
@@ -262,6 +279,32 @@ impl PSUBuilderApp {
         self.state.files = read_folder(folder)?;
 
         Ok(())
+    }
+
+    fn create_title_cfg(&mut self) {
+        if let Some(filepath) = rfd::FileDialog::new()
+            .set_title("Select a folder to create title.cfg in")
+            .set_file_name("title.cfg")
+            .add_filter("title.cfg", &["cfg"])
+            .set_directory(self.state.opened_folder.clone().unwrap())
+            .save_file()
+        {
+            std::fs::write(
+                filepath.clone(),
+                TitleCfg::new("".to_string())
+                    .add_missing_fields()
+                    .to_string()
+                    .into_bytes(),
+            )
+            .expect("Failed to title.cfg");
+            self.handle_open(VirtualFile {
+                name: filepath.file_name().unwrap().to_str().unwrap().to_string(),
+                size: 0,
+                file_path: filepath,
+            });
+            self.file_tree
+                .index_folder(&self.state.opened_folder.clone().unwrap());
+        }
     }
 }
 
