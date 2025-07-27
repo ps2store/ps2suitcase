@@ -282,13 +282,13 @@ impl PSUBuilderApp {
     }
 
     fn create_title_cfg(&mut self) {
-        if let Some(mut filepath) = rfd::FileDialog::new()
+        if let Some(filepath) = rfd::FileDialog::new()
             .set_title("Select a folder to create title.cfg in")
             .set_file_name("title.cfg")
-            .pick_folder()
+            .add_filter("title.cfg", &["cfg"])
+            .set_directory(self.state.opened_folder.clone().unwrap())
+            .save_file()
         {
-            filepath.push("title");
-            filepath.set_extension("cfg");
             std::fs::write(
                 filepath.clone(),
                 TitleCfg::new("".to_string())
@@ -302,6 +302,8 @@ impl PSUBuilderApp {
                 size: 0,
                 file_path: filepath,
             });
+            self.file_tree
+                .index_folder(&self.state.opened_folder.clone().unwrap());
         }
     }
 }
