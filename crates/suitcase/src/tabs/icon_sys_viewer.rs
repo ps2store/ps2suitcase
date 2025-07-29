@@ -133,6 +133,7 @@ impl IconSysViewer {
     }
 
     pub fn show(&mut self, ui: &mut Ui, app: &mut AppState) {
+        const SPACE_AROUND_HEADING: f32 = 10.0;
         let files: Vec<String> = app
             .files
             .iter()
@@ -163,7 +164,7 @@ impl IconSysViewer {
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.heading("Icon Configuration");
-            ui.add_space(4.0);
+            ui.add_space(SPACE_AROUND_HEADING);
             ui.horizontal(|ui| {
                 Grid::new("title").num_columns(2).show(ui, |ui| {
                     ui.label("Title");
@@ -187,8 +188,10 @@ impl IconSysViewer {
                     });
             });
 
+            ui.add_space(SPACE_AROUND_HEADING);
+            ui.separator();
             ui.heading("Icons");
-            ui.add_space(4.0);
+            ui.add_space(SPACE_AROUND_HEADING);
 
             Grid::new("icons").num_columns(2).show(ui, |ui| {
                 ui.label("List");
@@ -201,91 +204,104 @@ impl IconSysViewer {
                 file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
             });
 
+            ui.add_space(SPACE_AROUND_HEADING);
+            ui.separator();
             ui.heading("Background");
-            ui.add_space(4.0);
+            ui.add_space(SPACE_AROUND_HEADING);
 
-            const SPACING: f32 = 40.0;
+            ui.horizontal(|ui| {
+                const GRADIENT_BOX_SPACING: f32 = 40.0;
 
-            ui.add_sized(vec2(SPACING * 3.0, SPACING * 3.0), |ui: &mut Ui| {
-                draw_background(ui, &self.background_colors);
-                ui.spacing_mut().interact_size = vec2(SPACING, SPACING);
-                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                ui.add_sized(
+                    vec2(GRADIENT_BOX_SPACING * 3.0, GRADIENT_BOX_SPACING * 3.0),
+                    |ui: &mut Ui| {
+                        draw_background(ui, &self.background_colors);
+                        ui.spacing_mut().interact_size =
+                            vec2(GRADIENT_BOX_SPACING, GRADIENT_BOX_SPACING);
+                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-                ui.columns(3, |cols| {
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        &mut cols[0],
-                        &mut self.background_colors[0].rgb,
-                    );
-                    cols[1].add_space(SPACING);
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        &mut cols[2],
-                        &mut self.background_colors[1].rgb,
-                    );
+                        ui.columns(3, |cols| {
+                            egui::widgets::color_picker::color_edit_button_rgb(
+                                &mut cols[0],
+                                &mut self.background_colors[0].rgb,
+                            );
+                            cols[1].add_space(GRADIENT_BOX_SPACING);
+                            egui::widgets::color_picker::color_edit_button_rgb(
+                                &mut cols[2],
+                                &mut self.background_colors[1].rgb,
+                            );
 
-                    cols[0].add_space(SPACING);
-                    cols[1].add_space(SPACING);
-                    cols[2].add_space(SPACING);
+                            cols[0].add_space(GRADIENT_BOX_SPACING);
+                            cols[1].add_space(GRADIENT_BOX_SPACING);
+                            cols[2].add_space(GRADIENT_BOX_SPACING);
 
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        &mut cols[0],
-                        &mut self.background_colors[2].rgb,
-                    );
-                    cols[1].add_space(SPACING);
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        &mut cols[2],
-                        &mut self.background_colors[3].rgb,
-                    );
-                });
-                ui.response()
-            });
+                            egui::widgets::color_picker::color_edit_button_rgb(
+                                &mut cols[0],
+                                &mut self.background_colors[2].rgb,
+                            );
+                            cols[1].add_space(GRADIENT_BOX_SPACING);
+                            egui::widgets::color_picker::color_edit_button_rgb(
+                                &mut cols[2],
+                                &mut self.background_colors[3].rgb,
+                            );
+                        });
+                        ui.response()
+                    },
+                );
 
-            Grid::new("background").num_columns(2).show(ui, |ui| {
-                ui.label("Background Transparency").on_hover_ui(|ui| {
-                    ui.label(
-                        "This is the opposite of opacity, so a value of 100 will make \
+                Grid::new("background").num_columns(2).show(ui, |ui| {
+                    ui.label("Background Transparency").on_hover_ui(|ui| {
+                        ui.label(
+                            "This is the opposite of opacity, so a value of 100 will make \
                                 the background completely transparent",
+                        );
+                    });
+                    ui.add(egui::Slider::new(
+                        &mut self.background_transparency,
+                        0..=100,
+                    ));
+                    ui.end_row();
+                    ui.label("Ambient Color");
+                    egui::widgets::color_picker::color_edit_button_rgb(
+                        ui,
+                        &mut self.ambient_color.rgb,
                     );
+                    ui.end_row();
                 });
-                ui.add(egui::Slider::new(
-                    &mut self.background_transparency,
-                    0..=100,
-                ));
-                ui.end_row();
-                ui.label("Ambient Color");
-                egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.ambient_color.rgb);
-                ui.end_row();
             });
 
+            ui.add_space(SPACE_AROUND_HEADING);
+            ui.separator();
             ui.heading("Lights");
-            ui.add_space(4.0);
-
-            for (index, light) in self.lights.iter_mut().enumerate() {
-                let human_readable_index = index + 1;
-                ui.label(format!("Light {human_readable_index}"));
-                ui.end_row();
-                ui.label("Color");
-                egui::widgets::color_picker::color_edit_button_rgb(ui, &mut light.color.rgb);
-                ui.end_row();
-
-                ui.label("X");
-                ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0));
-                ui.end_row();
-                ui.label("Y");
-                ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0));
-                ui.end_row();
-                ui.label("Z");
-                ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0));
-                ui.end_row();
-
-                Ui::separator(ui);
-                ui.end_row();
-            }
-
-            ui.button("Save")
-                .on_hover_text("Save changes")
-                .clicked()
-                .then(|| {
-                    self.save();
+            ui.add_space(SPACE_AROUND_HEADING);
+            Grid::new("lights")
+                .num_columns(3)
+                .spacing([50.0, 50.0])
+                .min_col_width(40.0)
+                .striped(true)
+                .show(ui, |ui| {
+                    for (index, light) in self.lights.iter_mut().enumerate() {
+                        Grid::new(format!("light{index}"))
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label(format!("Light {}", index + 1));
+                                ui.end_row();
+                                ui.label("Color");
+                                egui::widgets::color_picker::color_edit_button_rgb(
+                                    ui,
+                                    &mut light.color.rgb,
+                                );
+                                ui.end_row();
+                                ui.label("X");
+                                ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0));
+                                ui.end_row();
+                                ui.label("Y");
+                                ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0));
+                                ui.end_row();
+                                ui.label("Z");
+                                ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0));
+                            });
+                    }
                 });
         });
     }
