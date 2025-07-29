@@ -1,8 +1,9 @@
+use crate::components::value_select::value_select;
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
 use eframe::egui::{
-    menu, vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui,
+    menu, vec2, Color32, Grid, Rgba, Ui,
 };
 use ps2_filetypes::color::Color;
 use ps2_filetypes::{ColorF, IconSys, Vector};
@@ -94,6 +95,7 @@ pub struct IconSysViewer {
     pub lights: [Light; 3],
     pub sys: IconSys,
     pub file_path: PathBuf,
+    modified: bool,
 }
 
 impl IconSysViewer {
@@ -131,6 +133,7 @@ impl IconSysViewer {
                 .relative_to(state.opened_folder.clone().unwrap())
                 .unwrap()
                 .to_string(),
+            modified: false,
         }
     }
 
@@ -173,10 +176,14 @@ impl IconSysViewer {
                 .min_col_width(LABEL_COLUMN_WIDTH)
                 .show(ui, |ui| {
                     ui.label("Title first line");
-                    ui.add(TextEdit::singleline(&mut self.title_first_line));
+                    ui.text_edit_singleline(&mut self.title_first_line)
+                        .changed()
+                        .then(|| self.modified = true);
                     ui.end_row();
                     ui.label("Title second line");
-                    ui.add(TextEdit::singleline(&mut self.title_second_line));
+                    ui.text_edit_singleline(&mut self.title_second_line)
+                        .changed()
+                        .then(|| self.modified = true);
 
                     length_warning(
                         ui,
@@ -196,7 +203,9 @@ impl IconSysViewer {
                 .min_col_width(LABEL_COLUMN_WIDTH)
                 .show(ui, |ui| {
                     ui.label("List");
-                    file_select(ui, "list_icon", &mut self.icon_file, &files);
+                    value_select(ui, "list_icon", &mut self.icon_file, &files)
+                        .changed()
+                        .then(|| self.modified = true);
                     length_warning(
                         ui,
                         self.icon_file.len(),
@@ -206,7 +215,9 @@ impl IconSysViewer {
                     ui.end_row();
 
                     ui.label("Copy");
-                    file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
+                    value_select(ui, "copy_icon", &mut self.icon_copy_file, &files)
+                        .changed()
+                        .then(|| self.modified = true);
                     length_warning(
                         ui,
                         self.icon_copy_file.len(),
@@ -216,7 +227,9 @@ impl IconSysViewer {
                     ui.end_row();
 
                     ui.label("Delete");
-                    file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
+                    value_select(ui, "delete_icon", &mut self.icon_delete_file, &files)
+                        .changed()
+                        .then(|| self.modified = true);
                     length_warning(
                         ui,
                         self.icon_delete_file.len(),
@@ -248,12 +261,16 @@ impl IconSysViewer {
                                 egui::widgets::color_picker::color_edit_button_rgb(
                                     &mut cols[0],
                                     &mut self.background_colors[0].rgb,
-                                );
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
                                 cols[1].add_space(GRADIENT_BOX_SPACING);
                                 egui::widgets::color_picker::color_edit_button_rgb(
                                     &mut cols[2],
                                     &mut self.background_colors[1].rgb,
-                                );
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
 
                                 cols[0].add_space(GRADIENT_BOX_SPACING);
                                 cols[1].add_space(GRADIENT_BOX_SPACING);
@@ -262,12 +279,16 @@ impl IconSysViewer {
                                 egui::widgets::color_picker::color_edit_button_rgb(
                                     &mut cols[0],
                                     &mut self.background_colors[2].rgb,
-                                );
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
                                 cols[1].add_space(GRADIENT_BOX_SPACING);
                                 egui::widgets::color_picker::color_edit_button_rgb(
                                     &mut cols[2],
                                     &mut self.background_colors[3].rgb,
-                                );
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
                             });
                             ui.response()
                         },
@@ -283,13 +304,18 @@ impl IconSysViewer {
                         ui.add(egui::Slider::new(
                             &mut self.background_transparency,
                             0..=100,
-                        ));
+                        ))
+                        .changed()
+                        .then(|| self.modified = true);
                         ui.end_row();
+
                         ui.label("Ambient Color");
                         egui::widgets::color_picker::color_edit_button_rgb(
                             ui,
                             &mut self.ambient_color.rgb,
-                        );
+                        )
+                        .changed()
+                        .then(|| self.modified = true);
                         ui.end_row();
                     });
                 });
@@ -311,20 +337,32 @@ impl IconSysViewer {
                             .show(ui, |ui| {
                                 ui.label(format!("Light {}", index + 1));
                                 ui.end_row();
+
                                 ui.label("Color");
                                 egui::widgets::color_picker::color_edit_button_rgb(
                                     ui,
                                     &mut light.color.rgb,
-                                );
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
                                 ui.end_row();
+
                                 ui.label("X");
-                                ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0));
+                                ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0))
+                                    .changed()
+                                    .then(|| self.modified = true);
                                 ui.end_row();
+
                                 ui.label("Y");
-                                ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0));
+                                ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0))
+                                    .changed()
+                                    .then(|| self.modified = true);
                                 ui.end_row();
+
                                 ui.label("Z");
-                                ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0));
+                                ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0))
+                                    .changed()
+                                    .then(|| self.modified = true);
                             });
                     }
                 });
@@ -342,10 +380,7 @@ impl Tab for IconSysViewer {
     }
 
     fn get_modified(&self) -> bool {
-        self.sys.title != format!("{}{}", self.title_first_line, self.title_second_line)
-            || self.sys.icon_file != self.icon_file
-            || self.sys.icon_copy_file != self.icon_copy_file
-            || self.sys.icon_delete_file != self.icon_delete_file
+        self.modified
     }
 
     fn save(&mut self) {
@@ -377,64 +412,8 @@ impl Tab for IconSysViewer {
         };
         std::fs::write(&self.file_path, new_sys.to_bytes().unwrap()).expect("Failed to save icon");
         self.sys = new_sys;
+        self.modified = false;
     }
-}
-
-fn set_border_radius(ui: &mut Ui, radius: CornerRadius) {
-    ui.style_mut().visuals.widgets.hovered.corner_radius = radius.add(CornerRadius::same(1));
-    ui.style_mut().visuals.widgets.inactive.corner_radius = radius;
-    ui.style_mut().visuals.widgets.active.corner_radius = radius;
-}
-
-fn file_select(ui: &mut Ui, name: impl Into<String>, value: &mut String, files: &[String]) {
-    let id = Id::from(name.into());
-    let layout_response = ui.horizontal(|ui| {
-        ui.style_mut().spacing.item_spacing.x = 1.0;
-
-        set_border_radius(
-            ui,
-            CornerRadius {
-                nw: 2,
-                sw: 2,
-                ne: 0,
-                se: 0,
-            },
-        );
-        ui.text_edit_singleline(value);
-
-        set_border_radius(
-            ui,
-            CornerRadius {
-                nw: 0,
-                sw: 0,
-                ne: 2,
-                se: 2,
-            },
-        );
-        let response = ui.button("🔽");
-        if response.clicked() {
-            ui.memory_mut(|mem| {
-                mem.toggle_popup(id);
-            });
-        }
-
-        response
-    });
-
-    // Small hack to ensure the popup is positioned correctly
-    let res = Response {
-        rect: layout_response.response.rect,
-        ..layout_response.inner
-    };
-
-    egui::popup_below_widget(ui, id, &res, PopupCloseBehavior::CloseOnClick, |ui| {
-        ui.set_min_width(200.0);
-        files.iter().for_each(|file| {
-            if ui.selectable_label(false, file.clone()).clicked() {
-                *value = file.clone();
-            }
-        });
-    });
 }
 
 fn draw_background(ui: &mut Ui, colors: &[PS2RgbaInterface; 4]) {
