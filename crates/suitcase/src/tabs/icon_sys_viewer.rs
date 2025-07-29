@@ -2,8 +2,7 @@ use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
 use eframe::egui::{
-    menu, vec2, Color32, CornerRadius, Frame, Grid, Id, PopupCloseBehavior, Response, Rgba,
-    RichText, TextEdit, Ui,
+    menu, vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui,
 };
 use ps2_filetypes::color::Color;
 use ps2_filetypes::{ColorF, IconSys, Vector};
@@ -83,8 +82,8 @@ impl Light {
 }
 
 pub struct IconSysViewer {
-    title: String,
-    linebreak_pos: u16,
+    title_first_line: String,
+    title_second_line: String,
     file: String,
     pub icon_file: String,
     pub icon_copy_file: String,
@@ -103,9 +102,12 @@ impl IconSysViewer {
 
         let sys = IconSys::new(buf);
 
+        let (title_first_line, title_second_line) =
+            sys.title.split_at(sys.linebreak_pos as usize).to_owned();
+
         Self {
-            title: sys.title.clone(),
-            linebreak_pos: sys.linebreak_pos,
+            title_first_line: title_first_line.to_string(),
+            title_second_line: title_second_line.to_string(),
             icon_file: sys.icon_file.clone(),
             icon_copy_file: sys.icon_copy_file.clone(),
             icon_delete_file: sys.icon_delete_file.clone(),
@@ -165,30 +167,16 @@ impl IconSysViewer {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.heading("Icon Configuration");
             ui.add_space(SPACE_AROUND_HEADING);
-            Grid::new("title").num_columns(3).show(ui, |ui| {
-                Grid::new("title").num_columns(2).show(ui, |ui| {
-                    ui.label("Title");
-                    ui.add(TextEdit::singleline(&mut self.title));
-                    ui.end_row();
-                    ui.label("Linebreak Position");
-                    ui.add(egui::Slider::new(
-                        &mut self.linebreak_pos,
-                        0..=self.title.len().try_into().unwrap(),
-                    ));
-                });
-
-                let mut output_title = self.title.clone();
-                output_title.insert(self.linebreak_pos as usize, '\n');
-                Frame::new()
-                    .inner_margin(10.0)
-                    .fill(Color32::BLACK)
-                    .show(ui, |ui| {
-                        ui.label(RichText::new(output_title).color(Color32::WHITE));
-                    });
+            Grid::new("title").num_columns(2).show(ui, |ui| {
+                ui.label("Title first line");
+                ui.add(TextEdit::singleline(&mut self.title_first_line));
+                ui.end_row();
+                ui.label("Title second line");
+                ui.add(TextEdit::singleline(&mut self.title_second_line));
 
                 length_warning(
                     ui,
-                    self.title.len(),
+                    self.title_first_line.len() + self.title_second_line.len(),
                     IconSys::MAXIMUM_TITLE_BYTE_LENGTH / 2,
                     "Title too long!",
                 );
@@ -343,7 +331,7 @@ impl Tab for IconSysViewer {
     }
 
     fn get_modified(&self) -> bool {
-        self.sys.title != self.title
+        self.sys.title != format!("{}{}", self.title_first_line, self.title_second_line)
             || self.sys.icon_file != self.icon_file
             || self.sys.icon_copy_file != self.icon_copy_file
             || self.sys.icon_delete_file != self.icon_delete_file
@@ -351,8 +339,8 @@ impl Tab for IconSysViewer {
 
     fn save(&mut self) {
         let new_sys = IconSys {
-            title: self.title.clone(),
-            linebreak_pos: self.linebreak_pos,
+            title: format!("{}{}", self.title_first_line, self.title_second_line),
+            linebreak_pos: self.title_first_line.len() as u16,
             icon_file: self.icon_file.clone(),
             icon_copy_file: self.icon_copy_file.clone(),
             icon_delete_file: self.icon_delete_file.clone(),
