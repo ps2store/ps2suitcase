@@ -41,16 +41,17 @@ impl TitleCfgViewer {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        ui.vertical(|ui| {
-            menu::bar(ui, |ui| {
-                ui.set_height(25.0);
-                ui.button("Save").clicked().then(|| self.save());
-                ui.button("Toggle Raw Editor").clicked().then(|| {
-                    self.toggle_editors();
-                });
+        menu::bar(ui, |ui| {
+            ui.set_height(Self::TOOLBAR_HEIGHT);
+            ui.add_space(Self::TOOLBAR_LEFT_MARGIN);
+            ui.button("Save").clicked().then(|| self.save());
+            ui.button("Toggle Raw Editor").clicked().then(|| {
+                self.toggle_editors();
             });
-            ui.separator();
+        });
+        ui.separator();
 
+        eframe::egui::ScrollArea::vertical().show(ui, |ui| {
             if self.is_raw_editor {
                 eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
                     .num_columns(1)
@@ -138,6 +139,7 @@ impl TitleCfgViewer {
                         }
                     });
             }
+            ui.separator(); // cheap trick to force to take the entire width
         });
     }
 

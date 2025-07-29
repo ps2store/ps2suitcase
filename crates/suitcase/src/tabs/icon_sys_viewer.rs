@@ -2,7 +2,7 @@ use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
 use eframe::egui::{
-    vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui,
+    menu, vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui,
 };
 use ps2_filetypes::color::Color;
 use ps2_filetypes::{ColorF, IconSys, Vector};
@@ -150,10 +150,15 @@ impl IconSysViewer {
             })
             .collect();
 
-        ui.vertical(|ui| {
-            // eframe::egui::Grid::new(Id::from("IconSysEditor"))
-            //     .num_columns(2)
-            //     .show(ui, |ui| {
+        menu::bar(ui, |ui| {
+            ui.set_height(Self::TOOLBAR_HEIGHT);
+            ui.add_space(Self::TOOLBAR_LEFT_MARGIN);
+            ui.button("Save").clicked().then(|| self.save());
+        });
+
+        ui.separator();
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
             ui.heading("Icon Configuration");
             ui.add_space(4.0);
             ui.horizontal(|ui| {
@@ -255,7 +260,6 @@ impl IconSysViewer {
                 ui.end_row();
             }
 
-            // });
             ui.button("Save")
                 .on_hover_text("Save changes")
                 .clicked()

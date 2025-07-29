@@ -9,7 +9,10 @@ use crate::{
 };
 use cgmath::Vector3;
 use eframe::egui::load::SizedTexture;
-use eframe::egui::{vec2, ColorImage, ComboBox, Grid, Id, ImageData, ImageSource, Stroke, TextureId, TextureOptions, WidgetText};
+use eframe::egui::{
+    vec2, ColorImage, ComboBox, Grid, Id, ImageData, ImageSource, Stroke, TextureId,
+    TextureOptions, WidgetText,
+};
 use eframe::{
     egui,
     egui::{include_image, menu, Color32, Ui},
@@ -64,9 +67,11 @@ impl<'a> TabViewer for ICNTabViewer<'a> {
                         }
                         ui.end_row();
                         ui.label("Compression");
-                        ComboBox::from_id_salt("compression").selected_text("On").show_ui(ui, |ui| {
-                            ui.selectable_label(true, "On");
-                        })
+                        ComboBox::from_id_salt("compression")
+                            .selected_text("On")
+                            .show_ui(ui, |ui| {
+                                ui.selectable_label(true, "On");
+                            })
                     });
             }
             ICNTab::IconSysProperties => {
@@ -139,25 +144,45 @@ impl ICNViewer {
 impl ICNViewer {
     pub fn new(file: &VirtualFile, state: &AppState) -> Self {
         let mut background_colors = [Color32::DARK_GRAY; 4];
-        let mut light_colors = [ColorF{r: 0.0, g: 0.0, b: 0.0, a: 0.0}; 3];
-        let mut light_positions = [Vector{x: 0.0, y: 0.0, z: 0.0, w: 0.0}; 3];
-        let mut ambient_color = ColorF{r: 0.1, g: 0.1, b: 0.1, a: 0.0};
+        let mut light_colors = [ColorF {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        }; 3];
+        let mut light_positions = [Vector {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 0.0,
+        }; 3];
+        let mut ambient_color = ColorF {
+            r: 0.1,
+            g: 0.1,
+            b: 0.1,
+            a: 0.0,
+        };
 
         let buf = std::fs::read(&file.file_path).expect("File not found");
         let icon_sys = file.file_path.clone().parent().unwrap().join("icon.sys");
 
         if icon_sys.exists() {
             let icon_sys = IconSys::new(std::fs::read(icon_sys).unwrap());
-            background_colors = icon_sys.background_colors.map(|c| PS2RgbaInterface::build_from_color(c).into());
+            background_colors = icon_sys
+                .background_colors
+                .map(|c| PS2RgbaInterface::build_from_color(c).into());
             light_colors = icon_sys.light_colors;
             light_positions = icon_sys.light_directions;
         }
 
         let icn = ps2_filetypes::ICNParser::read(&buf.clone()).unwrap();
-        let mut dock_state =
-            DockState::new(vec![ICNTab::IconProperties]);
+        let mut dock_state = DockState::new(vec![ICNTab::IconProperties]);
 
-        dock_state.main_surface_mut().split_below(NodeIndex::root(), 0.5, vec![ICNTab::IconSysProperties]);
+        dock_state.main_surface_mut().split_below(
+            NodeIndex::root(),
+            0.5,
+            vec![ICNTab::IconSysProperties],
+        );
 
         Self {
             dock_state,
@@ -218,8 +243,7 @@ impl ICNViewer {
         let mut delta_pitch = 0.0;
         let mut delta_zoom = 0.0;
 
-        if response.dragged()
-        {
+        if response.dragged() {
             let delta = response.drag_delta();
             delta_yaw -= delta.x * 0.01;
             delta_pitch += delta.y * 0.01;
@@ -257,7 +281,15 @@ impl ICNViewer {
                 if closing {
                     renderer.drop(painter.gl())
                 } else {
-                    renderer.paint(painter.gl(), aspect_ratio, camera, frame, light_colors, light_positions, ambient_color);
+                    renderer.paint(
+                        painter.gl(),
+                        aspect_ratio,
+                        camera,
+                        frame,
+                        light_colors,
+                        light_positions,
+                        ambient_color,
+                    );
                 }
             })),
         };
@@ -300,7 +332,8 @@ impl ICNViewer {
         });
         ui.vertical(|ui| {
             menu::bar(ui, |ui| {
-                ui.set_height(50.0);
+                ui.set_height(Self::TOOLBAR_HEIGHT);
+                ui.add_space(Self::TOOLBAR_LEFT_MARGIN);
                 if ui
                     .icon_text_button(
                         include_image!("../../assets/icons/file-arrow-right.svg"),
@@ -358,10 +391,13 @@ impl ICNViewer {
             ui.vertical(|ui| {
                 ui.set_height(ui.available_size_before_wrap().y - 28.0);
 
-                egui::Frame::canvas(ui.style()).stroke(Stroke::NONE).corner_radius(0).show(ui, |ui| {
-                    draw_background(ui, &self.background_colors);
-                    self.custom_painting(ui);
-                });
+                egui::Frame::canvas(ui.style())
+                    .stroke(Stroke::NONE)
+                    .corner_radius(0)
+                    .show(ui, |ui| {
+                        draw_background(ui, &self.background_colors);
+                        self.custom_painting(ui);
+                    });
             });
 
             if self.icn.animation_header.frame_length > 1 {
