@@ -165,7 +165,7 @@ impl IconSysViewer {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.heading("Icon Configuration");
             ui.add_space(SPACE_AROUND_HEADING);
-            ui.horizontal(|ui| {
+            Grid::new("title").num_columns(3).show(ui, |ui| {
                 Grid::new("title").num_columns(2).show(ui, |ui| {
                     ui.label("Title");
                     ui.add(TextEdit::singleline(&mut self.title));
@@ -177,7 +177,6 @@ impl IconSysViewer {
                     ));
                 });
 
-                ui.add_space(20.0);
                 let mut output_title = self.title.clone();
                 output_title.insert(self.linebreak_pos as usize, '\n');
                 Frame::new()
@@ -186,6 +185,13 @@ impl IconSysViewer {
                     .show(ui, |ui| {
                         ui.label(RichText::new(output_title).color(Color32::WHITE));
                     });
+
+                length_warning(
+                    ui,
+                    self.title.len(),
+                    IconSys::MAXIMUM_TITLE_BYTE_LENGTH / 2,
+                    "Title too long!",
+                );
             });
 
             ui.add_space(SPACE_AROUND_HEADING);
@@ -196,12 +202,32 @@ impl IconSysViewer {
             Grid::new("icons").num_columns(2).show(ui, |ui| {
                 ui.label("List");
                 file_select(ui, "list_icon", &mut self.icon_file, &files);
+                length_warning(
+                    ui,
+                    self.icon_file.len(),
+                    IconSys::MAXIMUM_FILENAME_BYTE_LENGTH / 2,
+                    "Filename too long!",
+                );
                 ui.end_row();
+
                 ui.label("Copy");
                 file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
+                length_warning(
+                    ui,
+                    self.icon_copy_file.len(),
+                    IconSys::MAXIMUM_FILENAME_BYTE_LENGTH / 2,
+                    "Filename too long!",
+                );
                 ui.end_row();
+
                 ui.label("Delete");
                 file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
+                length_warning(
+                    ui,
+                    self.icon_delete_file.len(),
+                    IconSys::MAXIMUM_FILENAME_BYTE_LENGTH / 2,
+                    "Filename too long!",
+                );
             });
 
             ui.add_space(SPACE_AROUND_HEADING);
@@ -449,4 +475,12 @@ fn draw_background(ui: &mut Ui, colors: &[PS2RgbaInterface; 4]) {
         .extend_from_slice(&[i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3]);
 
     painter.add(egui::Shape::mesh(mesh));
+}
+
+fn length_warning(ui: &mut Ui, length: usize, maximum_length: usize, message: &str) {
+    if length > maximum_length {
+        ui.end_row();
+        ui.label("");
+        ui.colored_label(Color32::RED, format!("{message} {length}/{maximum_length}"));
+    }
 }
