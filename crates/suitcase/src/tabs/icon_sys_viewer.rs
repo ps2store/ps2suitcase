@@ -2,7 +2,8 @@ use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
 use eframe::egui::{
-    menu, vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui,
+    menu, vec2, Color32, CornerRadius, Frame, Grid, Id, PopupCloseBehavior, Response, Rgba,
+    RichText, TextEdit, Ui,
 };
 use ps2_filetypes::color::Color;
 use ps2_filetypes::{ColorF, IconSys, Vector};
@@ -83,6 +84,7 @@ impl Light {
 
 pub struct IconSysViewer {
     title: String,
+    linebreak_pos: u16,
     file: String,
     pub icon_file: String,
     pub icon_copy_file: String,
@@ -103,6 +105,7 @@ impl IconSysViewer {
 
         Self {
             title: sys.title.clone(),
+            linebreak_pos: sys.linebreak_pos,
             icon_file: sys.icon_file.clone(),
             icon_copy_file: sys.icon_copy_file.clone(),
             icon_delete_file: sys.icon_delete_file.clone(),
@@ -162,8 +165,26 @@ impl IconSysViewer {
             ui.heading("Icon Configuration");
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label("Title");
-                ui.add(TextEdit::singleline(&mut self.title));
+                Grid::new("title").num_columns(2).show(ui, |ui| {
+                    ui.label("Title");
+                    ui.add(TextEdit::singleline(&mut self.title));
+                    ui.end_row();
+                    ui.label("Linebreak Position");
+                    ui.add(egui::Slider::new(
+                        &mut self.linebreak_pos,
+                        0..=self.title.len().try_into().unwrap(),
+                    ));
+                });
+
+                ui.add_space(20.0);
+                let mut output_title = self.title.clone();
+                output_title.insert(self.linebreak_pos as usize, '\n');
+                Frame::new()
+                    .inner_margin(10.0)
+                    .fill(Color32::BLACK)
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(output_title).color(Color32::WHITE));
+                    });
             });
 
             ui.heading("Icons");
@@ -289,10 +310,11 @@ impl Tab for IconSysViewer {
     fn save(&mut self) {
         let new_sys = IconSys {
             title: self.title.clone(),
+            linebreak_pos: self.linebreak_pos,
             icon_file: self.icon_file.clone(),
             icon_copy_file: self.icon_copy_file.clone(),
             icon_delete_file: self.icon_delete_file.clone(),
-            background_transparency: self.background_transparency.clone(),
+            background_transparency: self.background_transparency,
             ambient_color: self.ambient_color.to_color_f(),
             background_colors: [
                 self.background_colors[0].to_color(),
