@@ -2,12 +2,11 @@ use crate::components::value_select::value_select;
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
-use eframe::egui::{
-    menu, vec2, Color32, Grid, Rgba, Ui,
-};
+use eframe::egui::{menu, vec2, Color32, Grid, Rgba, Ui};
 use ps2_filetypes::color::Color;
 use ps2_filetypes::{ColorF, IconSys, Vector};
 use relative_path::PathExt;
+use std::cmp::min;
 use std::ops::Add;
 use std::path::PathBuf;
 
@@ -104,8 +103,8 @@ impl IconSysViewer {
 
         let sys = IconSys::new(buf);
 
-        let (title_first_line, title_second_line) =
-            sys.title.split_at(sys.linebreak_pos as usize).to_owned();
+        let split_position: usize = min(sys.linebreak_pos as usize, sys.title.len());
+        let (title_first_line, title_second_line) = sys.title.split_at(split_position).to_owned();
 
         Self {
             title_first_line: title_first_line.to_string(),
