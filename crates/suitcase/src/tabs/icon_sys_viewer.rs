@@ -1,3 +1,4 @@
+use crate::components::draw_background::draw_background;
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
@@ -181,7 +182,7 @@ impl IconSysViewer {
             const SPACING: f32 = 40.0;
 
             ui.add_sized(vec2(SPACING * 3.0, SPACING * 3.0), |ui: &mut Ui| {
-                draw_background(ui, &self.background_colors);
+                draw_background(ui, &self.background_colors.map(|color| color.into()));
                 ui.spacing_mut().interact_size = vec2(SPACING, SPACING);
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
@@ -368,43 +369,4 @@ fn file_select(ui: &mut Ui, name: impl Into<String>, value: &mut String, files: 
             }
         });
     });
-}
-
-fn draw_background(ui: &mut Ui, colors: &[PS2RgbaInterface; 4]) {
-    let rect = ui.available_rect_before_wrap();
-    let painter = ui.painter_at(rect);
-
-    let top_left = rect.left_top();
-    let top_right = rect.right_top();
-    let bottom_left = rect.left_bottom();
-    let bottom_right = rect.right_bottom();
-
-    let mut mesh = egui::epaint::Mesh::default();
-
-    let i0 = mesh.vertices.len() as u32;
-    mesh.vertices.push(egui::epaint::Vertex {
-        pos: top_left,
-        uv: egui::epaint::WHITE_UV,
-        color: colors[0].into(),
-    });
-    mesh.vertices.push(egui::epaint::Vertex {
-        pos: top_right,
-        uv: egui::epaint::WHITE_UV,
-        color: colors[1].into(),
-    });
-    mesh.vertices.push(egui::epaint::Vertex {
-        pos: bottom_right,
-        uv: egui::epaint::WHITE_UV,
-        color: colors[3].into(),
-    });
-    mesh.vertices.push(egui::epaint::Vertex {
-        pos: bottom_left,
-        uv: egui::epaint::WHITE_UV,
-        color: colors[2].into(),
-    });
-
-    mesh.indices
-        .extend_from_slice(&[i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3]);
-
-    painter.add(egui::Shape::mesh(mesh));
 }

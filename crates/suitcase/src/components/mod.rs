@@ -1,10 +1,11 @@
 pub mod bottom_bar;
 pub mod buttons;
 pub mod dialogs;
+pub mod draw_background;
+pub(crate) mod file_picker;
 pub mod file_tree;
+pub mod greeting;
 pub mod menu_bar;
 pub mod menu_item;
 pub mod tab_viewer;
 pub mod toolbar;
-pub mod greeting;
-pub(crate) mod file_picker;
