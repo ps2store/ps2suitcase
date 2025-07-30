@@ -1,12 +1,12 @@
+use crate::components::value_select::value_select;
 use crate::tabs::Tab;
 use crate::{AppState, VirtualFile};
 use eframe::egui;
-use eframe::egui::{
-    vec2, Color32, CornerRadius, Grid, Id, PopupCloseBehavior, Response, Rgba, TextEdit, Ui,
-};
+use eframe::egui::{menu, vec2, Color32, Grid, Rgba, Ui};
 use ps2_filetypes::color::Color;
 use ps2_filetypes::{ColorF, IconSys, Vector};
 use relative_path::PathExt;
+use std::cmp::min;
 use std::ops::Add;
 use std::path::PathBuf;
 
@@ -82,7 +82,8 @@ impl Light {
 }
 
 pub struct IconSysViewer {
-    title: String,
+    title_first_line: String,
+    title_second_line: String,
     file: String,
     pub icon_file: String,
     pub icon_copy_file: String,
@@ -93,6 +94,7 @@ pub struct IconSysViewer {
     pub lights: [Light; 3],
     pub sys: IconSys,
     pub file_path: PathBuf,
+    modified: bool,
 }
 
 impl IconSysViewer {
@@ -101,8 +103,12 @@ impl IconSysViewer {
 
         let sys = IconSys::new(buf);
 
+        let split_position: usize = min(sys.linebreak_pos as usize, sys.title.len());
+        let (title_first_line, title_second_line) = sys.title.split_at(split_position).to_owned();
+
         Self {
-            title: sys.title.clone(),
+            title_first_line: title_first_line.to_string(),
+            title_second_line: title_second_line.to_string(),
             icon_file: sys.icon_file.clone(),
             icon_copy_file: sys.icon_copy_file.clone(),
             icon_delete_file: sys.icon_delete_file.clone(),
@@ -126,10 +132,13 @@ impl IconSysViewer {
                 .relative_to(state.opened_folder.clone().unwrap())
                 .unwrap()
                 .to_string(),
+            modified: false,
         }
     }
 
     pub fn show(&mut self, ui: &mut Ui, app: &mut AppState) {
+        const SPACE_AROUND_HEADING: f32 = 10.0;
+        const LABEL_COLUMN_WIDTH: f32 = 135.0;
         let files: Vec<String> = app
             .files
             .iter()
@@ -150,117 +159,211 @@ impl IconSysViewer {
             })
             .collect();
 
-        ui.vertical(|ui| {
-            // eframe::egui::Grid::new(Id::from("IconSysEditor"))
-            //     .num_columns(2)
-            //     .show(ui, |ui| {
+        menu::bar(ui, |ui| {
+            ui.set_height(Self::TOOLBAR_HEIGHT);
+            ui.add_space(Self::TOOLBAR_LEFT_MARGIN);
+            ui.button("Save").clicked().then(|| self.save());
+        });
+
+        ui.separator();
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
             ui.heading("Icon Configuration");
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label("Title");
-                ui.add(TextEdit::singleline(&mut self.title));
-            });
+            ui.add_space(SPACE_AROUND_HEADING);
+            Grid::new("title")
+                .num_columns(2)
+                .min_col_width(LABEL_COLUMN_WIDTH)
+                .show(ui, |ui| {
+                    ui.label("Title first line");
+                    ui.text_edit_singleline(&mut self.title_first_line)
+                        .changed()
+                        .then(|| self.modified = true);
+                    ui.end_row();
+                    ui.label("Title second line");
+                    ui.text_edit_singleline(&mut self.title_second_line)
+                        .changed()
+                        .then(|| self.modified = true);
 
+                    length_warning(
+                        ui,
+                        self.title_first_line.len() + self.title_second_line.len(),
+                        IconSys::MAXIMUM_TITLE_BYTE_LENGTH / 2,
+                        "Title too long!",
+                    );
+                });
+
+            ui.add_space(SPACE_AROUND_HEADING);
+            ui.separator();
             ui.heading("Icons");
-            ui.add_space(4.0);
+            ui.add_space(SPACE_AROUND_HEADING);
 
-            Grid::new("icons").num_columns(2).show(ui, |ui| {
-                ui.label("List");
-                file_select(ui, "list_icon", &mut self.icon_file, &files);
-                ui.end_row();
-                ui.label("Copy");
-                file_select(ui, "copy_icon", &mut self.icon_copy_file, &files);
-                ui.end_row();
-                ui.label("Delete");
-                file_select(ui, "delete_icon", &mut self.icon_delete_file, &files);
-            });
+            Grid::new("icons")
+                .num_columns(2)
+                .min_col_width(LABEL_COLUMN_WIDTH)
+                .show(ui, |ui| {
+                    ui.label("List");
+                    value_select(ui, "list_icon", &mut self.icon_file, &files)
+                        .changed()
+                        .then(|| self.modified = true);
+                    length_warning(
+                        ui,
+                        self.icon_file.len(),
+                        IconSys::MAXIMUM_FILENAME_BYTE_LENGTH / 2,
+                        "Filename too long!",
+                    );
+                    ui.end_row();
 
+                    ui.label("Copy");
+                    value_select(ui, "copy_icon", &mut self.icon_copy_file, &files)
+                        .changed()
+                        .then(|| self.modified = true);
+                    length_warning(
+                        ui,
+                        self.icon_copy_file.len(),
+                        IconSys::MAXIMUM_FILENAME_BYTE_LENGTH / 2,
+                        "Filename too long!",
+                    );
+                    ui.end_row();
+
+                    ui.label("Delete");
+                    value_select(ui, "delete_icon", &mut self.icon_delete_file, &files)
+                        .changed()
+                        .then(|| self.modified = true);
+                    length_warning(
+                        ui,
+                        self.icon_delete_file.len(),
+                        IconSys::MAXIMUM_FILENAME_BYTE_LENGTH / 2,
+                        "Filename too long!",
+                    );
+                });
+
+            ui.add_space(SPACE_AROUND_HEADING);
+            ui.separator();
             ui.heading("Background");
-            ui.add_space(4.0);
+            ui.add_space(SPACE_AROUND_HEADING);
 
-            const SPACING: f32 = 40.0;
+            Grid::new("background")
+                .num_columns(2)
+                .min_col_width(LABEL_COLUMN_WIDTH)
+                .show(ui, |ui| {
+                    const GRADIENT_BOX_SPACING: f32 = 40.0;
 
-            ui.add_sized(vec2(SPACING * 3.0, SPACING * 3.0), |ui: &mut Ui| {
-                draw_background(ui, &self.background_colors);
-                ui.spacing_mut().interact_size = vec2(SPACING, SPACING);
-                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                    ui.add_sized(
+                        vec2(GRADIENT_BOX_SPACING * 3.0, GRADIENT_BOX_SPACING * 3.0),
+                        |ui: &mut Ui| {
+                            draw_background(ui, &self.background_colors);
+                            ui.spacing_mut().interact_size =
+                                vec2(GRADIENT_BOX_SPACING, GRADIENT_BOX_SPACING);
+                            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-                ui.columns(3, |cols| {
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        &mut cols[0],
-                        &mut self.background_colors[0].rgb,
+                            ui.columns(3, |cols| {
+                                egui::widgets::color_picker::color_edit_button_rgb(
+                                    &mut cols[0],
+                                    &mut self.background_colors[0].rgb,
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
+                                cols[1].add_space(GRADIENT_BOX_SPACING);
+                                egui::widgets::color_picker::color_edit_button_rgb(
+                                    &mut cols[2],
+                                    &mut self.background_colors[1].rgb,
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
+
+                                cols[0].add_space(GRADIENT_BOX_SPACING);
+                                cols[1].add_space(GRADIENT_BOX_SPACING);
+                                cols[2].add_space(GRADIENT_BOX_SPACING);
+
+                                egui::widgets::color_picker::color_edit_button_rgb(
+                                    &mut cols[0],
+                                    &mut self.background_colors[2].rgb,
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
+                                cols[1].add_space(GRADIENT_BOX_SPACING);
+                                egui::widgets::color_picker::color_edit_button_rgb(
+                                    &mut cols[2],
+                                    &mut self.background_colors[3].rgb,
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
+                            });
+                            ui.response()
+                        },
                     );
-                    cols[1].add_space(SPACING);
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        &mut cols[2],
-                        &mut self.background_colors[1].rgb,
-                    );
 
-                    cols[0].add_space(SPACING);
-                    cols[1].add_space(SPACING);
-                    cols[2].add_space(SPACING);
-
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        &mut cols[0],
-                        &mut self.background_colors[2].rgb,
-                    );
-                    cols[1].add_space(SPACING);
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        &mut cols[2],
-                        &mut self.background_colors[3].rgb,
-                    );
-                });
-                ui.response()
-            });
-
-            Grid::new("background").num_columns(2).show(ui, |ui| {
-                ui.label("Background Transparency").on_hover_ui(|ui| {
-                    ui.label(
-                        "This is the opposite of opacity, so a value of 100 will make \
+                    Grid::new("background").num_columns(2).show(ui, |ui| {
+                        ui.label("Background Transparency").on_hover_ui(|ui| {
+                            ui.label(
+                                "This is the opposite of opacity, so a value of 100 will make \
                                 the background completely transparent",
-                    );
+                            );
+                        });
+                        ui.add(egui::Slider::new(
+                            &mut self.background_transparency,
+                            0..=100,
+                        ))
+                        .changed()
+                        .then(|| self.modified = true);
+                        ui.end_row();
+
+                        ui.label("Ambient Color");
+                        egui::widgets::color_picker::color_edit_button_rgb(
+                            ui,
+                            &mut self.ambient_color.rgb,
+                        )
+                        .changed()
+                        .then(|| self.modified = true);
+                        ui.end_row();
+                    });
                 });
-                ui.add(egui::Slider::new(
-                    &mut self.background_transparency,
-                    0..=100,
-                ));
-                ui.end_row();
-                ui.label("Ambient Color");
-                egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.ambient_color.rgb);
-                ui.end_row();
-            });
 
+            ui.add_space(SPACE_AROUND_HEADING);
+            ui.separator();
             ui.heading("Lights");
-            ui.add_space(4.0);
+            ui.add_space(SPACE_AROUND_HEADING);
+            Grid::new("lights")
+                .num_columns(3)
+                .spacing([50.0, 50.0])
+                .min_col_width(LABEL_COLUMN_WIDTH)
+                .striped(true)
+                .show(ui, |ui| {
+                    for (index, light) in self.lights.iter_mut().enumerate() {
+                        Grid::new(format!("light{index}"))
+                            .num_columns(2)
+                            .min_col_width(50.0)
+                            .show(ui, |ui| {
+                                ui.label(format!("Light {}", index + 1));
+                                ui.end_row();
 
-            for (index, light) in self.lights.iter_mut().enumerate() {
-                let human_readable_index = index + 1;
-                ui.label(format!("Light {human_readable_index}"));
-                ui.end_row();
-                ui.label("Color");
-                egui::widgets::color_picker::color_edit_button_rgb(ui, &mut light.color.rgb);
-                ui.end_row();
+                                ui.label("Color");
+                                egui::widgets::color_picker::color_edit_button_rgb(
+                                    ui,
+                                    &mut light.color.rgb,
+                                )
+                                .changed()
+                                .then(|| self.modified = true);
+                                ui.end_row();
 
-                ui.label("X");
-                ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0));
-                ui.end_row();
-                ui.label("Y");
-                ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0));
-                ui.end_row();
-                ui.label("Z");
-                ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0));
-                ui.end_row();
+                                ui.label("X");
+                                ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0))
+                                    .changed()
+                                    .then(|| self.modified = true);
+                                ui.end_row();
 
-                Ui::separator(ui);
-                ui.end_row();
-            }
+                                ui.label("Y");
+                                ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0))
+                                    .changed()
+                                    .then(|| self.modified = true);
+                                ui.end_row();
 
-            // });
-            ui.button("Save")
-                .on_hover_text("Save changes")
-                .clicked()
-                .then(|| {
-                    self.save();
+                                ui.label("Z");
+                                ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0))
+                                    .changed()
+                                    .then(|| self.modified = true);
+                            });
+                    }
                 });
         });
     }
@@ -276,19 +379,17 @@ impl Tab for IconSysViewer {
     }
 
     fn get_modified(&self) -> bool {
-        self.sys.title != self.title
-            || self.sys.icon_file != self.icon_file
-            || self.sys.icon_copy_file != self.icon_copy_file
-            || self.sys.icon_delete_file != self.icon_delete_file
+        self.modified
     }
 
     fn save(&mut self) {
         let new_sys = IconSys {
-            title: self.title.clone(),
+            title: format!("{}{}", self.title_first_line, self.title_second_line),
+            linebreak_pos: self.title_first_line.len() as u16,
             icon_file: self.icon_file.clone(),
             icon_copy_file: self.icon_copy_file.clone(),
             icon_delete_file: self.icon_delete_file.clone(),
-            background_transparency: self.background_transparency.clone(),
+            background_transparency: self.background_transparency,
             ambient_color: self.ambient_color.to_color_f(),
             background_colors: [
                 self.background_colors[0].to_color(),
@@ -310,64 +411,8 @@ impl Tab for IconSysViewer {
         };
         std::fs::write(&self.file_path, new_sys.to_bytes().unwrap()).expect("Failed to save icon");
         self.sys = new_sys;
+        self.modified = false;
     }
-}
-
-fn set_border_radius(ui: &mut Ui, radius: CornerRadius) {
-    ui.style_mut().visuals.widgets.hovered.corner_radius = radius.add(CornerRadius::same(1));
-    ui.style_mut().visuals.widgets.inactive.corner_radius = radius;
-    ui.style_mut().visuals.widgets.active.corner_radius = radius;
-}
-
-fn file_select(ui: &mut Ui, name: impl Into<String>, value: &mut String, files: &[String]) {
-    let id = Id::from(name.into());
-    let layout_response = ui.horizontal(|ui| {
-        ui.style_mut().spacing.item_spacing.x = 1.0;
-
-        set_border_radius(
-            ui,
-            CornerRadius {
-                nw: 2,
-                sw: 2,
-                ne: 0,
-                se: 0,
-            },
-        );
-        ui.text_edit_singleline(value);
-
-        set_border_radius(
-            ui,
-            CornerRadius {
-                nw: 0,
-                sw: 0,
-                ne: 2,
-                se: 2,
-            },
-        );
-        let response = ui.button("🔽");
-        if response.clicked() {
-            ui.memory_mut(|mem| {
-                mem.toggle_popup(id);
-            });
-        }
-
-        response
-    });
-
-    // Small hack to ensure the popup is positioned correctly
-    let res = Response {
-        rect: layout_response.response.rect,
-        ..layout_response.inner
-    };
-
-    egui::popup_below_widget(ui, id, &res, PopupCloseBehavior::CloseOnClick, |ui| {
-        ui.set_min_width(200.0);
-        files.iter().for_each(|file| {
-            if ui.selectable_label(false, file.clone()).clicked() {
-                *value = file.clone();
-            }
-        });
-    });
 }
 
 fn draw_background(ui: &mut Ui, colors: &[PS2RgbaInterface; 4]) {
@@ -407,4 +452,12 @@ fn draw_background(ui: &mut Ui, colors: &[PS2RgbaInterface; 4]) {
         .extend_from_slice(&[i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3]);
 
     painter.add(egui::Shape::mesh(mesh));
+}
+
+fn length_warning(ui: &mut Ui, length: usize, maximum_length: usize, message: &str) {
+    if length > maximum_length {
+        ui.end_row();
+        ui.label("");
+        ui.colored_label(Color32::RED, format!("{message} {length}/{maximum_length}"));
+    }
 }

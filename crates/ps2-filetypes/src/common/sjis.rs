@@ -3,7 +3,8 @@ pub fn encode_sjis(input: &str) -> Vec<u8> {
         .as_bytes()
         .iter()
         .flat_map(|b| match *b {
-            b' ' => [0x80, 0x3F],
+            b' ' => [0x81, 0x40],
+            b'.' => [0x81, 0x44],
             b':' => [0x81, 0x46],
             b'/' => [0x81, 0x5E],
             b'(' => [0x81, 0x69],
@@ -42,6 +43,7 @@ pub fn decode_sjis(input: &[u8]) -> String {
             0x81 => match pair[1] {
                 0x40 => b' ',
                 0x46 => b':',
+                0x44 => b'.',
                 0x5E => b'/',
                 0x69 => b'(',
                 0x6A => b')',
