@@ -1,21 +1,19 @@
 use chrono::{DateTime, Local, NaiveDateTime};
-use clap::Parser;
 use colored::Colorize;
 use ps2_filetypes::{PSUEntry, PSUEntryKind, PSUWriter, DIR_ID, FILE_ID, PSU};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use argh::FromArgs;
 
-#[derive(Parser, Debug)]
-#[command(
-    version,
-    after_help = "Expects a folder with a psu.toml file that follows this format\n\t[config]\n\tname = \"Test PSU\"\t\t\t# Folder name on Memory Card\n\tinclude = [ \"BOOT.ELF\", \"icon.sys\" ]\t# using `exclude` will automatically include all files except the specified ones\n\ttimestamp = \"2024-10-10 10:30:00\"\t# Optional, but recommended\n"
-)]
+#[derive(Debug, FromArgs)]
+#[argh(description = "Expects a folder with a psu.toml file that follows this format\n\t[config]\n\tname = \"Test PSU\"\t\t\t# Folder name on Memory Card\n\tinclude = [ \"BOOT.ELF\", \"icon.sys\" ]\t# using `exclude` will automatically include all files except the specified ones\n\ttimestamp = \"2024-10-10 10:30:00\"\t# Optional, but recommended\n")]
 struct Args {
-    /// Folder to package to psu
+    /// folder to package to psu
+    #[argh(positional)]
     folder: String,
-    /// Output path
-    #[arg(short, long)]
+    /// output path
+    #[argh(option, short = 'o')]
     output: Option<String>,
 }
 
@@ -53,9 +51,17 @@ struct ConfigFile {
     config: Config,
 }
 
+fn check_name(name: &str) -> bool {
+    for c in name.chars() {
+        if !matches!(c, 'a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-'|' ') {
+            return false
+        }
+    }
+    true
+}
+
 fn main() -> Result<(), Error> {
-    let name_regex = regex::Regex::new("^[a-zA-Z0-9._\\-\\s]+$").expect("Failed to compile regex");
-    let args = Args::parse();
+    let args: Args = argh::from_env();
     let folder = PathBuf::from(args.folder);
 
     let config_file = folder.join("psu.toml");
@@ -68,7 +74,7 @@ fn main() -> Result<(), Error> {
 
         let output_file = args.output.unwrap_or(format!("{}.psu", config.name));
 
-        if !name_regex.is_match(&config.name) {
+        if !check_name(&config.name) {
             return Err(Error::NameError);
         }
 
@@ -229,7 +235,6 @@ enum Error {
     NameError,
     IOError(std::io::Error),
     IncludeExcludeError,
-    FileNameError(PathBuf),
 }
 
 impl std::fmt::Display for Error {
@@ -238,7 +243,6 @@ impl std::fmt::Display for Error {
             Error::NameError => write!(f, "Name must match [a-zA-Z0-9._-\\s]+"),
             Error::IncludeExcludeError => write!(f, "Exclude cannot be used in include mode"),
             Error::IOError(err) => write!(f, "{err:?}"),
-            Error::FileNameError(pb) => write!(f, "File name {:?} is invalid", pb),
         }
     }
 }
