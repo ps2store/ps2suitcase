@@ -1,8 +1,8 @@
-use std::io::{Cursor, Read, Result};
 use crate::color::Color;
 use crate::sjis::{decode_sjis, encode_sjis};
 use crate::util::parse_cstring;
 use byteorder::{ReadBytesExt, LE};
+use std::io::{Cursor, Read, Result};
 
 #[derive(Clone, Copy, Debug)]
 pub struct ColorF {
@@ -75,6 +75,12 @@ pub struct IconSys {
 }
 
 impl IconSys {
+    // Maximum length of a title the icon.sys format can hold in bytes (2 bytes per character)
+    pub const MAXIMUM_TITLE_BYTE_LENGTH: usize = 68;
+
+    // Maximum length of a filename (for the .icn files) the icon.sys format can hold in bytes (2 bytes per character)
+    pub const MAXIMUM_FILENAME_BYTE_LENGTH: usize = 64;
+
     pub fn new(bytes: Vec<u8>) -> Self {
         parse_icon_sys(bytes).unwrap()
     }
@@ -104,7 +110,7 @@ impl IconSys {
 
         let title_bytes = encode_sjis(&self.title);
         let title_len = title_bytes.len();
-        if title_len > 68 {
+        if title_len > Self::MAXIMUM_TITLE_BYTE_LENGTH {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Title length exceeds 68 bytes",
@@ -112,26 +118,38 @@ impl IconSys {
         }
 
         bytes.extend_from_slice(&title_bytes);
-        if title_len < 68 {
-            bytes.extend(vec![0; 68 - title_len]);
+        if title_len < Self::MAXIMUM_TITLE_BYTE_LENGTH {
+            bytes.extend(vec![0; Self::MAXIMUM_TITLE_BYTE_LENGTH - title_len]);
         }
 
         bytes.extend_from_slice(self.icon_file.as_bytes());
 
-        if self.icon_file.len() < 64 {
-            bytes.extend(vec![0; 64 - self.icon_file.len()]);
+        if self.icon_file.len() < Self::MAXIMUM_FILENAME_BYTE_LENGTH {
+            bytes.extend(vec![
+                0;
+                Self::MAXIMUM_FILENAME_BYTE_LENGTH
+                    - self.icon_file.len()
+            ]);
         }
 
         bytes.extend_from_slice(self.icon_copy_file.as_bytes());
 
-        if self.icon_copy_file.len() < 64 {
-            bytes.extend(vec![0; 64 - self.icon_copy_file.len()]);
+        if self.icon_copy_file.len() < Self::MAXIMUM_FILENAME_BYTE_LENGTH {
+            bytes.extend(vec![
+                0;
+                Self::MAXIMUM_FILENAME_BYTE_LENGTH
+                    - self.icon_copy_file.len()
+            ]);
         }
 
         bytes.extend_from_slice(self.icon_delete_file.as_bytes());
 
-        if self.icon_delete_file.len() < 64 {
-            bytes.extend(vec![0; 64 - self.icon_delete_file.len()]);
+        if self.icon_delete_file.len() < Self::MAXIMUM_FILENAME_BYTE_LENGTH {
+            bytes.extend(vec![
+                0;
+                Self::MAXIMUM_FILENAME_BYTE_LENGTH
+                    - self.icon_delete_file.len()
+            ]);
         }
 
         bytes.extend(vec![0; 512]);
