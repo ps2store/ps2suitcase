@@ -1,0 +1,4 @@
+[config]
+name = "Test PSU"
+exclude = [ "psu.toml" ]
+timestamp = "2024-10-10 10:30:00"

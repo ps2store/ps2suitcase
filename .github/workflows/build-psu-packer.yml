@@ -1,4 +1,4 @@
-name: Build
+name: Build PSU Packer
 
 on:
   push:
@@ -17,13 +17,13 @@ jobs:
         os:
           - name: ubuntu
             version: ubuntu-latest
-            executable: suitcase
+            executable: psu-packer
           - name: macos
             version: macos-latest
-            executable: suitcase
+            executable: psu-packer
           - name: windows
             version: windows-latest
-            executable: suitcase.exe
+            executable: psu-packer.exe
     runs-on: ${{matrix.os.version}}
 
     steps:
@@ -31,11 +31,11 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --verbose --release
+        run: cargo build --package psu-packer --verbose --release
       - name: Run tests
         run: cargo test --verbose
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: suitcase-${{matrix.os.name}}
+          name: psu-packer-${{matrix.os.name}}
           path: target/release/${{matrix.os.executable}}

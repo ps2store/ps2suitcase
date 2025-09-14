@@ -1,0 +1,41 @@
+name: Build Suitcase
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{matrix.os.name}}
+    strategy:
+      matrix:
+        os:
+          - name: ubuntu
+            version: ubuntu-latest
+            executable: suitcase
+          - name: macos
+            version: macos-latest
+            executable: suitcase
+          - name: windows
+            version: windows-latest
+            executable: suitcase.exe
+    runs-on: ${{matrix.os.version}}
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --verbose --release
+      - name: Run tests
+        run: cargo test --verbose
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: suitcase-${{matrix.os.name}}
+          path: target/release/${{matrix.os.executable}}

@@ -19,7 +19,7 @@ impl PSUWriter {
         data.write_u8(timestamp.minute() as u8)?;
         data.write_u8(timestamp.hour() as u8)?;
         data.write_u8(timestamp.day() as u8)?;
-        data.write_u8(timestamp.month0() as u8)?;
+        data.write_u8(timestamp.month() as u8)?;
         data.write_u16::<LE>(timestamp.year() as u16)?; 
         
         Ok(data)

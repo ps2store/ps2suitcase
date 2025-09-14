@@ -8,8 +8,9 @@ members = [
     "crates/ps2-psupacker",
     "crates/xtask-build-app",
     "crates/memcard",
+    "crates/psu-packer",
 ]
-default-members = ["crates/suitcase"]
+default-members = ["crates/psu-packer"]
 
 [workspace.package]
 edition = "2021"

@@ -42,7 +42,7 @@ impl FileWatcher {
                                 watcher.unwatch(path).unwrap();
                             }
                             watcher
-                                .watch(&new_path, notify::RecursiveMode::NonRecursive)
+                                .watch(&new_path, notify::RecursiveMode::Recursive)
                                 .unwrap();
                             current_path = Some(new_path);
                         }

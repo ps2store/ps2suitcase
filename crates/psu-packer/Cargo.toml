@@ -1,0 +1,15 @@
+[package]
+name = "psu-packer"
+description = "PSU management utility"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+ps2-filetypes = { path = "../ps2-filetypes" }
+toml = "0.9.5"
+serde = { version = "1.0.219", features = ["derive"] }
+clap = {  version = "4.5.47", features = ["derive"] }
+chrono = "0.4.42"
+regex = "1.11.2"
+colored = "3.0.0"
