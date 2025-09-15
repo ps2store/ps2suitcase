@@ -33,6 +33,7 @@ struct PackerApp {
     selected_exclude: Option<usize>,
     loaded_psu_path: Option<PathBuf>,
     loaded_psu_files: Vec<String>,
+    exit_confirmation_requested: bool,
 }
 
 struct ErrorMessage {
@@ -86,6 +87,7 @@ impl Default for PackerApp {
             selected_exclude: None,
             loaded_psu_path: None,
             loaded_psu_files: Vec::new(),
+            exit_confirmation_requested: false,
         }
     }
 }
@@ -200,6 +202,15 @@ impl PackerApp {
 
         if self.output.trim().is_empty() {
             self.output = path.display().to_string();
+        }
+    }
+
+    fn browse_output_destination(&mut self) {
+        if let Some(file) = rfd::FileDialog::new()
+            .set_file_name(&self.output)
+            .save_file()
+        {
+            self.output = file.display().to_string();
         }
     }
 
@@ -460,6 +471,29 @@ impl PackerApp {
 
 impl eframe::App for PackerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Save PSU As...").clicked() {
+                        self.browse_output_destination();
+                        ui.close_menu();
+                    }
+
+                    if ui.button("Open PSU...").clicked() {
+                        self.handle_open_psu();
+                        ui.close_menu();
+                    }
+
+                    ui.separator();
+
+                    if ui.button("Exit").clicked() {
+                        self.exit_confirmation_requested = true;
+                        ui.close_menu();
+                    }
+                });
+            });
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.group(|ui| {
@@ -524,14 +558,6 @@ impl eframe::App for PackerApp {
                                 self.loaded_psu_files.clear();
                                 self.folder = Some(dir);
                             }
-                        }
-
-                        if ui
-                            .button("Open PSU")
-                            .on_hover_text("Load metadata from an existing PSU archive.")
-                            .clicked()
-                        {
-                            self.handle_open_psu();
                         }
                     });
 
@@ -633,12 +659,7 @@ impl eframe::App for PackerApp {
                                 .on_hover_text("Set a custom destination for the PSU file.")
                                 .clicked()
                             {
-                                if let Some(file) = rfd::FileDialog::new()
-                                    .set_file_name(&self.output)
-                                    .save_file()
-                                {
-                                    self.output = file.display().to_string();
-                                }
+                                self.browse_output_destination();
                             }
                             ui.end_row();
                         });
