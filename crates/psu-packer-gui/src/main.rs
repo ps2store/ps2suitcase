@@ -188,14 +188,15 @@ impl PackerApp {
             .map(|ts| ts.format(TIMESTAMP_FORMAT).to_string())
             .unwrap_or_default();
         self.file_mode = FileMode::Include;
-        self.include_files = files.clone();
-        self.exclude_files.clear();
-        self.selected_include = None;
-        self.selected_exclude = None;
         self.loaded_psu_files = files;
         self.loaded_psu_path = Some(path.clone());
         self.clear_error_message();
         self.status = format!("Loaded PSU from {}", path.display());
+        self.folder = None;
+        self.include_files.clear();
+        self.exclude_files.clear();
+        self.selected_include = None;
+        self.selected_exclude = None;
 
         if self.output.trim().is_empty() {
             self.output = path.display().to_string();
@@ -498,6 +499,8 @@ impl eframe::App for PackerApp {
                                         self.selected_exclude = None;
                                     }
                                 }
+                                self.loaded_psu_path = None;
+                                self.loaded_psu_files.clear();
                                 self.folder = Some(dir);
                             }
                         }
@@ -516,7 +519,10 @@ impl eframe::App for PackerApp {
                     }
                 });
 
-                if self.loaded_psu_path.is_some() || !self.loaded_psu_files.is_empty() {
+                let showing_psu = self.folder.is_none()
+                    && (self.loaded_psu_path.is_some() || !self.loaded_psu_files.is_empty());
+
+                if showing_psu {
                     ui.add_space(8.0);
                     ui.group(|ui| {
                         ui.heading("Loaded PSU");
@@ -536,49 +542,56 @@ impl eframe::App for PackerApp {
                                 }
                             });
                     });
-                }
+                } else {
+                    ui.add_space(8.0);
+                    ui.group(|ui| {
+                        ui.heading("Metadata");
+                        ui.small("Review or edit metadata loaded from the selected folder.");
+                        if self.folder.is_some() {
+                            egui::Grid::new("metadata_grid")
+                                .num_columns(2)
+                                .spacing(egui::vec2(12.0, 6.0))
+                                .show(ui, |ui| {
+                                    ui.label("Name");
+                                    ui.text_edit_singleline(&mut self.name);
+                                    ui.end_row();
 
-                ui.add_space(8.0);
+                                    ui.label("Timestamp");
+                                    ui.text_edit_singleline(&mut self.timestamp);
+                                    ui.end_row();
 
-                ui.group(|ui| {
-                    ui.heading("Metadata");
-                    ui.small("Review or edit metadata loaded from the selected folder.");
-                    if self.folder.is_some() || !self.name.is_empty() {
-                        egui::Grid::new("metadata_grid")
-                            .num_columns(2)
-                            .spacing(egui::vec2(12.0, 6.0))
-                            .show(ui, |ui| {
-                                ui.label("Name");
-                                ui.text_edit_singleline(&mut self.name);
-                                ui.end_row();
-
-                                ui.label("Timestamp");
-                                ui.text_edit_singleline(&mut self.timestamp);
-                                ui.end_row();
-
-                                ui.label("File mode");
-                                ui.vertical(|ui| {
-                                    ui.radio_value(&mut self.file_mode, FileMode::Include, "Include");
-                                    ui.radio_value(&mut self.file_mode, FileMode::Exclude, "Exclude");
+                                    ui.label("File mode");
+                                    ui.vertical(|ui| {
+                                        ui.radio_value(
+                                            &mut self.file_mode,
+                                            FileMode::Include,
+                                            "Include",
+                                        );
+                                        ui.radio_value(
+                                            &mut self.file_mode,
+                                            FileMode::Exclude,
+                                            "Exclude",
+                                        );
+                                    });
+                                    ui.end_row();
                                 });
-                                ui.end_row();
-                            });
-                    } else {
-                        ui.label("Select a folder to load metadata options.");
-                    }
-                });
+                        } else {
+                            ui.label("Select a folder to load metadata options.");
+                        }
+                    });
 
-                ui.add_space(8.0);
+                    ui.add_space(8.0);
 
-                ui.group(|ui| {
-                    ui.heading("File filters");
-                    ui.small("Manage include or exclude lists before creating the archive.");
-                    if self.folder.is_some() || !self.name.is_empty() {
-                        self.file_list_ui(ui);
-                    } else {
-                        ui.label("Select a folder to configure file filters.");
-                    }
-                });
+                    ui.group(|ui| {
+                        ui.heading("File filters");
+                        ui.small("Manage include or exclude lists before creating the archive.");
+                        if self.folder.is_some() {
+                            self.file_list_ui(ui);
+                        } else {
+                            ui.label("Select a folder to configure file filters.");
+                        }
+                    });
+                }
 
                 ui.add_space(8.0);
 
