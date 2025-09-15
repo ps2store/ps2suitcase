@@ -3,9 +3,21 @@
 use chrono::NaiveDateTime;
 use eframe::egui;
 use std::path::{Path, PathBuf};
-use toml_edit::{value, DocumentMut};
+use toml_edit::{value, Array, DocumentMut};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FileMode {
+    Include,
+    Exclude,
+}
+
+impl Default for FileMode {
+    fn default() -> Self {
+        Self::Exclude
+    }
+}
 
 struct PackerApp {
     folder: Option<PathBuf>,
@@ -13,6 +25,11 @@ struct PackerApp {
     status: String,
     name: String,
     timestamp: String,
+    file_mode: FileMode,
+    include_files: Vec<String>,
+    exclude_files: Vec<String>,
+    selected_include: Option<usize>,
+    selected_exclude: Option<usize>,
 }
 
 impl Default for PackerApp {
@@ -23,11 +40,145 @@ impl Default for PackerApp {
             status: String::new(),
             name: String::new(),
             timestamp: String::new(),
+            file_mode: FileMode::default(),
+            include_files: Vec::new(),
+            exclude_files: Vec::new(),
+            selected_include: None,
+            selected_exclude: None,
         }
     }
 }
 
 impl PackerApp {
+    fn current_list(&mut self) -> (&mut Vec<String>, &mut Option<usize>) {
+        match self.file_mode {
+            FileMode::Include => (&mut self.include_files, &mut self.selected_include),
+            FileMode::Exclude => (&mut self.exclude_files, &mut self.selected_exclude),
+        }
+    }
+
+    fn mode_label(&self) -> &'static str {
+        match self.file_mode {
+            FileMode::Include => "Included files",
+            FileMode::Exclude => "Excluded files",
+        }
+    }
+
+    fn list_to_array(list: &[String]) -> Array {
+        let mut array = Array::default();
+        for entry in list {
+            array.push(entry.as_str());
+        }
+        array
+    }
+
+    fn file_list_ui(&mut self, ui: &mut egui::Ui) {
+        let mode_label = self.mode_label();
+        ui.label(mode_label);
+
+        let mut add_clicked = false;
+        let mut remove_clicked = false;
+
+        {
+            let (files, selected) = self.current_list();
+            egui::ScrollArea::vertical()
+                .max_height(150.0)
+                .show(ui, |ui| {
+                    for (idx, file) in files.iter().enumerate() {
+                        let is_selected = Some(idx) == *selected;
+                        if ui.selectable_label(is_selected, file).clicked() {
+                            *selected = Some(idx);
+                        }
+                    }
+                });
+
+            ui.horizontal(|ui| {
+                if ui.button("Add file").clicked() {
+                    add_clicked = true;
+                }
+
+                if ui
+                    .add_enabled(selected.is_some(), egui::Button::new("Remove file"))
+                    .clicked()
+                {
+                    remove_clicked = true;
+                }
+            });
+        }
+
+        if add_clicked {
+            self.handle_add_file();
+        }
+
+        if remove_clicked {
+            self.handle_remove_file();
+        }
+    }
+
+    fn handle_add_file(&mut self) {
+        let Some(folder) = self.folder.clone() else {
+            self.status = "Please select a folder before adding files".to_string();
+            return;
+        };
+
+        let Some(path) = rfd::FileDialog::new().set_directory(&folder).pick_file() else {
+            return;
+        };
+
+        let Ok(relative) = path.strip_prefix(&folder) else {
+            self.status = "Selected file must be in the selected folder".to_string();
+            return;
+        };
+
+        if relative.components().count() != 1 {
+            self.status = "Selected file must be in the selected folder".to_string();
+            return;
+        }
+
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            self.status = "Invalid file name".to_string();
+            return;
+        };
+
+        let name = name.to_string();
+        let duplicate = match self.file_mode {
+            FileMode::Include => self.include_files.iter().any(|entry| entry == &name),
+            FileMode::Exclude => self.exclude_files.iter().any(|entry| entry == &name),
+        };
+
+        if duplicate {
+            self.status = "File is already listed".to_string();
+            return;
+        }
+
+        match self.file_mode {
+            FileMode::Include => {
+                self.include_files.push(name);
+                self.selected_include = Some(self.include_files.len() - 1);
+            }
+            FileMode::Exclude => {
+                self.exclude_files.push(name);
+                self.selected_exclude = Some(self.exclude_files.len() - 1);
+            }
+        }
+
+        self.status.clear();
+    }
+
+    fn handle_remove_file(&mut self) {
+        let (files, selected) = self.current_list();
+        if let Some(idx) = selected.take() {
+            files.remove(idx);
+            if files.is_empty() {
+                *selected = None;
+            } else if idx >= files.len() {
+                *selected = Some(files.len() - 1);
+            } else {
+                *selected = Some(idx);
+            }
+        }
+    }
+
     fn save_config(&self, folder: &Path) -> Result<(), String> {
         let config_path = folder.join("psu.toml");
         let config_str = std::fs::read_to_string(&config_path)
@@ -57,6 +208,19 @@ impl PackerApp {
             );
         }
 
+        match self.file_mode {
+            FileMode::Include => {
+                let array = Self::list_to_array(&self.include_files);
+                config_table.insert("include", value(array));
+                config_table.remove("exclude");
+            }
+            FileMode::Exclude => {
+                let array = Self::list_to_array(&self.exclude_files);
+                config_table.insert("exclude", value(array));
+                config_table.remove("include");
+            }
+        }
+
         std::fs::write(&config_path, document.to_string())
             .map_err(|e| format!("Failed to write {}: {e}", config_path.display()))?;
 
@@ -71,19 +235,46 @@ impl eframe::App for PackerApp {
                 if let Some(dir) = rfd::FileDialog::new().pick_folder() {
                     match psu_packer::load_config(&dir) {
                         Ok(config) => {
-                            self.output = format!("{}.psu", config.name);
-                            self.name = config.name;
-                            self.timestamp = config
-                                .timestamp
+                            let psu_packer::Config {
+                                name,
+                                timestamp,
+                                include,
+                                exclude,
+                            } = config;
+
+                            let include_present = include.is_some();
+                            let exclude_present = exclude.is_some();
+
+                            self.output = format!("{}.psu", name);
+                            self.name = name;
+                            self.timestamp = timestamp
                                 .map(|t| t.format(TIMESTAMP_FORMAT).to_string())
                                 .unwrap_or_default();
+                            self.file_mode = if include_present {
+                                FileMode::Include
+                            } else {
+                                FileMode::Exclude
+                            };
+                            self.include_files = include.unwrap_or_default();
+                            self.exclude_files = exclude.unwrap_or_default();
+                            self.selected_include = None;
+                            self.selected_exclude = None;
                             self.status.clear();
+                            if include_present && exclude_present {
+                                self.status = "Config contains both include and exclude lists; using include list"
+                                    .to_string();
+                            }
                         }
                         Err(err) => {
                             self.status = format!("Error loading config: {err}");
                             self.output.clear();
                             self.name.clear();
                             self.timestamp.clear();
+                            self.file_mode = FileMode::default();
+                            self.include_files.clear();
+                            self.exclude_files.clear();
+                            self.selected_include = None;
+                            self.selected_exclude = None;
                         }
                     }
                     self.folder = Some(dir);
@@ -101,6 +292,12 @@ impl eframe::App for PackerApp {
                     ui.label("Timestamp:");
                     ui.text_edit_singleline(&mut self.timestamp);
                 });
+                ui.horizontal(|ui| {
+                    ui.label("File mode:");
+                    ui.radio_value(&mut self.file_mode, FileMode::Include, "Include");
+                    ui.radio_value(&mut self.file_mode, FileMode::Exclude, "Exclude");
+                });
+                self.file_list_ui(ui);
             }
             ui.horizontal(|ui| {
                 ui.label("Output:");
