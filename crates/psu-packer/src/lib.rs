@@ -50,18 +50,28 @@ pub fn load_config(folder: &Path) -> Result<Config, Error> {
 
 pub fn pack_psu(folder: &Path, output: &Path) -> Result<(), Error> {
     let config = load_config(folder)?;
+    pack_with_config(folder, output, config)
+}
 
-    if !check_name(&config.name) {
+pub fn pack_with_config(folder: &Path, output: &Path, cfg: Config) -> Result<(), Error> {
+    let Config {
+        name,
+        timestamp,
+        include,
+        exclude,
+    } = cfg;
+
+    if !check_name(&name) {
         return Err(Error::NameError);
     }
 
-    if config.include.is_some() && config.exclude.is_some() {
+    if include.is_some() && exclude.is_some() {
         return Err(Error::IncludeExcludeError);
     }
 
     let mut psu = PSU::default();
 
-    let files = if let Some(include) = config.include {
+    let files = if let Some(include) = include {
         include
             .iter()
             .filter_map(|file| {
@@ -86,7 +96,7 @@ pub fn pack_psu(folder: &Path, output: &Path) -> Result<(), Error> {
                 }
             })
             .collect::<Vec<_>>()
-    } else if let Some(exclude) = config.exclude {
+    } else if let Some(exclude) = exclude {
         std::fs::read_dir(folder)?
             .into_iter()
             .flatten()
@@ -106,12 +116,7 @@ pub fn pack_psu(folder: &Path, output: &Path) -> Result<(), Error> {
             .collect::<Vec<_>>()
     };
     let files = filter_files(&files);
-    add_psu_defaults(
-        &mut psu,
-        &config.name,
-        files.len(),
-        config.timestamp.unwrap_or_default(),
-    );
+    add_psu_defaults(&mut psu, &name, files.len(), timestamp.unwrap_or_default());
     add_files_to_psu(&mut psu, &files)?;
     std::fs::write(output, PSUWriter::new(psu).to_bytes()?)?;
     Ok(())
