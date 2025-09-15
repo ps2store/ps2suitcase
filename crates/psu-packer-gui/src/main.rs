@@ -2,7 +2,7 @@
 
 use chrono::NaiveDateTime;
 use eframe::egui;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
@@ -22,6 +22,7 @@ struct PackerApp {
     folder: Option<PathBuf>,
     output: String,
     status: String,
+    error_message: Option<String>,
     name: String,
     timestamp: String,
     file_mode: FileMode,
@@ -37,6 +38,7 @@ impl Default for PackerApp {
             folder: None,
             output: String::new(),
             status: String::new(),
+            error_message: None,
             name: String::new(),
             timestamp: String::new(),
             file_mode: FileMode::default(),
@@ -53,6 +55,110 @@ impl PackerApp {
         match self.file_mode {
             FileMode::Include => (&mut self.include_files, &mut self.selected_include),
             FileMode::Exclude => (&mut self.exclude_files, &mut self.selected_exclude),
+        }
+    }
+
+    fn set_error_message<S: Into<String>>(&mut self, message: S) {
+        self.error_message = Some(message.into());
+        self.status.clear();
+    }
+
+    fn clear_error_message(&mut self) {
+        self.error_message = None;
+    }
+
+    fn missing_include_files(&self, folder: &Path) -> Vec<String> {
+        if !matches!(self.file_mode, FileMode::Include) {
+            return Vec::new();
+        }
+
+        self.include_files
+            .iter()
+            .filter_map(|file| {
+                let candidate = folder.join(file);
+                if candidate.is_file() {
+                    None
+                } else {
+                    Some(file.clone())
+                }
+            })
+            .collect()
+    }
+
+    fn format_load_error(folder: &Path, err: psu_packer::Error) -> String {
+        match err {
+            psu_packer::Error::NameError => {
+                "Configuration contains an invalid PSU name.".to_string()
+            }
+            psu_packer::Error::IncludeExcludeError => {
+                "Configuration cannot define both include and exclude lists.".to_string()
+            }
+            psu_packer::Error::ConfigError(message) => {
+                format!("The psu.toml file is invalid: {message}")
+            }
+            psu_packer::Error::IOError(io_err) => {
+                let config_path = folder.join("psu.toml");
+                match io_err.kind() {
+                    std::io::ErrorKind::NotFound => format!(
+                        "Could not find {}. Create a psu.toml file in the selected folder.",
+                        config_path.display()
+                    ),
+                    _ => format!("Failed to read {}: {}", config_path.display(), io_err),
+                }
+            }
+        }
+    }
+
+    fn format_pack_error(
+        &self,
+        folder: &Path,
+        output_path: &Path,
+        err: psu_packer::Error,
+    ) -> String {
+        match err {
+            psu_packer::Error::NameError => {
+                "PSU name can only contain letters, numbers, spaces, underscores, and hyphens."
+                    .to_string()
+            }
+            psu_packer::Error::IncludeExcludeError => {
+                "Include and exclude lists cannot be used at the same time.".to_string()
+            }
+            psu_packer::Error::ConfigError(message) => {
+                format!("Configuration error: {message}")
+            }
+            psu_packer::Error::IOError(io_err) => {
+                let missing_files = self.missing_include_files(folder);
+                if !missing_files.is_empty() {
+                    let formatted = missing_files
+                        .into_iter()
+                        .map(|name| format!("• {name}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    return format!(
+                        "The following files referenced in the configuration are missing from {}:\n{}",
+                        folder.display(),
+                        formatted
+                    );
+                }
+
+                match io_err.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        if let Some(parent) = output_path.parent() {
+                            if !parent.exists() {
+                                return format!(
+                                    "Cannot write the PSU file because the destination folder {} does not exist.",
+                                    parent.display()
+                                );
+                            }
+                        }
+                        format!("A required file or folder could not be found: {io_err}")
+                    }
+                    std::io::ErrorKind::PermissionDenied => {
+                        format!("Permission denied while accessing the file system: {io_err}")
+                    }
+                    _ => format!("File system error: {io_err}"),
+                }
+            }
         }
     }
 
@@ -132,7 +238,7 @@ impl PackerApp {
 
     fn handle_add_file(&mut self) {
         let Some(folder) = self.folder.clone() else {
-            self.status = "Please select a folder before adding files".to_string();
+            self.set_error_message("Please select a folder before adding files");
             return;
         };
 
@@ -141,17 +247,17 @@ impl PackerApp {
         };
 
         let Ok(relative) = path.strip_prefix(&folder) else {
-            self.status = "Selected file must be in the selected folder".to_string();
+            self.set_error_message("Selected file must be in the selected folder");
             return;
         };
 
         if relative.components().count() != 1 {
-            self.status = "Selected file must be in the selected folder".to_string();
+            self.set_error_message("Selected file must be in the selected folder");
             return;
         }
 
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            self.status = "Invalid file name".to_string();
+            self.set_error_message("Invalid file name");
             return;
         };
 
@@ -162,7 +268,7 @@ impl PackerApp {
         };
 
         if duplicate {
-            self.status = "File is already listed".to_string();
+            self.set_error_message("File is already listed");
             return;
         }
 
@@ -177,6 +283,7 @@ impl PackerApp {
             }
         }
 
+        self.clear_error_message();
         self.status.clear();
     }
 
@@ -226,6 +333,7 @@ impl eframe::App for PackerApp {
                             self.exclude_files = exclude.unwrap_or_default();
                             self.selected_include = None;
                             self.selected_exclude = None;
+                            self.clear_error_message();
                             self.status.clear();
                             if include_present && exclude_present {
                                 self.status = "Config contains both include and exclude lists; using include list"
@@ -233,7 +341,8 @@ impl eframe::App for PackerApp {
                             }
                         }
                         Err(err) => {
-                            self.status = format!("Error loading config: {err}");
+                            let message = PackerApp::format_load_error(&dir, err);
+                            self.set_error_message(message);
                             self.output.clear();
                             self.name.clear();
                             self.timestamp.clear();
@@ -281,26 +390,35 @@ impl eframe::App for PackerApp {
             if ui.button("Pack").clicked() {
                 if let Some(folder) = &self.folder {
                     if self.name.trim().is_empty() {
-                        self.status = "Please provide a PSU name".to_string();
+                        self.set_error_message("Please provide a PSU name");
                         return;
                     }
 
                     let config = match self.build_config() {
                         Ok(config) => config,
                         Err(err) => {
-                            self.status = err;
+                            self.set_error_message(err);
                             return;
                         }
                     };
 
                     let output_path = PathBuf::from(&self.output);
                     match psu_packer::pack_with_config(folder, &output_path, config) {
-                        Ok(_) => self.status = format!("Packed to {}", output_path.display()),
-                        Err(e) => self.status = format!("Error: {e}"),
+                        Ok(_) => {
+                            self.status = format!("Packed to {}", output_path.display());
+                            self.clear_error_message();
+                        }
+                        Err(err) => {
+                            let message = self.format_pack_error(folder, &output_path, err);
+                            self.set_error_message(message);
+                        }
                     }
                 } else {
-                    self.status = "Please select a folder".to_string();
+                    self.set_error_message("Please select a folder");
                 }
+            }
+            if let Some(error) = &self.error_message {
+                ui.colored_label(egui::Color32::RED, error);
             }
             if !self.status.is_empty() {
                 ui.label(&self.status);
