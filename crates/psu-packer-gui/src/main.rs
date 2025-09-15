@@ -2,6 +2,7 @@
 
 use chrono::NaiveDateTime;
 use eframe::egui;
+use ps2_filetypes::{PSUEntryKind, PSU};
 use std::path::{Path, PathBuf};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
@@ -30,6 +31,8 @@ struct PackerApp {
     exclude_files: Vec<String>,
     selected_include: Option<usize>,
     selected_exclude: Option<usize>,
+    loaded_psu_path: Option<PathBuf>,
+    loaded_psu_files: Vec<String>,
 }
 
 impl Default for PackerApp {
@@ -46,6 +49,8 @@ impl Default for PackerApp {
             exclude_files: Vec::new(),
             selected_include: None,
             selected_exclude: None,
+            loaded_psu_path: None,
+            loaded_psu_files: Vec::new(),
         }
     }
 }
@@ -83,6 +88,71 @@ impl PackerApp {
                 }
             })
             .collect()
+    }
+
+    fn handle_open_psu(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("PSU", &["psu"])
+            .pick_file()
+        else {
+            return;
+        };
+
+        let data = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                self.set_error_message(format!("Failed to read {}: {err}", path.display()));
+                return;
+            }
+        };
+
+        let parsed = match std::panic::catch_unwind(|| PSU::new(data)) {
+            Ok(psu) => psu,
+            Err(_) => {
+                self.set_error_message(format!("Failed to parse PSU file {}", path.display()));
+                return;
+            }
+        };
+
+        let entries = parsed.entries();
+        let mut root_name: Option<String> = None;
+        let mut root_timestamp = None;
+        let mut files = Vec::new();
+
+        for entry in &entries {
+            match entry.kind {
+                PSUEntryKind::Directory => {
+                    if entry.name != "." && entry.name != ".." && root_name.is_none() {
+                        root_name = Some(entry.name.clone());
+                        root_timestamp = Some(entry.created);
+                    }
+                }
+                PSUEntryKind::File => files.push(entry.name.clone()),
+            }
+        }
+
+        let Some(name) = root_name else {
+            self.set_error_message(format!("{} does not contain PSU metadata", path.display()));
+            return;
+        };
+
+        self.name = name;
+        self.timestamp = root_timestamp
+            .map(|ts| ts.format(TIMESTAMP_FORMAT).to_string())
+            .unwrap_or_default();
+        self.file_mode = FileMode::Include;
+        self.include_files = files.clone();
+        self.exclude_files.clear();
+        self.selected_include = None;
+        self.selected_exclude = None;
+        self.loaded_psu_files = files;
+        self.loaded_psu_path = Some(path.clone());
+        self.clear_error_message();
+        self.status = format!("Loaded PSU from {}", path.display());
+
+        if self.output.trim().is_empty() {
+            self.output = path.display().to_string();
+        }
     }
 
     fn format_load_error(folder: &Path, err: psu_packer::Error) -> String {
@@ -311,66 +381,100 @@ impl eframe::App for PackerApp {
             ui.group(|ui| {
                 ui.heading("Folder");
                 ui.small("Select the PSU project folder containing psu.toml.");
-                if ui
-                    .button("Select folder")
-                    .on_hover_text("Pick the source directory to load configuration values.")
-                    .clicked()
-                {
-                    if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                        match psu_packer::load_config(&dir) {
-                            Ok(config) => {
-                                let psu_packer::Config {
-                                    name,
-                                    timestamp,
-                                    include,
-                                    exclude,
-                                } = config;
+                ui.horizontal(|ui| {
+                    if ui
+                        .button("Select folder")
+                        .on_hover_text(
+                            "Pick the source directory to load configuration values.",
+                        )
+                        .clicked()
+                    {
+                        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                            match psu_packer::load_config(&dir) {
+                                Ok(config) => {
+                                    let psu_packer::Config {
+                                        name,
+                                        timestamp,
+                                        include,
+                                        exclude,
+                                    } = config;
 
-                                let include_present = include.is_some();
-                                let exclude_present = exclude.is_some();
+                                    let include_present = include.is_some();
+                                    let exclude_present = exclude.is_some();
 
-                                self.output = format!("{}.psu", name);
-                                self.name = name;
-                                self.timestamp = timestamp
-                                    .map(|t| t.format(TIMESTAMP_FORMAT).to_string())
-                                    .unwrap_or_default();
-                                self.file_mode = if include_present {
-                                    FileMode::Include
-                                } else {
-                                    FileMode::Exclude
-                                };
-                                self.include_files = include.unwrap_or_default();
-                                self.exclude_files = exclude.unwrap_or_default();
-                                self.selected_include = None;
-                                self.selected_exclude = None;
-                                self.clear_error_message();
-                                self.status.clear();
-                                if include_present && exclude_present {
-                                    self.status = "Config contains both include and exclude lists; using include list"
-                                        .to_string();
+                                    self.output = format!("{}.psu", name);
+                                    self.name = name;
+                                    self.timestamp = timestamp
+                                        .map(|t| t.format(TIMESTAMP_FORMAT).to_string())
+                                        .unwrap_or_default();
+                                    self.file_mode = if include_present {
+                                        FileMode::Include
+                                    } else {
+                                        FileMode::Exclude
+                                    };
+                                    self.include_files = include.unwrap_or_default();
+                                    self.exclude_files = exclude.unwrap_or_default();
+                                    self.selected_include = None;
+                                    self.selected_exclude = None;
+                                    self.clear_error_message();
+                                    self.status.clear();
+                                    if include_present && exclude_present {
+                                        self.status = "Config contains both include and exclude lists; using include list"
+                                            .to_string();
+                                    }
+                                }
+                                Err(err) => {
+                                    let message = PackerApp::format_load_error(&dir, err);
+                                    self.set_error_message(message);
+                                    self.output.clear();
+                                    self.name.clear();
+                                    self.timestamp.clear();
+                                    self.file_mode = FileMode::default();
+                                    self.include_files.clear();
+                                    self.exclude_files.clear();
+                                    self.selected_include = None;
+                                    self.selected_exclude = None;
                                 }
                             }
-                            Err(err) => {
-                                let message = PackerApp::format_load_error(&dir, err);
-                                self.set_error_message(message);
-                                self.output.clear();
-                                self.name.clear();
-                                self.timestamp.clear();
-                                self.file_mode = FileMode::default();
-                                self.include_files.clear();
-                                self.exclude_files.clear();
-                                self.selected_include = None;
-                                self.selected_exclude = None;
-                            }
+                            self.folder = Some(dir);
                         }
-                        self.folder = Some(dir);
                     }
-                }
+
+                    if ui
+                        .button("Open PSU")
+                        .on_hover_text("Load metadata from an existing PSU archive.")
+                        .clicked()
+                    {
+                        self.handle_open_psu();
+                    }
+                });
 
                 if let Some(folder) = &self.folder {
                     ui.label(format!("Folder: {}", folder.display()));
                 }
             });
+
+            if self.loaded_psu_path.is_some() || !self.loaded_psu_files.is_empty() {
+                ui.add_space(8.0);
+                ui.group(|ui| {
+                    ui.heading("Loaded PSU");
+                    ui.small("Review the files discovered in the opened PSU archive.");
+                    if let Some(path) = &self.loaded_psu_path {
+                        ui.label(format!("File: {}", path.display()));
+                    }
+                    egui::ScrollArea::vertical()
+                        .max_height(150.0)
+                        .show(ui, |ui| {
+                            if self.loaded_psu_files.is_empty() {
+                                ui.label("The archive does not contain any files.");
+                            } else {
+                                for file in &self.loaded_psu_files {
+                                    ui.label(file);
+                                }
+                            }
+                        });
+                });
+            }
 
             ui.add_space(8.0);
 
