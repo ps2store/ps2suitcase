@@ -1,4 +1,4 @@
-name: Build PSU Packer
+name: Build PSU Packer GUI
 
 on:
   push:
@@ -17,13 +17,13 @@ jobs:
         os:
           - name: ubuntu
             version: ubuntu-latest
-            executable: psu-packer
+            executable: psu-packer-gui
           - name: macos
             version: macos-latest
-            executable: psu-packer
+            executable: psu-packer-gui
           - name: windows
             version: windows-latest
-            executable: psu-packer.exe
+            executable: psu-packer-gui.exe
     runs-on: ${{matrix.os.version}}
 
     steps:
@@ -31,9 +31,26 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --package psu-packer --verbose --release
-      - name: Upload artifacts
+        run: cargo build --package psu-packer-gui --verbose --release
+      - name: Ensure executable permissions
+        if: matrix.os.name != 'windows'
+        run: chmod +x target/release/${{matrix.os.executable}}
+      - name: Archive Windows binary
+        if: matrix.os.name == 'windows'
+        shell: pwsh
+        run: |
+          $archivePath = "target/release/${{matrix.os.executable}}.zip"
+          if (Test-Path $archivePath) { Remove-Item $archivePath }
+          Compress-Archive -Path "target/release/${{matrix.os.executable}}" -DestinationPath $archivePath
+      - name: Upload artifacts (macOS/Linux)
+        if: matrix.os.name != 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: psu-packer-${{matrix.os.name}}
+          name: psu-packer-gui-${{matrix.os.name}}
           path: target/release/${{matrix.os.executable}}
+      - name: Upload artifacts (Windows)
+        if: matrix.os.name == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: psu-packer-gui-${{matrix.os.name}}
+          path: target/release/${{matrix.os.executable}}.zip
