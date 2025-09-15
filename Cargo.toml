@@ -9,6 +9,7 @@ members = [
     "crates/xtask-build-app",
     "crates/memcard",
     "crates/psu-packer",
+    "crates/psu-packer-gui",
 ]
 default-members = ["crates/psu-packer"]
 

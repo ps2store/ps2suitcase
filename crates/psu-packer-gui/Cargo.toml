@@ -1,0 +1,10 @@
+[package]
+name = "psu-packer-gui"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+psu-packer = { path = "../psu-packer" }
+eframe = "0.27"
+rfd = "0.14"
