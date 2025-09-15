@@ -2,8 +2,7 @@
 
 use chrono::NaiveDateTime;
 use eframe::egui;
-use std::path::{Path, PathBuf};
-use toml_edit::{value, Array, DocumentMut};
+use std::path::PathBuf;
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
@@ -64,14 +63,6 @@ impl PackerApp {
         }
     }
 
-    fn list_to_array(list: &[String]) -> Array {
-        let mut array = Array::default();
-        for entry in list {
-            array.push(entry.as_str());
-        }
-        array
-    }
-
     fn file_list_ui(&mut self, ui: &mut egui::Ui) {
         let mode_label = self.mode_label();
         ui.label(mode_label);
@@ -113,6 +104,30 @@ impl PackerApp {
         if remove_clicked {
             self.handle_remove_file();
         }
+    }
+
+    fn build_config(&self) -> Result<psu_packer::Config, String> {
+        let timestamp = self.timestamp.trim();
+        let timestamp = if timestamp.is_empty() {
+            None
+        } else {
+            Some(
+                NaiveDateTime::parse_from_str(timestamp, TIMESTAMP_FORMAT)
+                    .map_err(|e| format!("Invalid timestamp: {e}"))?,
+            )
+        };
+
+        let (include, exclude) = match self.file_mode {
+            FileMode::Include => (Some(self.include_files.clone()), None),
+            FileMode::Exclude => (None, Some(self.exclude_files.clone())),
+        };
+
+        Ok(psu_packer::Config {
+            name: self.name.clone(),
+            timestamp,
+            include,
+            exclude,
+        })
     }
 
     fn handle_add_file(&mut self) {
@@ -177,54 +192,6 @@ impl PackerApp {
                 *selected = Some(idx);
             }
         }
-    }
-
-    fn save_config(&self, folder: &Path) -> Result<(), String> {
-        let config_path = folder.join("psu.toml");
-        let config_str = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read {}: {e}", config_path.display()))?;
-        let mut document = config_str
-            .parse::<DocumentMut>()
-            .map_err(|e| format!("Failed to parse {}: {e}", config_path.display()))?;
-
-        let Some(config_item) = document.get_mut("config") else {
-            return Err("psu.toml is missing a [config] section".to_string());
-        };
-        let Some(config_table) = config_item.as_table_mut() else {
-            return Err("psu.toml [config] section is not a table".to_string());
-        };
-
-        config_table.insert("name", value(self.name.clone()));
-
-        let timestamp = self.timestamp.trim();
-        if timestamp.is_empty() {
-            config_table.remove("timestamp");
-        } else {
-            let parsed = NaiveDateTime::parse_from_str(timestamp, TIMESTAMP_FORMAT)
-                .map_err(|e| format!("Invalid timestamp: {e}"))?;
-            config_table.insert(
-                "timestamp",
-                value(parsed.format(TIMESTAMP_FORMAT).to_string()),
-            );
-        }
-
-        match self.file_mode {
-            FileMode::Include => {
-                let array = Self::list_to_array(&self.include_files);
-                config_table.insert("include", value(array));
-                config_table.remove("exclude");
-            }
-            FileMode::Exclude => {
-                let array = Self::list_to_array(&self.exclude_files);
-                config_table.insert("exclude", value(array));
-                config_table.remove("include");
-            }
-        }
-
-        std::fs::write(&config_path, document.to_string())
-            .map_err(|e| format!("Failed to write {}: {e}", config_path.display()))?;
-
-        Ok(())
     }
 }
 
@@ -318,13 +285,16 @@ impl eframe::App for PackerApp {
                         return;
                     }
 
-                    if let Err(err) = self.save_config(folder) {
-                        self.status = err;
-                        return;
-                    }
+                    let config = match self.build_config() {
+                        Ok(config) => config,
+                        Err(err) => {
+                            self.status = err;
+                            return;
+                        }
+                    };
 
                     let output_path = PathBuf::from(&self.output);
-                    match psu_packer::pack_psu(folder, &output_path) {
+                    match psu_packer::pack_with_config(folder, &output_path, config) {
                         Ok(_) => self.status = format!("Packed to {}", output_path.display()),
                         Err(e) => self.status = format!("Error: {e}"),
                     }
