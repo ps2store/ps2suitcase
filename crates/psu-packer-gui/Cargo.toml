@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 psu-packer = { path = "../psu-packer" }
+ps2-filetypes = { path = "../ps2-filetypes" }
 eframe = "0.27"
 rfd = "0.14"
 chrono = "0.4.42"
