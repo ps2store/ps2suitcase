@@ -35,6 +35,41 @@ struct PackerApp {
     loaded_psu_files: Vec<String>,
 }
 
+struct ErrorMessage {
+    message: String,
+    failed_files: Vec<String>,
+}
+
+impl From<String> for ErrorMessage {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            failed_files: Vec::new(),
+        }
+    }
+}
+
+impl From<&str> for ErrorMessage {
+    fn from(message: &str) -> Self {
+        Self {
+            message: message.to_owned(),
+            failed_files: Vec::new(),
+        }
+    }
+}
+
+impl<S> From<(S, Vec<String>)> for ErrorMessage
+where
+    S: Into<String>,
+{
+    fn from((message, failed_files): (S, Vec<String>)) -> Self {
+        Self {
+            message: message.into(),
+            failed_files,
+        }
+    }
+}
+
 impl Default for PackerApp {
     fn default() -> Self {
         Self {
@@ -63,8 +98,20 @@ impl PackerApp {
         }
     }
 
-    fn set_error_message<S: Into<String>>(&mut self, message: S) {
-        self.error_message = Some(message.into());
+    fn set_error_message<M>(&mut self, message: M)
+    where
+        M: Into<ErrorMessage>,
+    {
+        let message = message.into();
+        let mut text = message.message;
+        if !message.failed_files.is_empty() {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str("Failed files: ");
+            text.push_str(&message.failed_files.join(", "));
+        }
+        self.error_message = Some(text);
         self.status.clear();
     }
 
@@ -315,49 +362,63 @@ impl PackerApp {
             return;
         };
 
-        let Some(path) = rfd::FileDialog::new().set_directory(&folder).pick_file() else {
+        let Some(paths) = rfd::FileDialog::new().set_directory(&folder).pick_files() else {
             return;
         };
 
-        let Ok(relative) = path.strip_prefix(&folder) else {
-            self.set_error_message("Selected file must be in the selected folder");
-            return;
-        };
-
-        if relative.components().count() != 1 {
-            self.set_error_message("Selected file must be in the selected folder");
+        if paths.is_empty() {
             return;
         }
 
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            self.set_error_message("Invalid file name");
-            return;
-        };
+        let (list, selected) = self.current_list();
+        let mut invalid_entries = Vec::new();
+        let mut last_added = None;
 
-        let name = name.to_string();
-        let duplicate = match self.file_mode {
-            FileMode::Include => self.include_files.iter().any(|entry| entry == &name),
-            FileMode::Exclude => self.exclude_files.iter().any(|entry| entry == &name),
-        };
+        for path in paths {
+            let Ok(relative) = path.strip_prefix(&folder) else {
+                invalid_entries.push(format!(
+                    "{} (must be in the selected folder)",
+                    path.display()
+                ));
+                continue;
+            };
 
-        if duplicate {
-            self.set_error_message("File is already listed");
-            return;
-        }
-
-        match self.file_mode {
-            FileMode::Include => {
-                self.include_files.push(name);
-                self.selected_include = Some(self.include_files.len() - 1);
+            if relative.components().count() != 1 {
+                invalid_entries.push(format!(
+                    "{} (must be in the selected folder)",
+                    path.display()
+                ));
+                continue;
             }
-            FileMode::Exclude => {
-                self.exclude_files.push(name);
-                self.selected_exclude = Some(self.exclude_files.len() - 1);
+
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                invalid_entries.push(format!("{} (invalid file name)", path.display()));
+                continue;
+            };
+
+            let name = name.to_string();
+
+            if list.iter().any(|entry| entry == &name) {
+                invalid_entries.push(format!("{name} (already listed)"));
+                continue;
             }
+
+            list.push(name);
+            last_added = Some(list.len() - 1);
         }
 
-        self.clear_error_message();
-        self.status.clear();
+        if let Some(index) = last_added {
+            *selected = Some(index);
+        }
+
+        if invalid_entries.is_empty() {
+            if last_added.is_some() {
+                self.clear_error_message();
+                self.status.clear();
+            }
+        } else {
+            self.set_error_message(("Some files could not be added", invalid_entries));
+        }
     }
 
     fn handle_remove_file(&mut self) {
