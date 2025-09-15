@@ -289,10 +289,34 @@ impl PackerApp {
 
     fn file_list_ui(&mut self, ui: &mut egui::Ui) {
         let mode_label = self.mode_label();
-        ui.label(mode_label);
-
         let mut add_clicked = false;
         let mut remove_clicked = false;
+
+        let has_selection = {
+            let (_, selected) = self.current_list();
+            selected.is_some()
+        };
+
+        ui.horizontal(|ui| {
+            ui.label(mode_label);
+            ui.add_space(ui.spacing().item_spacing.x);
+
+            if ui
+                .add(egui::Button::new("➕").small())
+                .on_hover_text("Add files from the selected folder to this list.")
+                .clicked()
+            {
+                add_clicked = true;
+            }
+
+            if ui
+                .add_enabled(has_selection, egui::Button::new("➖").small())
+                .on_hover_text("Remove the selected file from this list.")
+                .clicked()
+            {
+                remove_clicked = true;
+            }
+        });
 
         {
             let (files, selected) = self.current_list();
@@ -300,28 +324,25 @@ impl PackerApp {
                 .max_height(150.0)
                 .show(ui, |ui| {
                     for (idx, file) in files.iter().enumerate() {
-                        let is_selected = Some(idx) == *selected;
-                        if ui.selectable_label(is_selected, file).clicked() {
-                            *selected = Some(idx);
-                        }
+                        ui.horizontal(|ui| {
+                            let is_selected = Some(idx) == *selected;
+                            if ui.selectable_label(is_selected, file).clicked() {
+                                *selected = Some(idx);
+                            }
+
+                            ui.add_space(ui.spacing().item_spacing.x);
+
+                            if ui
+                                .small_button("✖")
+                                .on_hover_text("Remove this file from the list.")
+                                .clicked()
+                            {
+                                *selected = Some(idx);
+                                remove_clicked = true;
+                            }
+                        });
                     }
                 });
-        }
-
-        let selected_exists = {
-            let (_, selected) = self.current_list();
-            selected.is_some()
-        };
-
-        if ui.button("Add file").clicked() {
-            add_clicked = true;
-        }
-
-        if ui
-            .add_enabled(selected_exists, egui::Button::new("Remove file"))
-            .clicked()
-        {
-            remove_clicked = true;
         }
 
         if add_clicked {
