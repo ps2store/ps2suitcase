@@ -12,6 +12,14 @@ A collection of PS2 file type parsers.
 
 Memory Card Manager
 
+### psu-packer-gui
+
+Graphical interface for packing PSU archives. Run with:
+
+```
+cargo run -p psu-packer-gui
+```
+
 ## Credits
 
 Icon & UI Design by [@Berion](https://www.psx-place.com/members/berion.1431/)
