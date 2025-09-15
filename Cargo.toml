@@ -11,7 +11,7 @@ members = [
     "crates/psu-packer",
     "crates/psu-packer-gui",
 ]
-default-members = ["crates/psu-packer"]
+default-members = ["crates/psu-packer-gui"]
 
 [workspace.package]
 edition = "2021"
