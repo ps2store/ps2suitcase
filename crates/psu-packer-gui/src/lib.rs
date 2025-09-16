@@ -16,12 +16,9 @@ pub use ui::{dialogs, file_picker, pack_controls};
 
 pub(crate) const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] = &[
-    (0, "PS2 Save File"),
-    (1, "Software (PS2)"),
-    (2, "Unrecognized (0x02)"),
-    (3, "Software (Pocketstation)"),
-    (4, "Settings (PS2)"),
-    (5, "System Driver"),
+    (0, "Save Data"),
+    (1, "System Software"),
+    (4, "Settings"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
