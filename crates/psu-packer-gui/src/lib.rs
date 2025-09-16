@@ -7,6 +7,7 @@ use std::{
 
 use chrono::NaiveDateTime;
 use eframe::egui;
+use ps2_filetypes::templates;
 
 pub mod ui;
 
@@ -263,6 +264,54 @@ impl PackerApp {
     fn clear_text_editors(&mut self) {
         self.psu_toml_editor.clear();
         self.title_cfg_editor.clear();
+    }
+
+    pub(crate) fn create_psu_toml_from_template(&mut self) {
+        self.create_file_from_template(
+            "psu.toml",
+            templates::PSU_TOML_TEMPLATE,
+            EditorTab::PsuToml,
+        );
+    }
+
+    pub(crate) fn create_title_cfg_from_template(&mut self) {
+        self.create_file_from_template(
+            "title.cfg",
+            templates::TITLE_CFG_TEMPLATE,
+            EditorTab::TitleCfg,
+        );
+    }
+
+    fn create_file_from_template(&mut self, file_name: &str, template: &str, tab: EditorTab) {
+        let Some(folder) = self.folder.clone() else {
+            self.set_error_message(format!(
+                "Select a folder before creating {file_name} from the template."
+            ));
+            return;
+        };
+
+        let path = folder.join(file_name);
+        if path.exists() {
+            self.set_error_message(format!(
+                "{} already exists in the selected folder.",
+                path.display()
+            ));
+            return;
+        }
+
+        if let Err(err) = fs::write(&path, template) {
+            self.set_error_message(format!("Failed to create {}: {}", path.display(), err));
+            return;
+        }
+
+        self.status = format!("Created {} from template.", path.display());
+        self.clear_error_message();
+        self.reload_project_files();
+        match tab {
+            EditorTab::PsuSettings => self.open_psu_settings_tab(),
+            EditorTab::PsuToml => self.open_psu_toml_tab(),
+            EditorTab::TitleCfg => self.open_title_cfg_tab(),
+        }
     }
 
     pub(crate) fn open_psu_settings_tab(&mut self) {

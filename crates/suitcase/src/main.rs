@@ -27,7 +27,7 @@ use crate::{
 use eframe::egui::{Context, Frame, IconData, Margin, ViewportCommand};
 use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, SurfaceIndex, TabIndex};
-use ps2_filetypes::TitleCfg;
+use ps2_filetypes::templates::{PSU_TOML_TEMPLATE, TITLE_CFG_TEMPLATE};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -141,6 +141,9 @@ impl PSUBuilderApp {
                 }
                 AppEvent::CreateICN => {
                     self.show_create_icn = true;
+                }
+                AppEvent::CreatePsuToml => {
+                    self.create_psu_toml();
                 }
                 AppEvent::CreateTitleCfg => {
                     self.create_title_cfg();
@@ -286,28 +289,54 @@ impl PSUBuilderApp {
     }
 
     fn create_title_cfg(&mut self) {
+        let Some(directory) = self.state.opened_folder.clone() else {
+            return;
+        };
+
         if let Some(filepath) = rfd::FileDialog::new()
             .set_title("Select a folder to create title.cfg in")
             .set_file_name("title.cfg")
             .add_filter("title.cfg", &["cfg"])
-            .set_directory(self.state.opened_folder.clone().unwrap())
+            .set_directory(directory)
             .save_file()
         {
-            std::fs::write(
-                filepath.clone(),
-                TitleCfg::new("".to_string())
-                    .add_missing_fields()
-                    .to_string()
-                    .into_bytes(),
-            )
-            .expect("Failed to title.cfg");
+            std::fs::write(&filepath, TITLE_CFG_TEMPLATE)
+                .expect("Failed to write title.cfg template");
+            let file_name = filepath.file_name().unwrap().to_str().unwrap().to_string();
             self.handle_open(VirtualFile {
-                name: filepath.file_name().unwrap().to_str().unwrap().to_string(),
+                name: file_name,
                 size: 0,
                 file_path: filepath,
             });
-            self.file_tree
-                .index_folder(&self.state.opened_folder.clone().unwrap());
+            if let Some(folder) = &self.state.opened_folder {
+                self.file_tree.index_folder(folder);
+            }
+        }
+    }
+
+    fn create_psu_toml(&mut self) {
+        let Some(directory) = self.state.opened_folder.clone() else {
+            return;
+        };
+
+        if let Some(filepath) = rfd::FileDialog::new()
+            .set_title("Select a folder to create psu.toml in")
+            .set_file_name("psu.toml")
+            .add_filter("psu.toml", &["toml"])
+            .set_directory(directory)
+            .save_file()
+        {
+            std::fs::write(&filepath, PSU_TOML_TEMPLATE)
+                .expect("Failed to write psu.toml template");
+            let file_name = filepath.file_name().unwrap().to_str().unwrap().to_string();
+            self.handle_open(VirtualFile {
+                name: file_name,
+                size: 0,
+                file_path: filepath,
+            });
+            if let Some(folder) = &self.state.opened_folder {
+                self.file_tree.index_folder(folder);
+            }
         }
     }
 }

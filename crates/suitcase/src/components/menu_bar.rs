@@ -66,6 +66,14 @@ pub fn menu_bar(ui: &mut Ui, app: &mut AppState) {
                     app.save_file();
                     ui.close_menu();
                 }
+                if ui.menu_item("Create psu.toml from template").clicked() {
+                    app.create_psu_toml();
+                    ui.close_menu();
+                }
+                if ui.menu_item("Create title.cfg from template").clicked() {
+                    app.create_title_cfg();
+                    ui.close_menu();
+                }
                 // ui.separator();
                 // if ui
                 //     .menu_item_shortcut("Create ICN", &CREATE_ICN_KEYBOARD_SHORTCUT)

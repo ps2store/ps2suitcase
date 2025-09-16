@@ -66,6 +66,10 @@ ambient_color = { r = 0.2, g = 0.2, b = 0.2, a = 1.0 }
 * `background_colors` must contain exactly four entries; `light_directions` and `light_colors` expect three entries each. Omit these arrays to keep the defaults.
 * `ambient_color` and `background_transparency` are optional—leave them out to rely on the standard lighting values bundled with the packer.
 
+### Templates
+
+Starter templates for both configuration files live in `assets/templates/psu.toml` and `assets/templates/title.cfg`. The GUI `File` menu offers "Create … from template" actions so you can drop these starting points straight into a project before editing.
+
 The GUI mirrors the same settings so you can preview and persist changes without touching the TOML by hand.
 
 ## Credits

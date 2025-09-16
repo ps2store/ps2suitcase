@@ -39,7 +39,7 @@ pub fn toolbar(ui: &mut Ui, app: &mut AppState) -> Response {
         toolbar_item(
             ui,
             include_image!("../../assets/hidpi/main_mk_titlecfg.png"),
-            "Make title configuration",
+            "Create title.cfg from template",
         )
         .clicked()
         .then(|| app.create_title_cfg());

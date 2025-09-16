@@ -27,6 +27,16 @@ pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
                 app.open_title_cfg_tab();
                 ui.close_menu();
             }
+
+            if ui.button("Create psu.toml from template").clicked() {
+                app.create_psu_toml_from_template();
+                ui.close_menu();
+            }
+
+            if ui.button("Create title.cfg from template").clicked() {
+                app.create_title_cfg_from_template();
+                ui.close_menu();
+            }
         });
 
         ui.separator();
