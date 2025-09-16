@@ -1,4 +1,4 @@
-<img width="803" height="638" alt="image" src="https://github.com/user-attachments/assets/e747ad12-5771-4de3-85a0-2495925c7e68" />
+**PSU Packer GUI overview:** The application presents a straightforward window for selecting PSU source folders, configuring metadata, and packing archives without needing to use the command line.
 
 ***This fork of the original project simply intends to add a simple gui to the existing progress of the project. Nothing fancy or pretty, but should work good for those who don't like to use terminals.***
 *This fork only addresses the PSU packer, and not the other featured programs of the repo. Only windows has been tested.*
