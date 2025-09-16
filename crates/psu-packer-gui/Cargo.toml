@@ -10,3 +10,4 @@ ps2-filetypes = { path = "../ps2-filetypes" }
 eframe = "0.27"
 rfd = "0.14"
 chrono = "0.4.42"
+egui_extras = { version = "0.27", features = ["chrono"] }

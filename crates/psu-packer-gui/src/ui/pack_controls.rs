@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDateTime;
+use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use eframe::egui;
+use egui_extras::DatePickerButton;
 
 use crate::{IconFlagSelection, PackerApp, TIMESTAMP_FORMAT};
 
@@ -18,7 +19,7 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 ui.end_row();
 
                 ui.label("Timestamp");
-                ui.add(egui::TextEdit::singleline(&mut app.timestamp).hint_text(TIMESTAMP_FORMAT));
+                timestamp_picker_ui(app, ui);
                 ui.end_row();
 
                 ui.label("Icon.sys");
@@ -67,6 +68,80 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 ui.end_row();
             });
     });
+}
+
+fn timestamp_picker_ui(app: &mut PackerApp, ui: &mut egui::Ui) {
+    ui.vertical(|ui| {
+        let default_timestamp = default_timestamp();
+        let mut has_timestamp = app.timestamp.is_some();
+
+        if ui.checkbox(&mut has_timestamp, "Set timestamp").changed() {
+            if has_timestamp {
+                app.timestamp = Some(app.timestamp.unwrap_or(default_timestamp));
+            } else {
+                app.timestamp = None;
+            }
+        }
+
+        if !has_timestamp {
+            ui.small("No timestamp will be saved.");
+        } else {
+            let mut timestamp = app.timestamp.unwrap_or(default_timestamp);
+            let mut date: NaiveDate = timestamp.date();
+            let time = timestamp.time();
+            let mut hour = time.hour();
+            let mut minute = time.minute();
+            let mut second = time.second();
+            let mut changed = false;
+
+            ui.horizontal(|ui| {
+                let date_response = ui.add(
+                    DatePickerButton::new(&mut date).id_source("metadata_timestamp_date_picker"),
+                );
+                changed |= date_response.changed();
+
+                ui.label("Time");
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut hour)
+                            .clamp_range(0..=23)
+                            .suffix(" h"),
+                    )
+                    .changed();
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut minute)
+                            .clamp_range(0..=59)
+                            .suffix(" m"),
+                    )
+                    .changed();
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut second)
+                            .clamp_range(0..=59)
+                            .suffix(" s"),
+                    )
+                    .changed();
+            });
+
+            if changed {
+                if let Some(new_time) = NaiveTime::from_hms_opt(hour, minute, second) {
+                    timestamp = NaiveDateTime::new(date, new_time);
+                }
+            }
+
+            app.timestamp = Some(timestamp);
+
+            if let Some(ts) = app.timestamp {
+                ui.small(format!("Selected: {}", ts.format(TIMESTAMP_FORMAT)));
+            }
+        }
+    });
+}
+
+fn default_timestamp() -> NaiveDateTime {
+    let now = Local::now().naive_local();
+    now.with_nanosecond(0).unwrap_or(now)
 }
 
 pub(crate) fn file_filters_section(app: &mut PackerApp, ui: &mut egui::Ui) {
@@ -271,15 +346,7 @@ impl PackerApp {
     }
 
     pub(crate) fn build_config(&self) -> Result<psu_packer::Config, String> {
-        let timestamp = self.timestamp.trim();
-        let timestamp = if timestamp.is_empty() {
-            None
-        } else {
-            Some(
-                NaiveDateTime::parse_from_str(timestamp, TIMESTAMP_FORMAT)
-                    .map_err(|e| format!("Invalid timestamp: {e}"))?,
-            )
-        };
+        let timestamp = self.timestamp;
 
         let include = if self.include_files.is_empty() {
             None

@@ -23,6 +23,10 @@ name = "accesskit"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74a4b14f3d99c1255dcba8f45621ab1a2e7540a0009652d33989005a4d0bfc6b"
+dependencies = [
+ "enumn",
+ "serde",
+]
 
 [[package]]
 name = "accesskit"
@@ -1467,6 +1471,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20930a432bbd57a6d55e07976089708d4893f3d556cf42a0d79e9e321fa73b10"
 dependencies = [
  "bytemuck",
+ "serde",
 ]
 
 [[package]]
@@ -1564,6 +1569,7 @@ dependencies = [
  "epaint 0.27.2",
  "log",
  "nohash-hasher",
+ "serde",
 ]
 
 [[package]]
@@ -1673,6 +1679,20 @@ dependencies = [
 
 [[package]]
 name = "egui_extras"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b78779f35ded1a853786c9ce0b43fe1053e10a21ea3b23ebea411805ce41593"
+dependencies = [
+ "chrono",
+ "egui 0.27.2",
+ "enum-map",
+ "log",
+ "mime_guess2",
+ "serde",
+]
+
+[[package]]
+name = "egui_extras"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624659a2e972a46f4d5f646557906c55f1cd5a0836eddbe610fdf1afba1b4226"
@@ -1734,6 +1754,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4c3a552cfca14630702449d35f41c84a0d15963273771c6059175a803620f3f"
 dependencies = [
  "bytemuck",
+ "serde",
 ]
 
 [[package]]
@@ -1819,6 +1840,7 @@ dependencies = [
  "log",
  "nohash-hasher",
  "parking_lot",
+ "serde",
 ]
 
 [[package]]
@@ -4090,6 +4112,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "eframe 0.27.2",
+ "egui_extras 0.27.2",
  "ps2-filetypes",
  "psu-packer",
  "rfd 0.14.1",
@@ -4830,7 +4853,7 @@ dependencies = [
  "cgmath",
  "eframe 0.31.1",
  "egui_dock",
- "egui_extras",
+ "egui_extras 0.31.1",
  "image 0.25.6",
  "macros",
  "notify",
