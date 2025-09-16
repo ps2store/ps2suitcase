@@ -626,7 +626,7 @@ impl eframe::App for PackerApp {
                             ui.end_row();
 
                             ui.label("Timestamp");
-                            ui.text_edit_singleline(&mut self.timestamp);
+                            ui.add(egui::TextEdit::singleline(&mut self.timestamp).hint_text(TIMESTAMP_FORMAT));
                             ui.end_row();
 
                             ui.label("File mode");
