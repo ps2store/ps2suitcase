@@ -34,6 +34,7 @@ struct PackerApp {
     loaded_psu_path: Option<PathBuf>,
     loaded_psu_files: Vec<String>,
     show_exit_confirm: bool,
+    source_present_last_frame: bool,
 }
 
 struct ErrorMessage {
@@ -88,6 +89,7 @@ impl Default for PackerApp {
             loaded_psu_path: None,
             loaded_psu_files: Vec::new(),
             show_exit_confirm: false,
+            source_present_last_frame: false,
         }
     }
 }
@@ -119,6 +121,16 @@ impl PackerApp {
 
     fn clear_error_message(&mut self) {
         self.error_message = None;
+    }
+
+    fn reset_metadata_fields(&mut self) {
+        self.name.clear();
+        self.timestamp.clear();
+        self.file_mode = FileMode::default();
+        self.include_files.clear();
+        self.exclude_files.clear();
+        self.selected_include = None;
+        self.selected_exclude = None;
     }
 
     fn missing_include_files(&self, folder: &Path) -> Vec<String> {
@@ -471,6 +483,16 @@ impl PackerApp {
 
 impl eframe::App for PackerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let source_present = self.folder.is_some()
+            || self.loaded_psu_path.is_some()
+            || !self.loaded_psu_files.is_empty();
+
+        if !source_present && self.source_present_last_frame {
+            self.reset_metadata_fields();
+        }
+
+        self.source_present_last_frame = source_present;
+
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -589,44 +611,34 @@ impl eframe::App for PackerApp {
                                 }
                             });
                     });
-                } else {
-                    ui.add_space(8.0);
-                    ui.group(|ui| {
-                        ui.heading("Metadata");
-                        ui.small("Review or edit metadata loaded from the selected folder.");
-                        if self.folder.is_some() {
-                            egui::Grid::new("metadata_grid")
-                                .num_columns(2)
-                                .spacing(egui::vec2(12.0, 6.0))
-                                .show(ui, |ui| {
-                                    ui.label("Name");
-                                    ui.text_edit_singleline(&mut self.name);
-                                    ui.end_row();
+                }
 
-                                    ui.label("Timestamp");
-                                    ui.text_edit_singleline(&mut self.timestamp);
-                                    ui.end_row();
+                ui.add_space(8.0);
+                ui.group(|ui| {
+                    ui.heading("Metadata");
+                    ui.small("Edit PSU metadata before or after selecting a folder.");
+                    egui::Grid::new("metadata_grid")
+                        .num_columns(2)
+                        .spacing(egui::vec2(12.0, 6.0))
+                        .show(ui, |ui| {
+                            ui.label("Name");
+                            ui.text_edit_singleline(&mut self.name);
+                            ui.end_row();
 
-                                    ui.label("File mode");
-                                    ui.vertical(|ui| {
-                                        ui.radio_value(
-                                            &mut self.file_mode,
-                                            FileMode::Include,
-                                            "Include",
-                                        );
-                                        ui.radio_value(
-                                            &mut self.file_mode,
-                                            FileMode::Exclude,
-                                            "Exclude",
-                                        );
-                                    });
-                                    ui.end_row();
-                                });
-                        } else {
-                            ui.label("Select a folder to load metadata options.");
-                        }
-                    });
+                            ui.label("Timestamp");
+                            ui.text_edit_singleline(&mut self.timestamp);
+                            ui.end_row();
 
+                            ui.label("File mode");
+                            ui.vertical(|ui| {
+                                ui.radio_value(&mut self.file_mode, FileMode::Include, "Include");
+                                ui.radio_value(&mut self.file_mode, FileMode::Exclude, "Exclude");
+                            });
+                            ui.end_row();
+                        });
+                });
+
+                if !showing_psu {
                     ui.add_space(8.0);
 
                     ui.group(|ui| {
