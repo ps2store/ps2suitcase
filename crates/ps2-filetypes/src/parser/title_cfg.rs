@@ -44,7 +44,7 @@ impl TitleCfg {
 
     pub fn has_mandatory_fields(&self) -> bool {
         for (_, key) in MANDATORY_KEYS.iter().enumerate() {
-            if !self.index_map.contains_key(key.to_owned()) {
+            if !self.index_map.contains_key(*key) {
                 return false;
             }
         }
@@ -53,7 +53,7 @@ impl TitleCfg {
 
     pub fn add_missing_fields(&mut self) -> &Self {
         for (_, key) in MANDATORY_KEYS.iter().enumerate() {
-            if !self.index_map.contains_key(key.to_owned()) {
+            if !self.index_map.contains_key(*key) {
                 self.index_map.insert(key.to_string(), "".to_string());
             }
         }
@@ -76,9 +76,37 @@ fn string_to_index_map(contents: String) -> IndexMap<String, String> {
 
     let lines = contents.lines();
     for line in lines {
-        let pair = line.split('=').collect::<Vec<&str>>();
-        index_map.insert(pair[0].to_string(), pair[1].to_string());
+        if let Some((key, value)) = line.split_once('=') {
+            index_map.insert(key.to_string(), value.to_string());
+        }
     }
 
     index_map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn string_to_index_map_skips_lines_without_delimiter() {
+        let contents = "title=Example Game\ninvalid_line\ndeveloper=Example Dev";
+
+        let map = string_to_index_map(contents.to_string());
+
+        assert_eq!(map.get("title"), Some(&"Example Game".to_string()));
+        assert_eq!(map.get("developer"), Some(&"Example Dev".to_string()));
+        assert!(!map.contains_key("invalid_line"));
+    }
+
+    #[test]
+    fn title_cfg_handles_malformed_lines_gracefully() {
+        let contents = "title=Another Game\njust_text\nboot=cdrom0:\\SLUS_123.45";
+
+        let cfg = TitleCfg::new(contents.to_string());
+
+        assert_eq!(cfg.index_map.get("title"), Some(&"Another Game".to_string()));
+        assert_eq!(cfg.index_map.get("boot"), Some(&"cdrom0:\\SLUS_123.45".to_string()));
+        assert!(!cfg.index_map.contains_key("just_text"));
+    }
 }
