@@ -33,7 +33,7 @@ struct PackerApp {
     selected_exclude: Option<usize>,
     loaded_psu_path: Option<PathBuf>,
     loaded_psu_files: Vec<String>,
-    exit_confirmation_requested: bool,
+    show_exit_confirm: bool,
 }
 
 struct ErrorMessage {
@@ -87,7 +87,7 @@ impl Default for PackerApp {
             selected_exclude: None,
             loaded_psu_path: None,
             loaded_psu_files: Vec::new(),
-            exit_confirmation_requested: false,
+            show_exit_confirm: false,
         }
     }
 }
@@ -487,7 +487,7 @@ impl eframe::App for PackerApp {
                     ui.separator();
 
                     if ui.button("Exit").clicked() {
-                        self.exit_confirmation_requested = true;
+                        self.show_exit_confirm = true;
                         ui.close_menu();
                     }
                 });
@@ -714,6 +714,27 @@ impl eframe::App for PackerApp {
                 });
             });
         });
+
+        if self.show_exit_confirm {
+            egui::Window::new("Confirm Exit")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Are you sure you want to exit?");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        let yes_clicked = ui.button("Yes").clicked();
+                        let no_clicked = ui.button("No").clicked();
+
+                        if yes_clicked {
+                            self.show_exit_confirm = false;
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        } else if no_clicked {
+                            self.show_exit_confirm = false;
+                        }
+                    });
+                });
+        }
     }
 }
 
