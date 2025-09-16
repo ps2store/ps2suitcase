@@ -6,6 +6,20 @@ use ps2_filetypes::{PSUEntryKind, PSU};
 use std::path::{Path, PathBuf};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] = &[
+    (0, "PS2 Save File"),
+    (1, "Software (PS2)"),
+    (2, "Unrecognized (0x02)"),
+    (3, "Software (Pocketstation)"),
+    (4, "Settings (PS2)"),
+    (5, "System Driver"),
+];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IconFlagSelection {
+    Preset(usize),
+    Custom,
+}
 
 struct PackerApp {
     folder: Option<PathBuf>,
@@ -22,6 +36,10 @@ struct PackerApp {
     loaded_psu_files: Vec<String>,
     show_exit_confirm: bool,
     source_present_last_frame: bool,
+    icon_sys_enabled: bool,
+    icon_sys_title: String,
+    icon_sys_flag_selection: IconFlagSelection,
+    icon_sys_custom_flag: u16,
 }
 
 #[derive(Copy, Clone)]
@@ -91,6 +109,10 @@ impl Default for PackerApp {
             loaded_psu_files: Vec::new(),
             show_exit_confirm: false,
             source_present_last_frame: false,
+            icon_sys_enabled: false,
+            icon_sys_title: String::new(),
+            icon_sys_flag_selection: IconFlagSelection::Preset(0),
+            icon_sys_custom_flag: ICON_SYS_FLAG_OPTIONS[0].0,
         }
     }
 }
@@ -124,6 +146,13 @@ impl PackerApp {
         self.error_message = None;
     }
 
+    fn reset_icon_sys_fields(&mut self) {
+        self.icon_sys_enabled = false;
+        self.icon_sys_title.clear();
+        self.icon_sys_flag_selection = IconFlagSelection::Preset(0);
+        self.icon_sys_custom_flag = ICON_SYS_FLAG_OPTIONS[0].0;
+    }
+
     fn reset_metadata_fields(&mut self) {
         self.name.clear();
         self.timestamp.clear();
@@ -131,6 +160,29 @@ impl PackerApp {
         self.exclude_files.clear();
         self.selected_include = None;
         self.selected_exclude = None;
+        self.reset_icon_sys_fields();
+    }
+
+    fn icon_flag_label(&self) -> String {
+        match self.icon_sys_flag_selection {
+            IconFlagSelection::Preset(index) => ICON_SYS_FLAG_OPTIONS
+                .get(index)
+                .map(|(_, label)| (*label).to_string())
+                .unwrap_or_else(|| format!("Preset {index}")),
+            IconFlagSelection::Custom => {
+                format!("Custom (0x{:04X})", self.icon_sys_custom_flag)
+            }
+        }
+    }
+
+    fn selected_icon_flag_value(&self) -> Result<u16, String> {
+        match self.icon_sys_flag_selection {
+            IconFlagSelection::Preset(index) => ICON_SYS_FLAG_OPTIONS
+                .get(index)
+                .map(|(value, _)| *value)
+                .ok_or_else(|| "Invalid icon.sys flag selection".to_string()),
+            IconFlagSelection::Custom => Ok(self.icon_sys_custom_flag),
+        }
     }
 
     fn missing_include_files(&self, folder: &Path) -> Vec<String> {
@@ -210,6 +262,7 @@ impl PackerApp {
         self.exclude_files.clear();
         self.selected_include = None;
         self.selected_exclude = None;
+        self.reset_icon_sys_fields();
 
         if self.output.trim().is_empty() {
             self.output = path.display().to_string();
@@ -377,11 +430,33 @@ impl PackerApp {
             Some(self.exclude_files.clone())
         };
 
+        let icon_sys = if self.icon_sys_enabled {
+            let title = self.icon_sys_title.trim();
+            if title.is_empty() {
+                return Err("Icon.sys title cannot be empty when enabled".to_string());
+            }
+
+            let flag_value = self.selected_icon_flag_value()?;
+
+            Some(psu_packer::IconSysConfig {
+                flags: psu_packer::IconSysFlags::new(flag_value),
+                title: title.to_string(),
+                background_transparency: None,
+                background_colors: None,
+                light_directions: None,
+                light_colors: None,
+                ambient_color: None,
+            })
+        } else {
+            None
+        };
+
         Ok(psu_packer::Config {
             name: self.name.clone(),
             timestamp,
             include,
             exclude,
+            icon_sys,
         })
     }
 
@@ -524,6 +599,7 @@ impl eframe::App for PackerApp {
                                             timestamp,
                                             include,
                                             exclude,
+                                            icon_sys,
                                         } = config;
 
                                         self.output = format!("{}.psu", name);
@@ -535,6 +611,26 @@ impl eframe::App for PackerApp {
                                         self.exclude_files = exclude.unwrap_or_default();
                                         self.selected_include = None;
                                         self.selected_exclude = None;
+                                        if let Some(icon_cfg) = icon_sys {
+                                            let psu_packer::IconSysConfig { flags, title, .. } =
+                                                icon_cfg;
+                                            let flag_value = flags.value();
+                                            self.icon_sys_enabled = true;
+                                            self.icon_sys_title = title;
+                                            self.icon_sys_custom_flag = flag_value;
+                                            if let Some(index) = ICON_SYS_FLAG_OPTIONS
+                                                .iter()
+                                                .position(|(value, _)| *value == flag_value)
+                                            {
+                                                self.icon_sys_flag_selection =
+                                                    IconFlagSelection::Preset(index);
+                                            } else {
+                                                self.icon_sys_flag_selection =
+                                                    IconFlagSelection::Custom;
+                                            }
+                                        } else {
+                                            self.reset_icon_sys_fields();
+                                        }
                                         self.clear_error_message();
                                         self.status.clear();
                                     }
@@ -548,6 +644,7 @@ impl eframe::App for PackerApp {
                                         self.exclude_files.clear();
                                         self.selected_include = None;
                                         self.selected_exclude = None;
+                                        self.reset_icon_sys_fields();
                                     }
                                 }
                                 self.loaded_psu_path = None;
@@ -604,6 +701,57 @@ impl eframe::App for PackerApp {
                                 egui::TextEdit::singleline(&mut self.timestamp)
                                     .hint_text(TIMESTAMP_FORMAT),
                             );
+                            ui.end_row();
+
+                            ui.label("Icon.sys");
+                            let checkbox = ui
+                                .checkbox(&mut self.icon_sys_enabled, "Generate icon.sys metadata");
+                            checkbox.on_hover_text(
+                                "Automatically create or update icon.sys when packing.",
+                            );
+                            ui.end_row();
+
+                            ui.label("Icon title");
+                            ui.add_enabled(
+                                self.icon_sys_enabled,
+                                egui::TextEdit::singleline(&mut self.icon_sys_title),
+                            );
+                            ui.end_row();
+
+                            ui.label("Icon type");
+                            ui.add_enabled_ui(self.icon_sys_enabled, |ui| {
+                                ui.horizontal(|ui| {
+                                    egui::ComboBox::from_id_source("icon_sys_flag_combo")
+                                        .selected_text(self.icon_flag_label())
+                                        .show_ui(ui, |ui| {
+                                            for (idx, (_, label)) in
+                                                ICON_SYS_FLAG_OPTIONS.iter().enumerate()
+                                            {
+                                                ui.selectable_value(
+                                                    &mut self.icon_sys_flag_selection,
+                                                    IconFlagSelection::Preset(idx),
+                                                    *label,
+                                                );
+                                            }
+                                            ui.selectable_value(
+                                                &mut self.icon_sys_flag_selection,
+                                                IconFlagSelection::Custom,
+                                                "Custom…",
+                                            );
+                                        });
+
+                                    if matches!(
+                                        self.icon_sys_flag_selection,
+                                        IconFlagSelection::Custom
+                                    ) {
+                                        ui.add(
+                                            egui::DragValue::new(&mut self.icon_sys_custom_flag)
+                                                .clamp_range(0.0..=u16::MAX as f64),
+                                        );
+                                        ui.label(format!("0x{:04X}", self.icon_sys_custom_flag));
+                                    }
+                                });
+                            });
                             ui.end_row();
                         });
                 });
