@@ -3,7 +3,7 @@ use std::path::Path;
 use eframe::egui;
 use ps2_filetypes::{PSUEntryKind, PSU};
 
-use crate::{IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS, TIMESTAMP_FORMAT};
+use crate::{IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS};
 
 pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.menu_button("File", |ui| {
@@ -49,9 +49,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
                             app.output = format!("{}.psu", name);
                             app.name = name;
-                            app.timestamp = timestamp
-                                .map(|t| t.format(TIMESTAMP_FORMAT).to_string())
-                                .unwrap_or_default();
+                            app.timestamp = timestamp;
                             app.include_files = include.unwrap_or_default();
                             app.exclude_files = exclude.unwrap_or_default();
                             app.selected_include = None;
@@ -81,7 +79,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.set_error_message(message);
                             app.output.clear();
                             app.name.clear();
-                            app.timestamp.clear();
+                            app.timestamp = None;
                             app.include_files.clear();
                             app.exclude_files.clear();
                             app.selected_include = None;
@@ -171,9 +169,7 @@ impl PackerApp {
         };
 
         self.name = name;
-        self.timestamp = root_timestamp
-            .map(|ts| ts.format(TIMESTAMP_FORMAT).to_string())
-            .unwrap_or_default();
+        self.timestamp = root_timestamp;
         self.loaded_psu_files = files;
         self.loaded_psu_path = Some(path.clone());
         self.clear_error_message();

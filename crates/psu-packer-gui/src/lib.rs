@@ -4,6 +4,7 @@ use std::{
     thread,
 };
 
+use chrono::NaiveDateTime;
 use eframe::egui;
 
 pub mod ui;
@@ -53,7 +54,7 @@ pub struct PackerApp {
     pub(crate) status: String,
     pub(crate) error_message: Option<String>,
     pub(crate) name: String,
-    pub(crate) timestamp: String,
+    pub(crate) timestamp: Option<NaiveDateTime>,
     pub(crate) include_files: Vec<String>,
     pub(crate) exclude_files: Vec<String>,
     pub(crate) selected_include: Option<usize>,
@@ -112,7 +113,7 @@ impl Default for PackerApp {
             status: String::new(),
             error_message: None,
             name: String::new(),
-            timestamp: String::new(),
+            timestamp: None,
             include_files: Vec::new(),
             exclude_files: Vec::new(),
             selected_include: None,
@@ -161,7 +162,7 @@ impl PackerApp {
 
     pub(crate) fn reset_metadata_fields(&mut self) {
         self.name.clear();
-        self.timestamp.clear();
+        self.timestamp = None;
         self.include_files.clear();
         self.exclude_files.clear();
         self.selected_include = None;
