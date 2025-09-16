@@ -1,4 +1,5 @@
 use std::{
+    fs, io,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
@@ -25,6 +26,40 @@ pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] = &[
 pub(crate) enum IconFlagSelection {
     Preset(usize),
     Custom,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EditorTab {
+    PsuSettings,
+    PsuToml,
+    TitleCfg,
+}
+
+#[derive(Default)]
+struct TextFileEditor {
+    content: String,
+    modified: bool,
+    load_error: Option<String>,
+}
+
+impl TextFileEditor {
+    fn set_content(&mut self, content: String) {
+        self.content = content;
+        self.modified = false;
+        self.load_error = None;
+    }
+
+    fn set_error_message(&mut self, message: String) {
+        self.content.clear();
+        self.modified = false;
+        self.load_error = Some(message);
+    }
+
+    fn clear(&mut self) {
+        self.content.clear();
+        self.modified = false;
+        self.load_error = None;
+    }
 }
 
 struct PackJob {
@@ -68,6 +103,9 @@ pub struct PackerApp {
     pub(crate) icon_sys_flag_selection: IconFlagSelection,
     pub(crate) icon_sys_custom_flag: u16,
     pack_job: Option<PackJob>,
+    editor_tab: EditorTab,
+    psu_toml_editor: TextFileEditor,
+    title_cfg_editor: TextFileEditor,
 }
 
 struct ErrorMessage {
@@ -127,6 +165,9 @@ impl Default for PackerApp {
             icon_sys_flag_selection: IconFlagSelection::Preset(0),
             icon_sys_custom_flag: ICON_SYS_FLAG_OPTIONS[0].0,
             pack_job: None,
+            editor_tab: EditorTab::PsuSettings,
+            psu_toml_editor: TextFileEditor::default(),
+            title_cfg_editor: TextFileEditor::default(),
         }
     }
 }
@@ -208,6 +249,32 @@ impl PackerApp {
                 }
             })
             .collect()
+    }
+
+    pub(crate) fn reload_project_files(&mut self) {
+        if let Some(folder) = self.folder.clone() {
+            load_text_file_into_editor(folder.as_path(), "psu.toml", &mut self.psu_toml_editor);
+            load_text_file_into_editor(folder.as_path(), "title.cfg", &mut self.title_cfg_editor);
+        } else {
+            self.clear_text_editors();
+        }
+    }
+
+    fn clear_text_editors(&mut self) {
+        self.psu_toml_editor.clear();
+        self.title_cfg_editor.clear();
+    }
+
+    pub(crate) fn open_psu_settings_tab(&mut self) {
+        self.editor_tab = EditorTab::PsuSettings;
+    }
+
+    pub(crate) fn open_psu_toml_tab(&mut self) {
+        self.editor_tab = EditorTab::PsuToml;
+    }
+
+    pub(crate) fn open_title_cfg_tab(&mut self) {
+        self.editor_tab = EditorTab::TitleCfg;
     }
 
     fn has_source(&self) -> bool {
@@ -334,6 +401,88 @@ impl PackerApp {
     }
 }
 
+fn load_text_file_into_editor(folder: &Path, file_name: &str, editor: &mut TextFileEditor) {
+    let path = folder.join(file_name);
+    match fs::read_to_string(&path) {
+        Ok(content) => {
+            editor.set_content(content);
+        }
+        Err(err) => {
+            if err.kind() == io::ErrorKind::NotFound {
+                editor
+                    .set_error_message(format!("{} not found in the selected folder.", file_name));
+            } else {
+                editor.set_error_message(format!("Failed to read {}: {err}", file_name));
+            }
+        }
+    }
+}
+
+fn save_editor_to_disk(
+    folder: Option<&Path>,
+    file_name: &str,
+    editor: &mut TextFileEditor,
+) -> Result<PathBuf, io::Error> {
+    let folder =
+        folder.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No folder selected"))?;
+    let path = folder.join(file_name);
+    fs::write(&path, editor.content.as_bytes())?;
+    editor.modified = false;
+    editor.load_error = None;
+    Ok(path)
+}
+
+fn text_editor_ui(
+    ui: &mut egui::Ui,
+    file_name: &str,
+    folder_selected: bool,
+    editor: &mut TextFileEditor,
+) -> bool {
+    if !folder_selected {
+        ui.label(format!("Select a folder to edit {file_name}."));
+        return false;
+    }
+
+    if let Some(message) = &editor.load_error {
+        ui.colored_label(egui::Color32::YELLOW, message);
+        ui.add_space(8.0);
+    }
+
+    let response = egui::ScrollArea::vertical()
+        .id_source(format!("{file_name}_editor_scroll"))
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(&mut editor.content)
+                    .desired_rows(20)
+                    .code_editor(),
+            )
+        })
+        .inner;
+
+    if response.changed() {
+        editor.modified = true;
+    }
+
+    ui.add_space(8.0);
+
+    let mut save_clicked = false;
+    ui.horizontal(|ui| {
+        let button_label = format!("Save {file_name}");
+        if ui
+            .add_enabled(editor.modified, egui::Button::new(button_label))
+            .clicked()
+        {
+            save_clicked = true;
+        }
+
+        if editor.modified {
+            ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
+        }
+    });
+
+    save_clicked
+}
+
 impl eframe::App for PackerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_pack_job();
@@ -372,29 +521,96 @@ impl eframe::App for PackerApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui::file_picker::folder_section(self, ui);
-
-                let showing_psu = self.showing_loaded_psu();
-                if showing_psu {
-                    ui.add_space(8.0);
-                    ui::file_picker::loaded_psu_section(self, ui);
-                }
-
-                ui.add_space(8.0);
-                ui::pack_controls::metadata_section(self, ui);
-
-                if !showing_psu {
-                    ui.add_space(8.0);
-                    ui::pack_controls::file_filters_section(self, ui);
-                }
-
-                ui.add_space(8.0);
-                ui::pack_controls::output_section(self, ui);
-
-                ui.add_space(8.0);
-                ui::pack_controls::packaging_section(self, ui);
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.editor_tab, EditorTab::PsuSettings, "PSU Settings");
+                let psu_toml_label = if self.psu_toml_editor.modified {
+                    "psu.toml*"
+                } else {
+                    "psu.toml"
+                };
+                ui.selectable_value(&mut self.editor_tab, EditorTab::PsuToml, psu_toml_label);
+                let title_cfg_label = if self.title_cfg_editor.modified {
+                    "title.cfg*"
+                } else {
+                    "title.cfg"
+                };
+                ui.selectable_value(&mut self.editor_tab, EditorTab::TitleCfg, title_cfg_label);
             });
+            ui.separator();
+
+            match self.editor_tab {
+                EditorTab::PsuSettings => {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui::file_picker::folder_section(self, ui);
+
+                        let showing_psu = self.showing_loaded_psu();
+                        if showing_psu {
+                            ui.add_space(8.0);
+                            ui::file_picker::loaded_psu_section(self, ui);
+                        }
+
+                        ui.add_space(8.0);
+                        ui::pack_controls::metadata_section(self, ui);
+
+                        if !showing_psu {
+                            ui.add_space(8.0);
+                            ui::pack_controls::file_filters_section(self, ui);
+                        }
+
+                        ui.add_space(8.0);
+                        ui::pack_controls::output_section(self, ui);
+
+                        ui.add_space(8.0);
+                        ui::pack_controls::packaging_section(self, ui);
+                    });
+                }
+                EditorTab::PsuToml => {
+                    let save_clicked = text_editor_ui(
+                        ui,
+                        "psu.toml",
+                        self.folder.is_some(),
+                        &mut self.psu_toml_editor,
+                    );
+                    if save_clicked {
+                        match save_editor_to_disk(
+                            self.folder.as_deref(),
+                            "psu.toml",
+                            &mut self.psu_toml_editor,
+                        ) {
+                            Ok(path) => {
+                                self.status = format!("Saved {}", path.display());
+                                self.clear_error_message();
+                            }
+                            Err(err) => {
+                                self.set_error_message(format!("Failed to save psu.toml: {err}"));
+                            }
+                        }
+                    }
+                }
+                EditorTab::TitleCfg => {
+                    let save_clicked = text_editor_ui(
+                        ui,
+                        "title.cfg",
+                        self.folder.is_some(),
+                        &mut self.title_cfg_editor,
+                    );
+                    if save_clicked {
+                        match save_editor_to_disk(
+                            self.folder.as_deref(),
+                            "title.cfg",
+                            &mut self.title_cfg_editor,
+                        ) {
+                            Ok(path) => {
+                                self.status = format!("Saved {}", path.display());
+                                self.clear_error_message();
+                            }
+                            Err(err) => {
+                                self.set_error_message(format!("Failed to save title.cfg: {err}"));
+                            }
+                        }
+                    }
+                }
+            }
         });
 
         ui::dialogs::exit_confirmation(self, ctx);
