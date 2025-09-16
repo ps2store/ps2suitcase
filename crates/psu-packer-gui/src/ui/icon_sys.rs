@@ -187,9 +187,16 @@ pub(crate) fn icon_sys_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.small("Configure the save icon title, flags, and lighting.");
     ui.add_space(8.0);
 
+    let mut config_changed = false;
+
     let checkbox = ui.checkbox(&mut app.icon_sys_enabled, "Enable icon.sys metadata");
+    let checkbox_changed = checkbox.changed();
     checkbox
         .on_hover_text("Use an existing icon.sys file or generate a new one when packing the PSU.");
+
+    if checkbox_changed {
+        config_changed = true;
+    }
 
     if !app.icon_sys_enabled {
         app.icon_sys_use_existing = false;
@@ -202,20 +209,27 @@ pub(crate) fn icon_sys_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
             let previous = app.icon_sys_use_existing;
             ui.horizontal(|ui| {
                 ui.label("Mode:");
-                ui.selectable_value(
+                let use_existing = ui.selectable_value(
                     &mut app.icon_sys_use_existing,
                     true,
                     "Use existing icon.sys",
                 );
-                ui.selectable_value(
+                if use_existing.changed() {
+                    config_changed = true;
+                }
+                let generate_new = ui.selectable_value(
                     &mut app.icon_sys_use_existing,
                     false,
                     "Generate new icon.sys",
                 );
+                if generate_new.changed() {
+                    config_changed = true;
+                }
             });
 
             if app.icon_sys_use_existing && !previous {
                 app.apply_icon_sys_file(&existing_icon);
+                config_changed = true;
             }
 
             if app.icon_sys_use_existing {
@@ -229,20 +243,32 @@ pub(crate) fn icon_sys_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
 
     ui.add_space(8.0);
 
-    ui.add_enabled_ui(app.icon_sys_enabled && !app.icon_sys_use_existing, |ui| {
-        title_section(app, ui);
+    let enabled = app.icon_sys_enabled && !app.icon_sys_use_existing;
+    let inner_response = ui.add_enabled_ui(enabled, |ui| {
+        let mut inner_changed = false;
+        inner_changed |= title_section(app, ui);
         ui.add_space(12.0);
-        flag_section(app, ui);
+        inner_changed |= flag_section(app, ui);
         ui.add_space(12.0);
-        presets_section(app, ui);
+        inner_changed |= presets_section(app, ui);
         ui.add_space(12.0);
-        background_section(app, ui);
+        inner_changed |= background_section(app, ui);
         ui.add_space(12.0);
-        lighting_section(app, ui);
+        inner_changed |= lighting_section(app, ui);
+        inner_changed
     });
+
+    if inner_response.inner {
+        config_changed = true;
+    }
+
+    if config_changed {
+        app.refresh_psu_toml_editor();
+    }
 }
 
-fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
+    let mut changed = false;
     ui.group(|ui| {
         ui.heading("Title");
         ui.small("Each line supports up to 10 ASCII characters.");
@@ -253,19 +279,23 @@ fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             .spacing(egui::vec2(8.0, 4.0))
             .show(ui, |ui| {
                 ui.label("Line 1");
-                title_input(
+                if title_input(
                     ui,
                     egui::Id::new("icon_sys_title_line1"),
                     &mut app.icon_sys_title_line1,
-                );
+                ) {
+                    changed = true;
+                }
                 ui.end_row();
 
                 ui.label("Line 2");
-                title_input(
+                if title_input(
                     ui,
                     egui::Id::new("icon_sys_title_line2"),
                     &mut app.icon_sys_title_line2,
-                );
+                ) {
+                    changed = true;
+                }
                 ui.end_row();
 
                 ui.label("Preview");
@@ -278,15 +308,17 @@ fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 ui.end_row();
             });
     });
+    changed
 }
 
-fn title_input(ui: &mut egui::Ui, id: egui::Id, value: &mut String) {
+fn title_input(ui: &mut egui::Ui, id: egui::Id, value: &mut String) -> bool {
     let mut edit = egui::TextEdit::singleline(value)
         .char_limit(TITLE_CHAR_LIMIT)
         .desired_width(120.0);
     edit = edit.id_source(id);
 
     let response = ui.add(edit);
+    let mut changed = false;
     if response.changed() {
         let mut sanitized = value
             .chars()
@@ -298,12 +330,15 @@ fn title_input(ui: &mut egui::Ui, id: egui::Id, value: &mut String) {
         if *value != sanitized {
             *value = sanitized;
         }
+        changed = true;
     }
 
     ui.small(format!("{} / {TITLE_CHAR_LIMIT}", value.chars().count()));
+    changed
 }
 
-fn flag_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+fn flag_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
+    let mut changed = false;
     ui.group(|ui| {
         ui.heading("Flags");
         ui.add_space(4.0);
@@ -317,17 +352,23 @@ fn flag_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                         .selected_text(app.icon_flag_label())
                         .show_ui(ui, |ui| {
                             for (idx, (_, label)) in ICON_SYS_FLAG_OPTIONS.iter().enumerate() {
-                                ui.selectable_value(
+                                let response = ui.selectable_value(
                                     &mut app.icon_sys_flag_selection,
                                     IconFlagSelection::Preset(idx),
                                     *label,
                                 );
+                                if response.changed() {
+                                    changed = true;
+                                }
                             }
-                            ui.selectable_value(
+                            let response = ui.selectable_value(
                                 &mut app.icon_sys_flag_selection,
                                 IconFlagSelection::Custom,
                                 "Custom…",
                             );
+                            if response.changed() {
+                                changed = true;
+                            }
                         });
 
                     if matches!(app.icon_sys_flag_selection, IconFlagSelection::Custom) {
@@ -336,6 +377,9 @@ fn flag_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                                 .clamp_range(0.0..=u16::MAX as f64)
                                 .speed(1),
                         );
+                        if response.changed() {
+                            changed = true;
+                        }
                         response.on_hover_text("Enter the raw flag value (0-65535).");
                         ui.label(format!("0x{:04X}", app.icon_sys_custom_flag));
                     }
@@ -343,9 +387,11 @@ fn flag_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 ui.end_row();
             });
     });
+    changed
 }
 
-fn presets_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+fn presets_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
+    let mut changed = false;
     ui.group(|ui| {
         ui.heading("Presets");
         ui.small("Choose a preset to populate the colors and lights automatically.");
@@ -366,6 +412,7 @@ fn presets_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                     .clicked()
                 {
                     app.clear_icon_sys_preset();
+                    changed = true;
                 }
                 for preset in ICON_SYS_PRESETS {
                     let selected = app
@@ -375,6 +422,7 @@ fn presets_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                         .unwrap_or(false);
                     if ui.selectable_label(selected, preset.label).clicked() {
                         apply_preset(app, preset);
+                        changed = true;
                     }
                 }
             });
@@ -382,6 +430,7 @@ fn presets_section(app: &mut PackerApp, ui: &mut egui::Ui) {
         ui.add_space(6.0);
         preset_preview(app, ui);
     });
+    changed
 }
 
 fn preset_preview(app: &PackerApp, ui: &mut egui::Ui) {
@@ -410,7 +459,8 @@ fn draw_color_swatch(ui: &mut egui::Ui, color: Color32) {
     ui.painter().rect_filled(rect, 3.0, color);
 }
 
-fn background_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+fn background_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
+    let mut changed = false;
     ui.group(|ui| {
         ui.heading("Background");
         ui.small("Adjust the gradient colors and alpha layer.");
@@ -426,6 +476,7 @@ fn background_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             .changed()
         {
             app.clear_icon_sys_preset();
+            changed = true;
         }
 
         ui.add_space(4.0);
@@ -446,11 +497,14 @@ fn background_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             });
         if background_changed {
             app.clear_icon_sys_preset();
+            changed = true;
         }
     });
+    changed
 }
 
-fn lighting_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+fn lighting_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
+    let mut changed = false;
     ui.group(|ui| {
         ui.heading("Lighting");
         ui.small("Tweak light directions, colors, and the ambient glow.");
@@ -514,8 +568,10 @@ fn lighting_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
         if lighting_changed {
             app.clear_icon_sys_preset();
+            changed = true;
         }
     });
+    changed
 }
 
 fn apply_preset(app: &mut PackerApp, preset: &IconSysPreset) {

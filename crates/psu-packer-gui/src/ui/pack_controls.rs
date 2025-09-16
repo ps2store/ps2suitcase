@@ -15,7 +15,9 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             .spacing(egui::vec2(12.0, 6.0))
             .show(ui, |ui| {
                 ui.label("Name");
-                ui.text_edit_singleline(&mut app.name);
+                if ui.text_edit_singleline(&mut app.name).changed() {
+                    app.refresh_psu_toml_editor();
+                }
                 ui.end_row();
 
                 ui.label("Timestamp");
@@ -34,26 +36,38 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 ui.small(label);
                 ui.end_row();
             });
+
+        if app.folder.is_some() && app.psu_toml_sync_blocked {
+            ui.add_space(6.0);
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                "psu.toml has manual edits; automatic metadata syncing is paused.",
+            );
+        }
     });
 }
 
 fn timestamp_picker_ui(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.vertical(|ui| {
+        let previous_timestamp = app.timestamp;
         let default_timestamp = default_timestamp();
         let mut has_timestamp = app.timestamp.is_some();
 
+        let mut new_timestamp = app.timestamp;
+
         if ui.checkbox(&mut has_timestamp, "Set timestamp").changed() {
             if has_timestamp {
-                app.timestamp = Some(app.timestamp.unwrap_or(default_timestamp));
+                new_timestamp = Some(new_timestamp.unwrap_or(default_timestamp));
             } else {
-                app.timestamp = None;
+                new_timestamp = None;
             }
         }
 
         if !has_timestamp {
             ui.small("No timestamp will be saved.");
+            new_timestamp = None;
         } else {
-            let mut timestamp = app.timestamp.unwrap_or(default_timestamp);
+            let mut timestamp = new_timestamp.unwrap_or(default_timestamp);
             let mut date: NaiveDate = timestamp.date();
             let time = timestamp.time();
             let mut hour = time.hour();
@@ -97,11 +111,17 @@ fn timestamp_picker_ui(app: &mut PackerApp, ui: &mut egui::Ui) {
                 }
             }
 
-            app.timestamp = Some(timestamp);
+            new_timestamp = Some(timestamp);
 
-            if let Some(ts) = app.timestamp {
+            if let Some(ts) = new_timestamp {
                 ui.small(format!("Selected: {}", ts.format(TIMESTAMP_FORMAT)));
             }
+        }
+
+        app.timestamp = new_timestamp;
+
+        if app.timestamp != previous_timestamp {
+            app.refresh_psu_toml_editor();
         }
     });
 }
@@ -123,11 +143,11 @@ pub(crate) fn file_filters_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                     &mut app.include_files,
                     &mut app.selected_include,
                 );
-                if include_add {
-                    app.handle_add_file(ListKind::Include);
+                if include_add && app.handle_add_file(ListKind::Include) {
+                    app.refresh_psu_toml_editor();
                 }
-                if include_remove {
-                    app.handle_remove_file(ListKind::Include);
+                if include_remove && app.handle_remove_file(ListKind::Include) {
+                    app.refresh_psu_toml_editor();
                 }
 
                 let (exclude_add, exclude_remove) = file_list_ui(
@@ -136,11 +156,11 @@ pub(crate) fn file_filters_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                     &mut app.exclude_files,
                     &mut app.selected_exclude,
                 );
-                if exclude_add {
-                    app.handle_add_file(ListKind::Exclude);
+                if exclude_add && app.handle_add_file(ListKind::Exclude) {
+                    app.refresh_psu_toml_editor();
                 }
-                if exclude_remove {
-                    app.handle_remove_file(ListKind::Exclude);
+                if exclude_remove && app.handle_remove_file(ListKind::Exclude) {
+                    app.refresh_psu_toml_editor();
                 }
             });
         } else {
@@ -313,80 +333,8 @@ impl PackerApp {
     }
 
     pub(crate) fn build_config(&self) -> Result<psu_packer::Config, String> {
-        let timestamp = self.timestamp;
-
-        let include = if self.include_files.is_empty() {
-            None
-        } else {
-            Some(self.include_files.clone())
-        };
-
-        let exclude = if self.exclude_files.is_empty() {
-            None
-        } else {
-            Some(self.exclude_files.clone())
-        };
-
-        let icon_sys = if self.icon_sys_enabled {
-            if self.icon_sys_use_existing {
-                None
-            } else {
-                let line1 = self.icon_sys_title_line1.clone();
-                let line2 = self.icon_sys_title_line2.clone();
-
-                if line1.chars().count() > 10 {
-                    return Err("Icon.sys line 1 cannot exceed 10 characters".to_string());
-                }
-                if line2.chars().count() > 10 {
-                    return Err("Icon.sys line 2 cannot exceed 10 characters".to_string());
-                }
-                let title_is_valid = |value: &str| {
-                    value
-                        .chars()
-                        .all(|c| c.is_ascii() && (!c.is_ascii_control() || c == ' '))
-                };
-                if !title_is_valid(&line1) || !title_is_valid(&line2) {
-                    return Err(
-                        "Icon.sys titles only support printable ASCII characters".to_string()
-                    );
-                }
-
-                let has_content = line1.chars().any(|c| !c.is_whitespace())
-                    || line2.chars().any(|c| !c.is_whitespace());
-                if !has_content {
-                    return Err(
-                        "Provide at least one non-space character for the icon.sys title"
-                            .to_string(),
-                    );
-                }
-
-                let combined_title = format!("{line1}{line2}");
-                let linebreak_pos = line1.chars().count() as u16;
-                let flag_value = self.selected_icon_flag_value()?;
-
-                Some(psu_packer::IconSysConfig {
-                    flags: psu_packer::IconSysFlags::new(flag_value),
-                    title: combined_title,
-                    linebreak_pos: Some(linebreak_pos),
-                    preset: self.icon_sys_selected_preset.clone(),
-                    background_transparency: Some(self.icon_sys_background_transparency),
-                    background_colors: Some(self.icon_sys_background_colors.to_vec()),
-                    light_directions: Some(self.icon_sys_light_directions.to_vec()),
-                    light_colors: Some(self.icon_sys_light_colors.to_vec()),
-                    ambient_color: Some(self.icon_sys_ambient_color),
-                })
-            }
-        } else {
-            None
-        };
-
-        Ok(psu_packer::Config {
-            name: self.name.clone(),
-            timestamp,
-            include,
-            exclude,
-            icon_sys,
-        })
+        self.validate_icon_sys_settings()?;
+        self.config_from_state()
     }
 
     pub(crate) fn format_pack_error(
@@ -439,25 +387,26 @@ impl PackerApp {
         }
     }
 
-    pub(crate) fn handle_add_file(&mut self, kind: ListKind) {
+    pub(crate) fn handle_add_file(&mut self, kind: ListKind) -> bool {
         let Some(folder) = self.folder.clone() else {
             self.set_error_message("Please select a folder before adding files");
-            return;
+            return false;
         };
 
         let list_label = kind.label();
         let (files, selected) = self.list_mut(kind);
 
         let Some(paths) = rfd::FileDialog::new().set_directory(&folder).pick_files() else {
-            return;
+            return false;
         };
 
         if paths.is_empty() {
-            return;
+            return false;
         }
 
         let mut invalid_entries = Vec::new();
         let mut last_added = None;
+        let mut added_any = false;
 
         for path in paths {
             let Ok(relative) = path.strip_prefix(&folder) else {
@@ -490,6 +439,7 @@ impl PackerApp {
 
             files.push(name);
             last_added = Some(files.len() - 1);
+            added_any = true;
         }
 
         if let Some(index) = last_added {
@@ -505,12 +455,16 @@ impl PackerApp {
             let message = format!("Some files could not be added to the {list_label} list");
             self.set_error_message((message, invalid_entries));
         }
+
+        added_any
     }
 
-    pub(crate) fn handle_remove_file(&mut self, kind: ListKind) {
+    pub(crate) fn handle_remove_file(&mut self, kind: ListKind) -> bool {
         let (files, selected) = self.list_mut(kind);
+        let mut removed = false;
         if let Some(idx) = selected.take() {
             files.remove(idx);
+            removed = true;
             if files.is_empty() {
                 *selected = None;
             } else if idx >= files.len() {
@@ -519,12 +473,120 @@ impl PackerApp {
                 *selected = Some(idx);
             }
         }
+        removed
     }
 
     fn list_mut(&mut self, kind: ListKind) -> (&mut Vec<String>, &mut Option<usize>) {
         match kind {
             ListKind::Include => (&mut self.include_files, &mut self.selected_include),
             ListKind::Exclude => (&mut self.exclude_files, &mut self.selected_exclude),
+        }
+    }
+
+    fn validate_icon_sys_settings(&self) -> Result<(), String> {
+        if self.icon_sys_enabled && !self.icon_sys_use_existing {
+            let line1 = &self.icon_sys_title_line1;
+            let line2 = &self.icon_sys_title_line2;
+
+            if line1.chars().count() > 10 {
+                return Err("Icon.sys line 1 cannot exceed 10 characters".to_string());
+            }
+            if line2.chars().count() > 10 {
+                return Err("Icon.sys line 2 cannot exceed 10 characters".to_string());
+            }
+            let title_is_valid = |value: &str| {
+                value
+                    .chars()
+                    .all(|c| c.is_ascii() && (!c.is_ascii_control() || c == ' '))
+            };
+            if !title_is_valid(line1) || !title_is_valid(line2) {
+                return Err("Icon.sys titles only support printable ASCII characters".to_string());
+            }
+
+            let has_content = line1.chars().any(|c| !c.is_whitespace())
+                || line2.chars().any(|c| !c.is_whitespace());
+            if !has_content {
+                return Err(
+                    "Provide at least one non-space character for the icon.sys title".to_string(),
+                );
+            }
+
+            self.selected_icon_flag_value()?;
+        }
+
+        Ok(())
+    }
+
+    fn config_from_state(&self) -> Result<psu_packer::Config, String> {
+        let include = if self.include_files.is_empty() {
+            None
+        } else {
+            Some(self.include_files.clone())
+        };
+
+        let exclude = if self.exclude_files.is_empty() {
+            None
+        } else {
+            Some(self.exclude_files.clone())
+        };
+
+        let icon_sys = if self.icon_sys_enabled && !self.icon_sys_use_existing {
+            let linebreak_pos = self.icon_sys_title_line1.chars().count() as u16;
+            let combined_title =
+                format!("{}{}", self.icon_sys_title_line1, self.icon_sys_title_line2);
+            let flag_value = self.selected_icon_flag_value()?;
+
+            Some(psu_packer::IconSysConfig {
+                flags: psu_packer::IconSysFlags::new(flag_value),
+                title: combined_title,
+                linebreak_pos: Some(linebreak_pos),
+                preset: self.icon_sys_selected_preset.clone(),
+                background_transparency: Some(self.icon_sys_background_transparency),
+                background_colors: Some(self.icon_sys_background_colors.to_vec()),
+                light_directions: Some(self.icon_sys_light_directions.to_vec()),
+                light_colors: Some(self.icon_sys_light_colors.to_vec()),
+                ambient_color: Some(self.icon_sys_ambient_color),
+            })
+        } else {
+            None
+        };
+
+        Ok(psu_packer::Config {
+            name: self.name.clone(),
+            timestamp: self.timestamp,
+            include,
+            exclude,
+            icon_sys,
+        })
+    }
+
+    pub(crate) fn refresh_psu_toml_editor(&mut self) {
+        if self.folder.is_none() {
+            self.psu_toml_sync_blocked = false;
+            return;
+        }
+
+        if self.psu_toml_editor.modified {
+            self.psu_toml_sync_blocked = true;
+            return;
+        }
+
+        let config = match self.config_from_state() {
+            Ok(config) => config,
+            Err(_) => {
+                self.psu_toml_sync_blocked = true;
+                return;
+            }
+        };
+
+        match config.to_toml_string() {
+            Ok(serialized) => {
+                self.psu_toml_editor.set_content(serialized);
+                self.psu_toml_sync_blocked = false;
+            }
+            Err(_) => {
+                self.psu_toml_sync_blocked = true;
+            }
         }
     }
 }

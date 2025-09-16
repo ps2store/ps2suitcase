@@ -4,7 +4,7 @@ use ps2_filetypes::color::Color;
 use ps2_filetypes::{
     ColorF, IconSys, PSUEntry, PSUEntryKind, PSUWriter, Vector, DIR_ID, FILE_ID, PSU,
 };
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -20,7 +20,19 @@ pub struct Config {
 
 mod date_format {
     use chrono::NaiveDateTime;
-    use serde::{self, Deserialize, Deserializer};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
+    pub fn serialize<S>(value: &Option<NaiveDateTime>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(value) => serializer.serialize_some(&value.format(FORMAT).to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
 
     pub fn deserialize<'de, D>(deserialize: D) -> Result<Option<NaiveDateTime>, D::Error>
     where
@@ -29,8 +41,7 @@ mod date_format {
         let s: Option<String> = Option::deserialize(deserialize)?;
         if let Some(s) = s {
             Ok(Some(
-                NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
-                    .map_err(serde::de::Error::custom)?,
+                NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)?,
             ))
         } else {
             Ok(None)
@@ -38,19 +49,21 @@ mod date_format {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ConfigFile {
     config: ConfigSection,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     icon_sys: Option<IconSysConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ConfigSection {
     name: String,
-    #[serde(default, with = "date_format")]
+    #[serde(default, with = "date_format", skip_serializing_if = "Option::is_none")]
     timestamp: Option<NaiveDateTime>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     include: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     exclude: Option<Vec<String>>,
 }
 
@@ -67,23 +80,41 @@ impl From<ConfigFile> for Config {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+impl Config {
+    pub fn to_toml_string(&self) -> Result<String, toml::ser::Error> {
+        let config_section = ConfigSection {
+            name: self.name.clone(),
+            timestamp: self.timestamp,
+            include: self.include.clone(),
+            exclude: self.exclude.clone(),
+        };
+
+        let config_file = ConfigFile {
+            config: config_section,
+            icon_sys: self.icon_sys.clone(),
+        };
+
+        toml::to_string_pretty(&config_file)
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct IconSysConfig {
     pub flags: IconSysFlags,
     pub title: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linebreak_pos: Option<u16>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_transparency: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_colors: Option<Vec<ColorConfig>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub light_directions: Option<Vec<VectorConfig>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub light_colors: Option<Vec<ColorFConfig>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ambient_color: Option<ColorFConfig>,
 }
 
@@ -303,7 +334,7 @@ impl IconSysConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub struct ColorConfig {
     pub r: u8,
     pub g: u8,
@@ -322,7 +353,7 @@ impl From<ColorConfig> for Color {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub struct ColorFConfig {
     pub r: f32,
     pub g: f32,
@@ -341,7 +372,7 @@ impl From<ColorFConfig> for ColorF {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub struct VectorConfig {
     pub x: f32,
     pub y: f32,
@@ -437,6 +468,15 @@ impl<'de> Deserialize<'de> for IconSysFlags {
         }
 
         deserializer.deserialize_any(IconSysFlagsVisitor)
+    }
+}
+
+impl Serialize for IconSysFlags {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u16(self.value())
     }
 }
 
