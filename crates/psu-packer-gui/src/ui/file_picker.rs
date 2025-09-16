@@ -3,7 +3,7 @@ use std::path::Path;
 use eframe::egui;
 use ps2_filetypes::{PSUEntryKind, PSU};
 
-use crate::{IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS};
+use crate::PackerApp;
 
 pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.menu_button("File", |ui| {
@@ -25,6 +25,11 @@ pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
 
             if ui.button("Edit title.cfg").clicked() {
                 app.open_title_cfg_tab();
+                ui.close_menu();
+            }
+
+            if ui.button("Edit icon.sys").clicked() {
+                app.open_icon_sys_tab();
                 ui.close_menu();
             }
 
@@ -77,19 +82,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.selected_include = None;
                             app.selected_exclude = None;
                             if let Some(icon_cfg) = icon_sys {
-                                let psu_packer::IconSysConfig { flags, title, .. } = icon_cfg;
-                                let flag_value = flags.value();
-                                app.icon_sys_enabled = true;
-                                app.icon_sys_title = title;
-                                app.icon_sys_custom_flag = flag_value;
-                                if let Some(index) = ICON_SYS_FLAG_OPTIONS
-                                    .iter()
-                                    .position(|(value, _)| *value == flag_value)
-                                {
-                                    app.icon_sys_flag_selection = IconFlagSelection::Preset(index);
-                                } else {
-                                    app.icon_sys_flag_selection = IconFlagSelection::Custom;
-                                }
+                                app.apply_icon_sys_config(icon_cfg);
                             } else {
                                 app.reset_icon_sys_fields();
                             }
@@ -113,7 +106,11 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                     app.loaded_psu_files.clear();
                     app.folder = Some(folder.clone());
                     app.reload_project_files();
-                    app.open_psu_settings_tab();
+                    if app.icon_sys_enabled {
+                        app.open_icon_sys_tab();
+                    } else {
+                        app.open_psu_settings_tab();
+                    }
                 }
             }
         });

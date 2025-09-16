@@ -4,7 +4,7 @@ use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use eframe::egui;
 use egui_extras::DatePickerButton;
 
-use crate::{IconFlagSelection, PackerApp, TIMESTAMP_FORMAT};
+use crate::{PackerApp, TIMESTAMP_FORMAT};
 
 pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
@@ -22,49 +22,12 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 timestamp_picker_ui(app, ui);
                 ui.end_row();
 
-                ui.label("Icon.sys");
-                let checkbox = ui.checkbox(&mut app.icon_sys_enabled, "Generate icon.sys metadata");
-                checkbox.on_hover_text("Automatically create or update icon.sys when packing.");
-                ui.end_row();
-
-                ui.label("Icon title");
-                ui.add_enabled(
-                    app.icon_sys_enabled,
-                    egui::TextEdit::singleline(&mut app.icon_sys_title),
-                );
-                ui.end_row();
-
-                ui.label("Icon type");
-                ui.add_enabled_ui(app.icon_sys_enabled, |ui| {
-                    ui.horizontal(|ui| {
-                        egui::ComboBox::from_id_source("icon_sys_flag_combo")
-                            .selected_text(app.icon_flag_label())
-                            .show_ui(ui, |ui| {
-                                for (idx, (_, label)) in
-                                    crate::ICON_SYS_FLAG_OPTIONS.iter().enumerate()
-                                {
-                                    ui.selectable_value(
-                                        &mut app.icon_sys_flag_selection,
-                                        IconFlagSelection::Preset(idx),
-                                        *label,
-                                    );
-                                }
-                                ui.selectable_value(
-                                    &mut app.icon_sys_flag_selection,
-                                    IconFlagSelection::Custom,
-                                    "Custom…",
-                                );
-                            });
-
-                        if matches!(app.icon_sys_flag_selection, IconFlagSelection::Custom) {
-                            ui.add(
-                                egui::DragValue::new(&mut app.icon_sys_custom_flag)
-                                    .clamp_range(0.0..=u16::MAX as f64),
-                            );
-                            ui.label(format!("0x{:04X}", app.icon_sys_custom_flag));
-                        }
-                    });
-                });
+                ui.label("icon.sys");
+                let mut label = "Configure icon.sys metadata in the dedicated tab.".to_string();
+                if app.icon_sys_enabled {
+                    label.push_str(" Generation is currently enabled.");
+                }
+                ui.small(label);
                 ui.end_row();
             });
     });
@@ -361,21 +324,46 @@ impl PackerApp {
         };
 
         let icon_sys = if self.icon_sys_enabled {
-            let title = self.icon_sys_title.trim();
-            if title.is_empty() {
-                return Err("Icon.sys title cannot be empty when enabled".to_string());
+            let line1 = self.icon_sys_title_line1.clone();
+            let line2 = self.icon_sys_title_line2.clone();
+
+            if line1.chars().count() > 10 {
+                return Err("Icon.sys line 1 cannot exceed 10 characters".to_string());
+            }
+            if line2.chars().count() > 10 {
+                return Err("Icon.sys line 2 cannot exceed 10 characters".to_string());
+            }
+            let title_is_valid = |value: &str| {
+                value
+                    .chars()
+                    .all(|c| c.is_ascii() && (!c.is_ascii_control() || c == ' '))
+            };
+            if !title_is_valid(&line1) || !title_is_valid(&line2) {
+                return Err("Icon.sys titles only support printable ASCII characters".to_string());
             }
 
+            let has_content = line1.chars().any(|c| !c.is_whitespace())
+                || line2.chars().any(|c| !c.is_whitespace());
+            if !has_content {
+                return Err(
+                    "Provide at least one non-space character for the icon.sys title".to_string(),
+                );
+            }
+
+            let combined_title = format!("{line1}{line2}");
+            let linebreak_pos = line1.chars().count() as u16;
             let flag_value = self.selected_icon_flag_value()?;
 
             Some(psu_packer::IconSysConfig {
                 flags: psu_packer::IconSysFlags::new(flag_value),
-                title: title.to_string(),
-                background_transparency: None,
-                background_colors: None,
-                light_directions: None,
-                light_colors: None,
-                ambient_color: None,
+                title: combined_title,
+                linebreak_pos: Some(linebreak_pos),
+                preset: self.icon_sys_selected_preset.clone(),
+                background_transparency: Some(self.icon_sys_background_transparency),
+                background_colors: Some(self.icon_sys_background_colors.to_vec()),
+                light_directions: Some(self.icon_sys_light_directions.to_vec()),
+                light_colors: Some(self.icon_sys_light_colors.to_vec()),
+                ambient_color: Some(self.icon_sys_ambient_color),
             })
         } else {
             None

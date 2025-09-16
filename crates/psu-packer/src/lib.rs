@@ -67,10 +67,14 @@ impl From<ConfigFile> for Config {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct IconSysConfig {
     pub flags: IconSysFlags,
     pub title: String,
+    #[serde(default)]
+    pub linebreak_pos: Option<u16>,
+    #[serde(default)]
+    pub preset: Option<String>,
     #[serde(default)]
     pub background_transparency: Option<u32>,
     #[serde(default)]
@@ -143,9 +147,11 @@ impl IconSysConfig {
             .background_transparency
             .unwrap_or(DEFAULT_BACKGROUND_TRANSPARENCY);
 
+        let linebreak_pos = self.linebreak_pos.unwrap_or(DEFAULT_LINEBREAK_POS);
+
         Ok(IconSys {
             flags: self.flags.value(),
-            linebreak_pos: DEFAULT_LINEBREAK_POS,
+            linebreak_pos,
             background_transparency,
             background_colors,
             light_directions,
@@ -156,6 +162,144 @@ impl IconSysConfig {
             icon_copy_file: ICON_FILE_NAME.to_string(),
             icon_delete_file: ICON_FILE_NAME.to_string(),
         })
+    }
+}
+
+impl IconSysConfig {
+    pub const fn default_linebreak_pos() -> u16 {
+        DEFAULT_LINEBREAK_POS
+    }
+
+    pub const fn default_background_transparency() -> u32 {
+        DEFAULT_BACKGROUND_TRANSPARENCY
+    }
+
+    pub const fn default_background_colors() -> [ColorConfig; 4] {
+        [
+            ColorConfig {
+                r: DEFAULT_BACKGROUND_COLORS[0].r,
+                g: DEFAULT_BACKGROUND_COLORS[0].g,
+                b: DEFAULT_BACKGROUND_COLORS[0].b,
+                a: DEFAULT_BACKGROUND_COLORS[0].a,
+            },
+            ColorConfig {
+                r: DEFAULT_BACKGROUND_COLORS[1].r,
+                g: DEFAULT_BACKGROUND_COLORS[1].g,
+                b: DEFAULT_BACKGROUND_COLORS[1].b,
+                a: DEFAULT_BACKGROUND_COLORS[1].a,
+            },
+            ColorConfig {
+                r: DEFAULT_BACKGROUND_COLORS[2].r,
+                g: DEFAULT_BACKGROUND_COLORS[2].g,
+                b: DEFAULT_BACKGROUND_COLORS[2].b,
+                a: DEFAULT_BACKGROUND_COLORS[2].a,
+            },
+            ColorConfig {
+                r: DEFAULT_BACKGROUND_COLORS[3].r,
+                g: DEFAULT_BACKGROUND_COLORS[3].g,
+                b: DEFAULT_BACKGROUND_COLORS[3].b,
+                a: DEFAULT_BACKGROUND_COLORS[3].a,
+            },
+        ]
+    }
+
+    pub const fn default_light_directions() -> [VectorConfig; 3] {
+        [
+            VectorConfig {
+                x: DEFAULT_LIGHT_DIRECTIONS[0].x,
+                y: DEFAULT_LIGHT_DIRECTIONS[0].y,
+                z: DEFAULT_LIGHT_DIRECTIONS[0].z,
+                w: DEFAULT_LIGHT_DIRECTIONS[0].w,
+            },
+            VectorConfig {
+                x: DEFAULT_LIGHT_DIRECTIONS[1].x,
+                y: DEFAULT_LIGHT_DIRECTIONS[1].y,
+                z: DEFAULT_LIGHT_DIRECTIONS[1].z,
+                w: DEFAULT_LIGHT_DIRECTIONS[1].w,
+            },
+            VectorConfig {
+                x: DEFAULT_LIGHT_DIRECTIONS[2].x,
+                y: DEFAULT_LIGHT_DIRECTIONS[2].y,
+                z: DEFAULT_LIGHT_DIRECTIONS[2].z,
+                w: DEFAULT_LIGHT_DIRECTIONS[2].w,
+            },
+        ]
+    }
+
+    pub const fn default_light_colors() -> [ColorFConfig; 3] {
+        [
+            ColorFConfig {
+                r: DEFAULT_LIGHT_COLORS[0].r,
+                g: DEFAULT_LIGHT_COLORS[0].g,
+                b: DEFAULT_LIGHT_COLORS[0].b,
+                a: DEFAULT_LIGHT_COLORS[0].a,
+            },
+            ColorFConfig {
+                r: DEFAULT_LIGHT_COLORS[1].r,
+                g: DEFAULT_LIGHT_COLORS[1].g,
+                b: DEFAULT_LIGHT_COLORS[1].b,
+                a: DEFAULT_LIGHT_COLORS[1].a,
+            },
+            ColorFConfig {
+                r: DEFAULT_LIGHT_COLORS[2].r,
+                g: DEFAULT_LIGHT_COLORS[2].g,
+                b: DEFAULT_LIGHT_COLORS[2].b,
+                a: DEFAULT_LIGHT_COLORS[2].a,
+            },
+        ]
+    }
+
+    pub const fn default_ambient_color() -> ColorFConfig {
+        ColorFConfig {
+            r: DEFAULT_AMBIENT_COLOR.r,
+            g: DEFAULT_AMBIENT_COLOR.g,
+            b: DEFAULT_AMBIENT_COLOR.b,
+            a: DEFAULT_AMBIENT_COLOR.a,
+        }
+    }
+
+    pub fn background_transparency_value(&self) -> u32 {
+        self.background_transparency
+            .unwrap_or(Self::default_background_transparency())
+    }
+
+    pub fn background_colors_array(&self) -> [ColorConfig; 4] {
+        let mut colors = Self::default_background_colors();
+        if let Some(values) = &self.background_colors {
+            for (target, value) in colors.iter_mut().zip(values.iter()) {
+                *target = *value;
+            }
+        }
+        colors
+    }
+
+    pub fn light_directions_array(&self) -> [VectorConfig; 3] {
+        let mut directions = Self::default_light_directions();
+        if let Some(values) = &self.light_directions {
+            for (target, value) in directions.iter_mut().zip(values.iter()) {
+                *target = *value;
+            }
+        }
+        directions
+    }
+
+    pub fn light_colors_array(&self) -> [ColorFConfig; 3] {
+        let mut colors = Self::default_light_colors();
+        if let Some(values) = &self.light_colors {
+            for (target, value) in colors.iter_mut().zip(values.iter()) {
+                *target = *value;
+            }
+        }
+        colors
+    }
+
+    pub fn ambient_color_value(&self) -> ColorFConfig {
+        self.ambient_color
+            .unwrap_or_else(Self::default_ambient_color)
+    }
+
+    pub fn linebreak_position(&self) -> u16 {
+        self.linebreak_pos.unwrap_or(Self::default_linebreak_pos())
     }
 }
 
