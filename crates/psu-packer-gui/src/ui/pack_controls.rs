@@ -255,10 +255,21 @@ fn file_list_ui(
 
 impl PackerApp {
     pub(crate) fn browse_output_destination(&mut self) {
-        if let Some(file) = rfd::FileDialog::new()
+        if let Some(mut file) = rfd::FileDialog::new()
+            .add_filter("PSU", &["psu"])
             .set_file_name(&self.output)
             .save_file()
         {
+            let has_psu_extension = file
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("psu"))
+                .unwrap_or(false);
+
+            if !has_psu_extension {
+                file.set_extension("psu");
+            }
+
             self.output = file.display().to_string();
         }
     }
