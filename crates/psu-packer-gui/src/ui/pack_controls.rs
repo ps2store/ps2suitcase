@@ -4,19 +4,55 @@ use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use eframe::egui;
 use egui_extras::DatePickerButton;
 
-use crate::{PackerApp, TIMESTAMP_FORMAT};
+use crate::{PackerApp, SasPrefix, TIMESTAMP_FORMAT};
 
 pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
         ui.heading("Metadata");
         ui.small("Edit PSU metadata before or after selecting a folder.");
+        let previous_default_output = app.default_output_file_name();
+        let mut metadata_changed = false;
+
         egui::Grid::new("metadata_grid")
             .num_columns(2)
             .spacing(egui::vec2(12.0, 6.0))
             .show(ui, |ui| {
-                ui.label("Name");
-                if ui.text_edit_singleline(&mut app.name).changed() {
-                    app.refresh_psu_toml_editor();
+                ui.label("SAS prefix");
+                let prefix_changed = egui::ComboBox::from_id_source("metadata_prefix_combo")
+                    .selected_text(app.selected_prefix.label())
+                    .show_ui(ui, |ui| {
+                        let mut changed = false;
+                        for prefix in SasPrefix::iter_all() {
+                            let response = ui.selectable_value(
+                                &mut app.selected_prefix,
+                                prefix,
+                                prefix.label(),
+                            );
+                            if response.changed() {
+                                changed = true;
+                            }
+                        }
+                        changed
+                    })
+                    .inner
+                    .unwrap_or(false);
+                if prefix_changed {
+                    metadata_changed = true;
+                }
+                ui.end_row();
+
+                ui.label("Folder name");
+                if ui.text_edit_singleline(&mut app.folder_base_name).changed() {
+                    metadata_changed = true;
+                }
+                ui.end_row();
+
+                ui.label("PSU filename");
+                if ui
+                    .text_edit_singleline(&mut app.psu_file_base_name)
+                    .changed()
+                {
+                    metadata_changed = true;
                 }
                 ui.end_row();
 
@@ -36,6 +72,10 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 ui.small(label);
                 ui.end_row();
             });
+
+        if metadata_changed {
+            app.metadata_inputs_changed(previous_default_output);
+        }
 
         if app.folder.is_some() && app.psu_toml_sync_blocked {
             ui.add_space(6.0);
@@ -205,8 +245,13 @@ pub(crate) fn packaging_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
         if pack_button.clicked() {
             if let Some(folder) = &app.folder {
-                if app.name.trim().is_empty() {
-                    app.set_error_message("Please provide a PSU name");
+                if app.folder_base_name.trim().is_empty() {
+                    app.set_error_message("Please provide a folder name");
+                    return;
+                }
+
+                if app.psu_file_base_name.trim().is_empty() {
+                    app.set_error_message("Please provide a PSU filename");
                     return;
                 }
 
@@ -551,8 +596,14 @@ impl PackerApp {
             None
         };
 
+        if self.folder_base_name.trim().is_empty() {
+            return Err("PSU name cannot be empty".to_string());
+        }
+
+        let name = self.folder_name();
+
         Ok(psu_packer::Config {
-            name: self.name.clone(),
+            name,
             timestamp: self.timestamp,
             include,
             exclude,

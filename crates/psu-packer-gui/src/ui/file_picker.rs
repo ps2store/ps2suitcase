@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use eframe::egui;
 use ps2_filetypes::{IconSys, PSUEntryKind, PSU};
 
-use crate::PackerApp;
+use crate::{PackerApp, SasPrefix};
 
 pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.menu_button("File", |ui| {
@@ -77,8 +77,9 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                                 icon_sys,
                             } = config;
 
-                            app.output = format!("{}.psu", name);
-                            app.name = name;
+                            app.set_folder_name_from_full(&name);
+                            app.psu_file_base_name = app.folder_base_name.clone();
+                            app.output = app.default_output_file_name().unwrap_or_default();
                             app.timestamp = timestamp;
                             app.include_files = include.unwrap_or_default();
                             app.exclude_files = exclude.unwrap_or_default();
@@ -132,7 +133,9 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             let message = format_load_error(&folder, err);
                             app.set_error_message(message);
                             app.output.clear();
-                            app.name.clear();
+                            app.selected_prefix = SasPrefix::default();
+                            app.folder_base_name.clear();
+                            app.psu_file_base_name.clear();
                             app.timestamp = None;
                             app.include_files.clear();
                             app.exclude_files.clear();
@@ -155,7 +158,9 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
             if ui
                 .button("Load PSU...")
-                .on_hover_text("Open an existing PSU archive to populate the editor from its metadata.")
+                .on_hover_text(
+                    "Open an existing PSU archive to populate the editor from its metadata.",
+                )
                 .clicked()
             {
                 app.handle_open_psu();
@@ -236,7 +241,12 @@ impl PackerApp {
             return;
         };
 
-        self.name = name;
+        self.set_folder_name_from_full(&name);
+        if let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) {
+            self.set_psu_file_base_from_full(stem);
+        } else {
+            self.psu_file_base_name = self.folder_base_name.clone();
+        }
         self.timestamp = root_timestamp;
         self.loaded_psu_files = files;
         self.loaded_psu_path = Some(path.clone());

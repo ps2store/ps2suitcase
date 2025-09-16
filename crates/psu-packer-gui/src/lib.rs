@@ -15,11 +15,79 @@ pub mod ui;
 pub use ui::{dialogs, file_picker, pack_controls};
 
 pub(crate) const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
-pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] = &[
-    (0, "Save Data"),
-    (1, "System Software"),
-    (4, "Settings"),
+pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] =
+    &[(0, "Save Data"), (1, "System Software"), (4, "Settings")];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SasPrefix {
+    None,
+    App,
+    Apps,
+    Ps1,
+    Ps2,
+    Ps3,
+    Ps4,
+    Ps5,
+    Psp,
+    Psv,
+}
+
+pub(crate) const SAS_PREFIXES: [SasPrefix; 9] = [
+    SasPrefix::App,
+    SasPrefix::Apps,
+    SasPrefix::Ps1,
+    SasPrefix::Ps2,
+    SasPrefix::Ps3,
+    SasPrefix::Ps4,
+    SasPrefix::Ps5,
+    SasPrefix::Psp,
+    SasPrefix::Psv,
 ];
+
+impl Default for SasPrefix {
+    fn default() -> Self {
+        SasPrefix::App
+    }
+}
+
+impl SasPrefix {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SasPrefix::None => "",
+            SasPrefix::App => "APP_",
+            SasPrefix::Apps => "APPS",
+            SasPrefix::Ps1 => "PS1_",
+            SasPrefix::Ps2 => "PS2_",
+            SasPrefix::Ps3 => "PS3_",
+            SasPrefix::Ps4 => "PS4_",
+            SasPrefix::Ps5 => "PS5_",
+            SasPrefix::Psp => "PSP_",
+            SasPrefix::Psv => "PSV_",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            SasPrefix::None => "(none)",
+            _ => self.as_str(),
+        }
+    }
+
+    pub(crate) fn iter_all() -> impl Iterator<Item = SasPrefix> {
+        std::iter::once(SasPrefix::None).chain(SAS_PREFIXES.iter().copied())
+    }
+
+    pub(crate) fn split_from_name(name: &str) -> (SasPrefix, &str) {
+        for prefix in SAS_PREFIXES {
+            let value = prefix.as_str();
+            if name.starts_with(value) {
+                let remainder = &name[value.len()..];
+                return (prefix, remainder);
+            }
+        }
+        (SasPrefix::None, name)
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IconFlagSelection {
@@ -88,7 +156,9 @@ pub struct PackerApp {
     pub(crate) output: String,
     pub(crate) status: String,
     pub(crate) error_message: Option<String>,
-    pub(crate) name: String,
+    pub(crate) selected_prefix: SasPrefix,
+    pub(crate) folder_base_name: String,
+    pub(crate) psu_file_base_name: String,
     pub(crate) timestamp: Option<NaiveDateTime>,
     pub(crate) include_files: Vec<String>,
     pub(crate) exclude_files: Vec<String>,
@@ -160,7 +230,9 @@ impl Default for PackerApp {
             output: String::new(),
             status: String::new(),
             error_message: None,
-            name: String::new(),
+            selected_prefix: SasPrefix::default(),
+            folder_base_name: String::new(),
+            psu_file_base_name: String::new(),
             timestamp: None,
             include_files: Vec::new(),
             exclude_files: Vec::new(),
@@ -352,13 +424,85 @@ impl PackerApp {
     }
 
     pub(crate) fn reset_metadata_fields(&mut self) {
-        self.name.clear();
+        self.selected_prefix = SasPrefix::default();
+        self.folder_base_name.clear();
+        self.psu_file_base_name.clear();
         self.timestamp = None;
         self.include_files.clear();
         self.exclude_files.clear();
         self.selected_include = None;
         self.selected_exclude = None;
         self.reset_icon_sys_fields();
+    }
+
+    pub(crate) fn folder_name(&self) -> String {
+        let mut name = String::from(self.selected_prefix.as_str());
+        name.push_str(&self.folder_base_name);
+        name
+    }
+
+    pub(crate) fn psu_file_stem(&self) -> String {
+        let mut stem = String::from(self.selected_prefix.as_str());
+        stem.push_str(&self.psu_file_base_name);
+        stem
+    }
+
+    pub(crate) fn default_output_file_name(&self) -> Option<String> {
+        let stem = self.psu_file_stem();
+        if stem.is_empty() {
+            None
+        } else {
+            Some(format!("{stem}.psu"))
+        }
+    }
+
+    fn update_output_if_matches_default(&mut self, previous_default_output: Option<String>) {
+        let should_update = if self.output.trim().is_empty() {
+            true
+        } else if let Some(previous_default) = previous_default_output {
+            Path::new(&self.output)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name == previous_default)
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if should_update {
+            match self.default_output_file_name() {
+                Some(file_name) => {
+                    if let Some(parent) = Path::new(&self.output).parent() {
+                        if !parent.as_os_str().is_empty() {
+                            self.output = parent.join(&file_name).display().to_string();
+                            return;
+                        }
+                    }
+                    self.output = file_name;
+                }
+                None => self.output.clear(),
+            }
+        }
+    }
+
+    pub(crate) fn metadata_inputs_changed(&mut self, previous_default_output: Option<String>) {
+        self.update_output_if_matches_default(previous_default_output);
+        self.refresh_psu_toml_editor();
+    }
+
+    pub(crate) fn set_folder_name_from_full(&mut self, name: &str) {
+        let (prefix, remainder) = SasPrefix::split_from_name(name);
+        self.selected_prefix = prefix;
+        self.folder_base_name = remainder.to_string();
+    }
+
+    pub(crate) fn set_psu_file_base_from_full(&mut self, file_stem: &str) {
+        let (prefix, remainder) = SasPrefix::split_from_name(file_stem);
+        if prefix == SasPrefix::None || prefix == self.selected_prefix {
+            self.psu_file_base_name = remainder.to_string();
+        } else {
+            self.psu_file_base_name = file_stem.to_string();
+        }
     }
 
     pub(crate) fn icon_flag_label(&self) -> String {
