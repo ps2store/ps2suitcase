@@ -4,10 +4,10 @@
 *This fork only addresses the PSU packer, and not the other featured programs of the repo. Only windows has been tested.*
 
 ---------------------------------------------------------------------
-# ORIGINAL READMME BY https://github.com/ps2store/ps2suitcase & https://github.com/techwritescode & https://github.com/mcoirault
+# ORIGINAL PROJECT BY https://github.com/ps2store/ps2suitcase & https://github.com/techwritescode & https://github.com/mcoirault
 # PS2 Rust
 
-Monorepo of my Rust projects for PS2 homebrew.
+Monorepo of [tech's] Rust projects for PS2 homebrew.
 
 ## Crates
 
