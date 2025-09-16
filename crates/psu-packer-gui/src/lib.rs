@@ -118,6 +118,7 @@ pub struct PackerApp {
     editor_tab: EditorTab,
     psu_toml_editor: TextFileEditor,
     title_cfg_editor: TextFileEditor,
+    psu_toml_sync_blocked: bool,
 }
 
 struct ErrorMessage {
@@ -189,6 +190,7 @@ impl Default for PackerApp {
             editor_tab: EditorTab::PsuSettings,
             psu_toml_editor: TextFileEditor::default(),
             title_cfg_editor: TextFileEditor::default(),
+            psu_toml_sync_blocked: false,
         }
     }
 }
@@ -406,6 +408,7 @@ impl PackerApp {
         if let Some(folder) = self.folder.clone() {
             load_text_file_into_editor(folder.as_path(), "psu.toml", &mut self.psu_toml_editor);
             load_text_file_into_editor(folder.as_path(), "title.cfg", &mut self.title_cfg_editor);
+            self.psu_toml_sync_blocked = false;
         } else {
             self.clear_text_editors();
         }
@@ -414,6 +417,7 @@ impl PackerApp {
     fn clear_text_editors(&mut self) {
         self.psu_toml_editor.clear();
         self.title_cfg_editor.clear();
+        self.psu_toml_sync_blocked = false;
     }
 
     pub(crate) fn create_psu_toml_from_template(&mut self) {
