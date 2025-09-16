@@ -136,11 +136,12 @@ pub(crate) fn packaging_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
         ui.heading("Packaging");
         ui.small("Validate the configuration and generate the PSU archive.");
-        if ui
-            .button("Pack")
-            .on_hover_text("Create the PSU archive using the settings above.")
-            .clicked()
-        {
+        let pack_in_progress = app.is_pack_running();
+        let pack_button = ui
+            .add_enabled(!pack_in_progress, egui::Button::new("Pack"))
+            .on_hover_text("Create the PSU archive using the settings above.");
+
+        if pack_button.clicked() {
             if let Some(folder) = &app.folder {
                 if app.name.trim().is_empty() {
                     app.set_error_message("Please provide a PSU name");
@@ -156,19 +157,14 @@ pub(crate) fn packaging_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 };
 
                 let output_path = PathBuf::from(&app.output);
-                match psu_packer::pack_with_config(folder, &output_path, config) {
-                    Ok(_) => {
-                        app.status = format!("Packed to {}", output_path.display());
-                        app.clear_error_message();
-                    }
-                    Err(err) => {
-                        let message = app.format_pack_error(folder, &output_path, err);
-                        app.set_error_message(message);
-                    }
-                }
+                app.start_pack_job(folder.clone(), output_path, config);
             } else {
                 app.set_error_message("Please select a folder");
             }
+        }
+
+        if pack_in_progress {
+            ui.label("Packing in progress…");
         }
 
         if let Some(error) = &app.error_message {

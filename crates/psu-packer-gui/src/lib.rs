@@ -1,4 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    thread,
+};
 
 use eframe::egui;
 
@@ -22,6 +26,27 @@ pub(crate) enum IconFlagSelection {
     Custom,
 }
 
+struct PackJob {
+    progress: Arc<Mutex<PackProgress>>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+enum PackProgress {
+    InProgress,
+    Finished(PackOutcome),
+}
+
+enum PackOutcome {
+    Success {
+        output_path: PathBuf,
+    },
+    Error {
+        folder: PathBuf,
+        output_path: PathBuf,
+        error: psu_packer::Error,
+    },
+}
+
 pub struct PackerApp {
     pub(crate) folder: Option<PathBuf>,
     pub(crate) output: String,
@@ -41,6 +66,7 @@ pub struct PackerApp {
     pub(crate) icon_sys_title: String,
     pub(crate) icon_sys_flag_selection: IconFlagSelection,
     pub(crate) icon_sys_custom_flag: u16,
+    pack_job: Option<PackJob>,
 }
 
 struct ErrorMessage {
@@ -99,6 +125,7 @@ impl Default for PackerApp {
             icon_sys_title: String::new(),
             icon_sys_flag_selection: IconFlagSelection::Preset(0),
             icon_sys_custom_flag: ICON_SYS_FLAG_OPTIONS[0].0,
+            pack_job: None,
         }
     }
 }
@@ -190,15 +217,152 @@ impl PackerApp {
         self.folder.is_none()
             && (self.loaded_psu_path.is_some() || !self.loaded_psu_files.is_empty())
     }
+
+    pub(crate) fn is_pack_running(&self) -> bool {
+        self.pack_job.is_some()
+    }
+
+    pub(crate) fn start_pack_job(
+        &mut self,
+        folder: PathBuf,
+        output_path: PathBuf,
+        config: psu_packer::Config,
+    ) {
+        if self.pack_job.is_some() {
+            return;
+        }
+
+        let progress = Arc::new(Mutex::new(PackProgress::InProgress));
+        let thread_progress = Arc::clone(&progress);
+
+        let handle = thread::spawn(move || {
+            let result =
+                psu_packer::pack_with_config(folder.as_path(), output_path.as_path(), config);
+
+            let outcome = match result {
+                Ok(_) => PackOutcome::Success {
+                    output_path: output_path.clone(),
+                },
+                Err(error) => PackOutcome::Error {
+                    folder: folder.clone(),
+                    output_path: output_path.clone(),
+                    error,
+                },
+            };
+
+            let mut guard = thread_progress
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            *guard = PackProgress::Finished(outcome);
+        });
+
+        self.status = "Packing…".to_string();
+        self.clear_error_message();
+        self.pack_job = Some(PackJob {
+            progress,
+            handle: Some(handle),
+        });
+    }
+
+    fn pack_progress_value(&self) -> Option<f32> {
+        let job = self.pack_job.as_ref()?;
+        let guard = job.progress.lock().ok()?;
+        Some(match &*guard {
+            PackProgress::InProgress => 0.0,
+            PackProgress::Finished(_) => 1.0,
+        })
+    }
+
+    fn poll_pack_job(&mut self) {
+        let Some(mut job) = self.pack_job.take() else {
+            return;
+        };
+
+        let outcome = match job.progress.lock() {
+            Ok(mut guard) => {
+                if let PackProgress::Finished(_) = &*guard {
+                    if let PackProgress::Finished(outcome) =
+                        std::mem::replace(&mut *guard, PackProgress::InProgress)
+                    {
+                        Some(outcome)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            Err(poison) => {
+                let mut guard = poison.into_inner();
+                if let PackProgress::Finished(_) = &*guard {
+                    if let PackProgress::Finished(outcome) =
+                        std::mem::replace(&mut *guard, PackProgress::InProgress)
+                    {
+                        Some(outcome)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        if let Some(outcome) = outcome {
+            if let Some(handle) = job.handle.take() {
+                let _ = handle.join();
+            }
+
+            match outcome {
+                PackOutcome::Success { output_path } => {
+                    self.status = format!("Packed to {}", output_path.display());
+                    self.clear_error_message();
+                }
+                PackOutcome::Error {
+                    folder,
+                    output_path,
+                    error,
+                } => {
+                    let message = self.format_pack_error(&folder, &output_path, error);
+                    self.set_error_message(message);
+                }
+            }
+        } else {
+            self.pack_job = Some(job);
+        }
+    }
 }
 
 impl eframe::App for PackerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_pack_job();
+
         let source_present = self.has_source();
         if !source_present && self.source_present_last_frame {
             self.reset_metadata_fields();
         }
         self.source_present_last_frame = source_present;
+
+        if let Some(progress) = self.pack_progress_value() {
+            ctx.request_repaint();
+            egui::Window::new("packing_progress")
+                .title_bar(false)
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .frame(egui::Frame::popup(&ctx.style()))
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.heading("Packing PSU…");
+                        ui.add_space(8.0);
+                        ui.add(
+                            egui::ProgressBar::new(progress)
+                                .desired_width(200.0)
+                                .animate(true),
+                        );
+                    });
+                });
+        }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
