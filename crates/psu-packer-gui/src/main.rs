@@ -7,18 +7,6 @@ use std::path::{Path, PathBuf};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FileMode {
-    Include,
-    Exclude,
-}
-
-impl Default for FileMode {
-    fn default() -> Self {
-        Self::Exclude
-    }
-}
-
 struct PackerApp {
     folder: Option<PathBuf>,
     output: String,
@@ -26,7 +14,6 @@ struct PackerApp {
     error_message: Option<String>,
     name: String,
     timestamp: String,
-    file_mode: FileMode,
     include_files: Vec<String>,
     exclude_files: Vec<String>,
     selected_include: Option<usize>,
@@ -35,6 +22,21 @@ struct PackerApp {
     loaded_psu_files: Vec<String>,
     show_exit_confirm: bool,
     source_present_last_frame: bool,
+}
+
+#[derive(Copy, Clone)]
+enum ListKind {
+    Include,
+    Exclude,
+}
+
+impl ListKind {
+    fn label(self) -> &'static str {
+        match self {
+            ListKind::Include => "Include files",
+            ListKind::Exclude => "Exclude files",
+        }
+    }
 }
 
 struct ErrorMessage {
@@ -81,7 +83,6 @@ impl Default for PackerApp {
             error_message: None,
             name: String::new(),
             timestamp: String::new(),
-            file_mode: FileMode::default(),
             include_files: Vec::new(),
             exclude_files: Vec::new(),
             selected_include: None,
@@ -95,10 +96,10 @@ impl Default for PackerApp {
 }
 
 impl PackerApp {
-    fn current_list(&mut self) -> (&mut Vec<String>, &mut Option<usize>) {
-        match self.file_mode {
-            FileMode::Include => (&mut self.include_files, &mut self.selected_include),
-            FileMode::Exclude => (&mut self.exclude_files, &mut self.selected_exclude),
+    fn list_mut(&mut self, kind: ListKind) -> (&mut Vec<String>, &mut Option<usize>) {
+        match kind {
+            ListKind::Include => (&mut self.include_files, &mut self.selected_include),
+            ListKind::Exclude => (&mut self.exclude_files, &mut self.selected_exclude),
         }
     }
 
@@ -126,7 +127,6 @@ impl PackerApp {
     fn reset_metadata_fields(&mut self) {
         self.name.clear();
         self.timestamp.clear();
-        self.file_mode = FileMode::default();
         self.include_files.clear();
         self.exclude_files.clear();
         self.selected_include = None;
@@ -134,7 +134,7 @@ impl PackerApp {
     }
 
     fn missing_include_files(&self, folder: &Path) -> Vec<String> {
-        if !matches!(self.file_mode, FileMode::Include) {
+        if self.include_files.is_empty() {
             return Vec::new();
         }
 
@@ -201,7 +201,6 @@ impl PackerApp {
         self.timestamp = root_timestamp
             .map(|ts| ts.format(TIMESTAMP_FORMAT).to_string())
             .unwrap_or_default();
-        self.file_mode = FileMode::Include;
         self.loaded_psu_files = files;
         self.loaded_psu_path = Some(path.clone());
         self.clear_error_message();
@@ -231,9 +230,6 @@ impl PackerApp {
             psu_packer::Error::NameError => {
                 "Configuration contains an invalid PSU name.".to_string()
             }
-            psu_packer::Error::IncludeExcludeError => {
-                "Configuration cannot define both include and exclude lists.".to_string()
-            }
             psu_packer::Error::ConfigError(message) => {
                 format!("The psu.toml file is invalid: {message}")
             }
@@ -260,9 +256,6 @@ impl PackerApp {
             psu_packer::Error::NameError => {
                 "PSU name can only contain letters, numbers, spaces, underscores, and hyphens."
                     .to_string()
-            }
-            psu_packer::Error::IncludeExcludeError => {
-                "Include and exclude lists cannot be used at the same time.".to_string()
             }
             psu_packer::Error::ConfigError(message) => {
                 format!("Configuration error: {message}")
@@ -303,25 +296,18 @@ impl PackerApp {
         }
     }
 
-    fn mode_label(&self) -> &'static str {
-        match self.file_mode {
-            FileMode::Include => "Included files",
-            FileMode::Exclude => "Excluded files",
-        }
-    }
-
-    fn file_list_ui(&mut self, ui: &mut egui::Ui) {
-        let mode_label = self.mode_label();
+    fn file_list_ui(
+        ui: &mut egui::Ui,
+        label: &str,
+        files: &mut Vec<String>,
+        selected: &mut Option<usize>,
+    ) -> (bool, bool) {
         let mut add_clicked = false;
         let mut remove_clicked = false;
-
-        let has_selection = {
-            let (_, selected) = self.current_list();
-            selected.is_some()
-        };
+        let has_selection = selected.is_some();
 
         ui.horizontal(|ui| {
-            ui.label(mode_label);
+            ui.label(label);
             ui.add_space(ui.spacing().item_spacing.x);
 
             if ui
@@ -341,40 +327,31 @@ impl PackerApp {
             }
         });
 
-        {
-            let (files, selected) = self.current_list();
-            egui::ScrollArea::vertical()
-                .max_height(150.0)
-                .show(ui, |ui| {
-                    for (idx, file) in files.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            let is_selected = Some(idx) == *selected;
-                            if ui.selectable_label(is_selected, file).clicked() {
-                                *selected = Some(idx);
-                            }
+        egui::ScrollArea::vertical()
+            .max_height(150.0)
+            .show(ui, |ui| {
+                for (idx, file) in files.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        let is_selected = Some(idx) == *selected;
+                        if ui.selectable_label(is_selected, file).clicked() {
+                            *selected = Some(idx);
+                        }
 
-                            ui.add_space(ui.spacing().item_spacing.x);
+                        ui.add_space(ui.spacing().item_spacing.x);
 
-                            if ui
-                                .small_button("✖")
-                                .on_hover_text("Remove this file from the list.")
-                                .clicked()
-                            {
-                                *selected = Some(idx);
-                                remove_clicked = true;
-                            }
-                        });
-                    }
-                });
-        }
+                        if ui
+                            .small_button("✖")
+                            .on_hover_text("Remove this file from the list.")
+                            .clicked()
+                        {
+                            *selected = Some(idx);
+                            remove_clicked = true;
+                        }
+                    });
+                }
+            });
 
-        if add_clicked {
-            self.handle_add_file();
-        }
-
-        if remove_clicked {
-            self.handle_remove_file();
-        }
+        (add_clicked, remove_clicked)
     }
 
     fn build_config(&self) -> Result<psu_packer::Config, String> {
@@ -388,9 +365,16 @@ impl PackerApp {
             )
         };
 
-        let (include, exclude) = match self.file_mode {
-            FileMode::Include => (Some(self.include_files.clone()), None),
-            FileMode::Exclude => (None, Some(self.exclude_files.clone())),
+        let include = if self.include_files.is_empty() {
+            None
+        } else {
+            Some(self.include_files.clone())
+        };
+
+        let exclude = if self.exclude_files.is_empty() {
+            None
+        } else {
+            Some(self.exclude_files.clone())
         };
 
         Ok(psu_packer::Config {
@@ -401,11 +385,14 @@ impl PackerApp {
         })
     }
 
-    fn handle_add_file(&mut self) {
+    fn handle_add_file(&mut self, kind: ListKind) {
         let Some(folder) = self.folder.clone() else {
             self.set_error_message("Please select a folder before adding files");
             return;
         };
+
+        let list_label = kind.label();
+        let (files, selected) = self.list_mut(kind);
 
         let Some(paths) = rfd::FileDialog::new().set_directory(&folder).pick_files() else {
             return;
@@ -415,7 +402,6 @@ impl PackerApp {
             return;
         }
 
-        let (list, selected) = self.current_list();
         let mut invalid_entries = Vec::new();
         let mut last_added = None;
 
@@ -443,13 +429,13 @@ impl PackerApp {
 
             let name = name.to_string();
 
-            if list.iter().any(|entry| entry == &name) {
+            if files.iter().any(|entry| entry == &name) {
                 invalid_entries.push(format!("{name} (already listed)"));
                 continue;
             }
 
-            list.push(name);
-            last_added = Some(list.len() - 1);
+            files.push(name);
+            last_added = Some(files.len() - 1);
         }
 
         if let Some(index) = last_added {
@@ -462,12 +448,13 @@ impl PackerApp {
                 self.status.clear();
             }
         } else {
-            self.set_error_message(("Some files could not be added", invalid_entries));
+            let message = format!("Some files could not be added to the {list_label} list");
+            self.set_error_message((message, invalid_entries));
         }
     }
 
-    fn handle_remove_file(&mut self) {
-        let (files, selected) = self.current_list();
+    fn handle_remove_file(&mut self, kind: ListKind) {
+        let (files, selected) = self.list_mut(kind);
         if let Some(idx) = selected.take() {
             files.remove(idx);
             if files.is_empty() {
@@ -539,29 +526,17 @@ impl eframe::App for PackerApp {
                                             exclude,
                                         } = config;
 
-                                        let include_present = include.is_some();
-                                        let exclude_present = exclude.is_some();
-
                                         self.output = format!("{}.psu", name);
                                         self.name = name;
                                         self.timestamp = timestamp
                                             .map(|t| t.format(TIMESTAMP_FORMAT).to_string())
                                             .unwrap_or_default();
-                                        self.file_mode = if include_present {
-                                            FileMode::Include
-                                        } else {
-                                            FileMode::Exclude
-                                        };
                                         self.include_files = include.unwrap_or_default();
                                         self.exclude_files = exclude.unwrap_or_default();
                                         self.selected_include = None;
                                         self.selected_exclude = None;
                                         self.clear_error_message();
                                         self.status.clear();
-                                        if include_present && exclude_present {
-                                            self.status = "Config contains both include and exclude lists; using include list"
-                                                .to_string();
-                                        }
                                     }
                                     Err(err) => {
                                         let message = PackerApp::format_load_error(&dir, err);
@@ -569,7 +544,6 @@ impl eframe::App for PackerApp {
                                         self.output.clear();
                                         self.name.clear();
                                         self.timestamp.clear();
-                                        self.file_mode = FileMode::default();
                                         self.include_files.clear();
                                         self.exclude_files.clear();
                                         self.selected_include = None;
@@ -626,14 +600,10 @@ impl eframe::App for PackerApp {
                             ui.end_row();
 
                             ui.label("Timestamp");
-                            ui.add(egui::TextEdit::singleline(&mut self.timestamp).hint_text(TIMESTAMP_FORMAT));
-                            ui.end_row();
-
-                            ui.label("File mode");
-                            ui.vertical(|ui| {
-                                ui.radio_value(&mut self.file_mode, FileMode::Include, "Include");
-                                ui.radio_value(&mut self.file_mode, FileMode::Exclude, "Exclude");
-                            });
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.timestamp)
+                                    .hint_text(TIMESTAMP_FORMAT),
+                            );
                             ui.end_row();
                         });
                 });
@@ -643,9 +613,37 @@ impl eframe::App for PackerApp {
 
                     ui.group(|ui| {
                         ui.heading("File filters");
-                        ui.small("Manage include or exclude lists before creating the archive.");
+                        ui.small(
+                            "Manage which files to include or exclude before creating the archive.",
+                        );
                         if self.folder.is_some() {
-                            self.file_list_ui(ui);
+                            ui.columns(2, |columns| {
+                                let (include_add, include_remove) = Self::file_list_ui(
+                                    &mut columns[0],
+                                    ListKind::Include.label(),
+                                    &mut self.include_files,
+                                    &mut self.selected_include,
+                                );
+                                if include_add {
+                                    self.handle_add_file(ListKind::Include);
+                                }
+                                if include_remove {
+                                    self.handle_remove_file(ListKind::Include);
+                                }
+
+                                let (exclude_add, exclude_remove) = Self::file_list_ui(
+                                    &mut columns[1],
+                                    ListKind::Exclude.label(),
+                                    &mut self.exclude_files,
+                                    &mut self.selected_exclude,
+                                );
+                                if exclude_add {
+                                    self.handle_add_file(ListKind::Exclude);
+                                }
+                                if exclude_remove {
+                                    self.handle_remove_file(ListKind::Exclude);
+                                }
+                            });
                         } else {
                             ui.label("Select a folder to configure file filters.");
                         }

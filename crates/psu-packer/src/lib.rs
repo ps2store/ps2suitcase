@@ -2,6 +2,7 @@ use chrono::{DateTime, Local, NaiveDateTime};
 use colored::Colorize;
 use ps2_filetypes::{PSUEntry, PSUEntryKind, PSUWriter, DIR_ID, FILE_ID, PSU};
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -65,15 +66,11 @@ pub fn pack_with_config(folder: &Path, output: &Path, cfg: Config) -> Result<(),
         return Err(Error::NameError);
     }
 
-    if include.is_some() && exclude.is_some() {
-        return Err(Error::IncludeExcludeError);
-    }
-
     let mut psu = PSU::default();
 
-    let files = if let Some(include) = include {
+    let raw_included_files = if let Some(include) = include {
         include
-            .iter()
+            .into_iter()
             .filter_map(|file| {
                 if file.contains(|c| matches!(c, '\\' | '/')) {
                     eprintln!(
@@ -83,28 +80,19 @@ pub fn pack_with_config(folder: &Path, output: &Path, cfg: Config) -> Result<(),
                         "exists in subfolder, skipping".dimmed()
                     );
                     None
-                } else if !folder.join(file).exists() {
-                    eprintln!(
-                        "{} {} {}",
-                        "File".dimmed(),
-                        file.dimmed(),
-                        "does not exist, skipping".dimmed()
-                    );
-                    None
                 } else {
-                    Some(folder.join(file))
-                }
-            })
-            .collect::<Vec<_>>()
-    } else if let Some(exclude) = exclude {
-        std::fs::read_dir(folder)?
-            .into_iter()
-            .flatten()
-            .filter_map(|d| {
-                if !exclude.contains(&d.file_name().to_str().unwrap().to_string()) {
-                    Some(d.path())
-                } else {
-                    None
+                    let candidate = folder.join(&file);
+                    if !candidate.exists() {
+                        eprintln!(
+                            "{} {} {}",
+                            "File".dimmed(),
+                            file.dimmed(),
+                            "does not exist, skipping".dimmed()
+                        );
+                        None
+                    } else {
+                        Some(candidate)
+                    }
                 }
             })
             .collect::<Vec<_>>()
@@ -115,7 +103,50 @@ pub fn pack_with_config(folder: &Path, output: &Path, cfg: Config) -> Result<(),
             .map(|d| d.path())
             .collect::<Vec<_>>()
     };
-    let files = filter_files(&files);
+
+    let mut files = filter_files(&raw_included_files);
+
+    if let Some(exclude) = exclude {
+        let mut exclude_set = HashSet::new();
+
+        for file in exclude {
+            if file.contains(|c| matches!(c, '\\' | '/')) {
+                eprintln!(
+                    "{} {} {}",
+                    "File".dimmed(),
+                    file.dimmed(),
+                    "exists in subfolder, skipping exclude".dimmed()
+                );
+                continue;
+            }
+
+            let candidate = folder.join(&file);
+            if !candidate.exists() {
+                eprintln!(
+                    "{} {} {}",
+                    "File".dimmed(),
+                    file.dimmed(),
+                    "does not exist, skipping exclude".dimmed()
+                );
+                continue;
+            }
+
+            exclude_set.insert(file);
+        }
+
+        if !exclude_set.is_empty() {
+            files = files
+                .into_iter()
+                .filter(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| !exclude_set.contains(name))
+                        .unwrap_or(true)
+                })
+                .collect::<Vec<_>>();
+        }
+    }
+
     add_psu_defaults(&mut psu, &name, files.len(), timestamp.unwrap_or_default());
     add_files_to_psu(&mut psu, &files)?;
     std::fs::write(output, PSUWriter::new(psu).to_bytes()?)?;
@@ -218,7 +249,6 @@ fn convert_timestamp(time: SystemTime) -> NaiveDateTime {
 pub enum Error {
     NameError,
     IOError(std::io::Error),
-    IncludeExcludeError,
     ConfigError(String),
 }
 
@@ -226,7 +256,6 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error::NameError => write!(f, "Name must match [a-zA-Z0-9._-\\s]+"),
-            Error::IncludeExcludeError => write!(f, "Exclude cannot be used in include mode"),
             Error::IOError(err) => write!(f, "{err:?}"),
             Error::ConfigError(err) => write!(f, "{err}"),
         }
