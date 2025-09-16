@@ -187,12 +187,49 @@ pub(crate) fn icon_sys_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.small("Configure the save icon title, flags, and lighting.");
     ui.add_space(8.0);
 
-    let checkbox = ui.checkbox(&mut app.icon_sys_enabled, "Generate icon.sys metadata");
-    checkbox.on_hover_text("Automatically creates or updates icon.sys when packing the PSU.");
+    let checkbox = ui.checkbox(&mut app.icon_sys_enabled, "Enable icon.sys metadata");
+    checkbox
+        .on_hover_text("Use an existing icon.sys file or generate a new one when packing the PSU.");
+
+    if !app.icon_sys_enabled {
+        app.icon_sys_use_existing = false;
+    } else if app.icon_sys_existing.is_none() {
+        app.icon_sys_use_existing = false;
+    }
+
+    if app.icon_sys_enabled {
+        if let Some(existing_icon) = app.icon_sys_existing.clone() {
+            let previous = app.icon_sys_use_existing;
+            ui.horizontal(|ui| {
+                ui.label("Mode:");
+                ui.selectable_value(
+                    &mut app.icon_sys_use_existing,
+                    true,
+                    "Use existing icon.sys",
+                );
+                ui.selectable_value(
+                    &mut app.icon_sys_use_existing,
+                    false,
+                    "Generate new icon.sys",
+                );
+            });
+
+            if app.icon_sys_use_existing && !previous {
+                app.apply_icon_sys_file(&existing_icon);
+            }
+
+            if app.icon_sys_use_existing {
+                ui.small(concat!(
+                    "The existing icon.sys file will be packed without modification. ",
+                    "Switch to \"Generate new icon.sys\" to edit metadata.",
+                ));
+            }
+        }
+    }
 
     ui.add_space(8.0);
 
-    ui.add_enabled_ui(app.icon_sys_enabled, |ui| {
+    ui.add_enabled_ui(app.icon_sys_enabled && !app.icon_sys_use_existing, |ui| {
         title_section(app, ui);
         ui.add_space(12.0);
         flag_section(app, ui);

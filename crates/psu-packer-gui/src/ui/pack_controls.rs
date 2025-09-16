@@ -25,7 +25,11 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 ui.label("icon.sys");
                 let mut label = "Configure icon.sys metadata in the dedicated tab.".to_string();
                 if app.icon_sys_enabled {
-                    label.push_str(" Generation is currently enabled.");
+                    if app.icon_sys_use_existing {
+                        label.push_str(" Existing icon.sys file will be reused.");
+                    } else {
+                        label.push_str(" A new icon.sys will be generated.");
+                    }
                 }
                 ui.small(label);
                 ui.end_row();
@@ -324,47 +328,54 @@ impl PackerApp {
         };
 
         let icon_sys = if self.icon_sys_enabled {
-            let line1 = self.icon_sys_title_line1.clone();
-            let line2 = self.icon_sys_title_line2.clone();
+            if self.icon_sys_use_existing {
+                None
+            } else {
+                let line1 = self.icon_sys_title_line1.clone();
+                let line2 = self.icon_sys_title_line2.clone();
 
-            if line1.chars().count() > 10 {
-                return Err("Icon.sys line 1 cannot exceed 10 characters".to_string());
-            }
-            if line2.chars().count() > 10 {
-                return Err("Icon.sys line 2 cannot exceed 10 characters".to_string());
-            }
-            let title_is_valid = |value: &str| {
-                value
-                    .chars()
-                    .all(|c| c.is_ascii() && (!c.is_ascii_control() || c == ' '))
-            };
-            if !title_is_valid(&line1) || !title_is_valid(&line2) {
-                return Err("Icon.sys titles only support printable ASCII characters".to_string());
-            }
+                if line1.chars().count() > 10 {
+                    return Err("Icon.sys line 1 cannot exceed 10 characters".to_string());
+                }
+                if line2.chars().count() > 10 {
+                    return Err("Icon.sys line 2 cannot exceed 10 characters".to_string());
+                }
+                let title_is_valid = |value: &str| {
+                    value
+                        .chars()
+                        .all(|c| c.is_ascii() && (!c.is_ascii_control() || c == ' '))
+                };
+                if !title_is_valid(&line1) || !title_is_valid(&line2) {
+                    return Err(
+                        "Icon.sys titles only support printable ASCII characters".to_string()
+                    );
+                }
 
-            let has_content = line1.chars().any(|c| !c.is_whitespace())
-                || line2.chars().any(|c| !c.is_whitespace());
-            if !has_content {
-                return Err(
-                    "Provide at least one non-space character for the icon.sys title".to_string(),
-                );
+                let has_content = line1.chars().any(|c| !c.is_whitespace())
+                    || line2.chars().any(|c| !c.is_whitespace());
+                if !has_content {
+                    return Err(
+                        "Provide at least one non-space character for the icon.sys title"
+                            .to_string(),
+                    );
+                }
+
+                let combined_title = format!("{line1}{line2}");
+                let linebreak_pos = line1.chars().count() as u16;
+                let flag_value = self.selected_icon_flag_value()?;
+
+                Some(psu_packer::IconSysConfig {
+                    flags: psu_packer::IconSysFlags::new(flag_value),
+                    title: combined_title,
+                    linebreak_pos: Some(linebreak_pos),
+                    preset: self.icon_sys_selected_preset.clone(),
+                    background_transparency: Some(self.icon_sys_background_transparency),
+                    background_colors: Some(self.icon_sys_background_colors.to_vec()),
+                    light_directions: Some(self.icon_sys_light_directions.to_vec()),
+                    light_colors: Some(self.icon_sys_light_colors.to_vec()),
+                    ambient_color: Some(self.icon_sys_ambient_color),
+                })
             }
-
-            let combined_title = format!("{line1}{line2}");
-            let linebreak_pos = line1.chars().count() as u16;
-            let flag_value = self.selected_icon_flag_value()?;
-
-            Some(psu_packer::IconSysConfig {
-                flags: psu_packer::IconSysFlags::new(flag_value),
-                title: combined_title,
-                linebreak_pos: Some(linebreak_pos),
-                preset: self.icon_sys_selected_preset.clone(),
-                background_transparency: Some(self.icon_sys_background_transparency),
-                background_colors: Some(self.icon_sys_background_colors.to_vec()),
-                light_directions: Some(self.icon_sys_light_directions.to_vec()),
-                light_colors: Some(self.icon_sys_light_colors.to_vec()),
-                ambient_color: Some(self.icon_sys_ambient_color),
-            })
         } else {
             None
         };

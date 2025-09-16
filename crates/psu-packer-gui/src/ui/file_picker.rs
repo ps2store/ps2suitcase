@@ -1,7 +1,7 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use eframe::egui;
-use ps2_filetypes::{PSUEntryKind, PSU};
+use ps2_filetypes::{IconSys, PSUEntryKind, PSU};
 
 use crate::PackerApp;
 
@@ -81,13 +81,49 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.exclude_files = exclude.unwrap_or_default();
                             app.selected_include = None;
                             app.selected_exclude = None;
+                            app.clear_error_message();
+                            app.status.clear();
+
+                            let has_icon_sys_config = icon_sys.is_some();
                             if let Some(icon_cfg) = icon_sys {
                                 app.apply_icon_sys_config(icon_cfg);
                             } else {
                                 app.reset_icon_sys_fields();
                             }
-                            app.clear_error_message();
-                            app.status.clear();
+
+                            let icon_sys_path = folder.join("icon.sys");
+                            if icon_sys_path.is_file() {
+                                match fs::read(&icon_sys_path) {
+                                    Ok(bytes) => {
+                                        match std::panic::catch_unwind(|| IconSys::new(bytes)) {
+                                            Ok(parsed_icon_sys) => {
+                                                if has_icon_sys_config {
+                                                    app.icon_sys_existing = Some(parsed_icon_sys);
+                                                } else {
+                                                    app.apply_icon_sys_file(&parsed_icon_sys);
+                                                }
+                                            }
+                                            Err(_) => {
+                                                app.icon_sys_existing = None;
+                                                app.set_error_message(format!(
+                                                    "Failed to parse {} as an icon.sys file.",
+                                                    icon_sys_path.display()
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        app.icon_sys_existing = None;
+                                        app.set_error_message(format!(
+                                            "Failed to read {}: {}",
+                                            icon_sys_path.display(),
+                                            err
+                                        ));
+                                    }
+                                }
+                            } else if has_icon_sys_config {
+                                app.icon_sys_existing = None;
+                            }
                         }
                         Err(err) => {
                             let message = format_load_error(&folder, err);
