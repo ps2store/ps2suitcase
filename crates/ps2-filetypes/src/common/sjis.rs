@@ -32,7 +32,10 @@ pub fn decode_sjis(input: &[u8]) -> String {
                 }
             }
             0x0D => match pair[1] {
-                0x0A => str_out.extend_from_slice(b"\r\n"),
+                0x0A => {
+                    str_out.push(b'\r');
+                    str_out.push(b'\n');
+                }
                 0x00 => str_out.push(b'\r'),
                 _ => str_out.push(b'?'),
             },
@@ -69,21 +72,22 @@ pub fn decode_sjis(input: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    fn assert_decodes_to(input: [u8; 2], expected: &str) {
+        assert_eq!(decode_sjis(&input), expected);
+    }
+
     #[test]
     fn decode_crlf_preserves_both_characters() {
-        let input = [0x0D, 0x0A];
-        assert_eq!(decode_sjis(&input), "\r\n");
+        assert_decodes_to([0x0D, 0x0A], "\r\n");
     }
 
     #[test]
     fn decode_cr_only() {
-        let input = [0x0D, 0x00];
-        assert_eq!(decode_sjis(&input), "\r");
+        assert_decodes_to([0x0D, 0x00], "\r");
     }
 
     #[test]
     fn decode_lf_only() {
-        let input = [0x0A, 0x00];
-        assert_eq!(decode_sjis(&input), "\n");
+        assert_decodes_to([0x0A, 0x00], "\n");
     }
 }
