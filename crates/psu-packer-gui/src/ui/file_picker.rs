@@ -17,6 +17,18 @@ pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
             ui.close_menu();
         }
 
+        ui.add_enabled_ui(app.folder.is_some(), |ui| {
+            if ui.button("Edit psu.toml").clicked() {
+                app.open_psu_toml_tab();
+                ui.close_menu();
+            }
+
+            if ui.button("Edit title.cfg").clicked() {
+                app.open_title_cfg_tab();
+                ui.close_menu();
+            }
+        });
+
         ui.separator();
 
         if ui.button("Exit").clicked() {
@@ -36,8 +48,8 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 .on_hover_text("Pick the source directory to load configuration values.")
                 .clicked()
             {
-                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                    match psu_packer::load_config(&dir) {
+                if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                    match psu_packer::load_config(&folder) {
                         Ok(config) => {
                             let psu_packer::Config {
                                 name,
@@ -75,7 +87,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.status.clear();
                         }
                         Err(err) => {
-                            let message = format_load_error(&dir, err);
+                            let message = format_load_error(&folder, err);
                             app.set_error_message(message);
                             app.output.clear();
                             app.name.clear();
@@ -89,7 +101,9 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                     }
                     app.loaded_psu_path = None;
                     app.loaded_psu_files.clear();
-                    app.folder = Some(dir);
+                    app.folder = Some(folder.clone());
+                    app.reload_project_files();
+                    app.open_psu_settings_tab();
                 }
             }
         });
@@ -180,6 +194,8 @@ impl PackerApp {
         self.selected_include = None;
         self.selected_exclude = None;
         self.reset_icon_sys_fields();
+        self.reload_project_files();
+        self.open_psu_settings_tab();
 
         if self.output.trim().is_empty() {
             self.output = path.display().to_string();
