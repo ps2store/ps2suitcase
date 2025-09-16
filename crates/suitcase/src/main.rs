@@ -21,7 +21,7 @@ use crate::{
     io::export_psu::export_psu,
     io::file_watcher::FileWatcher,
     io::read_folder::read_folder,
-    tabs::{ICNViewer, IconSysViewer, TitleCfgViewer},
+    tabs::{ICNViewer, IconSysViewer, PsuTomlViewer, TitleCfgViewer},
     wizards::create_icn::create_icn_wizard,
 };
 use eframe::egui::{Context, Frame, IconData, Margin, ViewportCommand};
@@ -219,6 +219,10 @@ impl PSUBuilderApp {
                 "cfg" | "cnf" | "dat" | "txt" => Some(TabType::TitleCfgViewer(
                     TitleCfgViewer::new(&file, &self.state),
                 )),
+                "toml" => Some(TabType::PsuTomlViewer(PsuTomlViewer::new(
+                    &file,
+                    &self.state,
+                ))),
                 _ => None,
             };
 

@@ -1,7 +1,7 @@
 use crate::tabs::Tab;
-use eframe::egui::{Id, Ui, WidgetText};
+use crate::tabs::{ICNViewer, IconSysViewer, PsuTomlViewer, TitleCfgViewer};
 use crate::AppState;
-use crate::tabs::{IconSysViewer, TitleCfgViewer, ICNViewer};
+use eframe::egui::{Id, Ui, WidgetText};
 
 pub struct TabViewer<'a> {
     pub(crate) app: &'a mut AppState,
@@ -11,6 +11,7 @@ pub enum TabType {
     IconSysViewer(IconSysViewer),
     TitleCfgViewer(TitleCfgViewer),
     ICNViewer(ICNViewer),
+    PsuTomlViewer(PsuTomlViewer),
 }
 
 impl TabType {
@@ -19,6 +20,7 @@ impl TabType {
             TabType::IconSysViewer(tab) => tab.get_id(),
             TabType::TitleCfgViewer(tab) => tab.get_id(),
             TabType::ICNViewer(tab) => tab.get_id(),
+            TabType::PsuTomlViewer(tab) => tab.get_id(),
         }
     }
 
@@ -27,6 +29,7 @@ impl TabType {
             TabType::IconSysViewer(tab) => tab.get_title(),
             TabType::TitleCfgViewer(tab) => tab.get_title(),
             TabType::ICNViewer(tab) => tab.get_title(),
+            TabType::PsuTomlViewer(tab) => tab.get_title(),
         }
     }
 
@@ -35,6 +38,7 @@ impl TabType {
             TabType::IconSysViewer(tab) => tab.get_modified(),
             TabType::TitleCfgViewer(tab) => tab.get_modified(),
             TabType::ICNViewer(tab) => tab.get_modified(),
+            TabType::PsuTomlViewer(tab) => tab.get_modified(),
         }
     }
 
@@ -43,6 +47,7 @@ impl TabType {
             TabType::IconSysViewer(tab) => tab.save(),
             TabType::TitleCfgViewer(tab) => tab.save(),
             TabType::ICNViewer(tab) => tab.save(),
+            TabType::PsuTomlViewer(tab) => tab.save(),
         }
     }
 }
@@ -55,7 +60,8 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
             format!("* {}", tab.get_title())
         } else {
             tab.get_title()
-        }.into()
+        }
+        .into()
     }
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
@@ -67,6 +73,9 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 tab.show(ui);
             }
             TabType::TitleCfgViewer(tab) => {
+                tab.show(ui);
+            }
+            TabType::PsuTomlViewer(tab) => {
                 tab.show(ui);
             }
         }
