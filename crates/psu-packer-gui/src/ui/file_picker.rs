@@ -58,6 +58,9 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
         ui.heading("Folder");
         ui.small("Select the PSU project folder containing psu.toml.");
         ui.horizontal(|ui| {
+            let spacing = ui.spacing().item_spacing.x;
+            ui.spacing_mut().item_spacing.x = spacing.max(8.0);
+
             if ui
                 .button("Select folder")
                 .on_hover_text("Pick the source directory to load configuration values.")
@@ -148,6 +151,14 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                         app.open_psu_settings_tab();
                     }
                 }
+            }
+
+            if ui
+                .button("Load PSU...")
+                .on_hover_text("Open an existing PSU archive to populate the editor from its metadata.")
+                .clicked()
+            {
+                app.handle_open_psu();
             }
         });
 
