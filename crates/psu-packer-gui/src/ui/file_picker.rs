@@ -1,0 +1,211 @@
+use std::path::Path;
+
+use eframe::egui;
+use ps2_filetypes::{PSUEntryKind, PSU};
+
+use crate::{IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS, TIMESTAMP_FORMAT};
+
+pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
+    ui.menu_button("File", |ui| {
+        if ui.button("Save PSU As...").clicked() {
+            app.browse_output_destination();
+            ui.close_menu();
+        }
+
+        if ui.button("Open PSU...").clicked() {
+            app.handle_open_psu();
+            ui.close_menu();
+        }
+
+        ui.separator();
+
+        if ui.button("Exit").clicked() {
+            app.show_exit_confirm = true;
+            ui.close_menu();
+        }
+    });
+}
+
+pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+    ui.group(|ui| {
+        ui.heading("Folder");
+        ui.small("Select the PSU project folder containing psu.toml.");
+        ui.horizontal(|ui| {
+            if ui
+                .button("Select folder")
+                .on_hover_text("Pick the source directory to load configuration values.")
+                .clicked()
+            {
+                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                    match psu_packer::load_config(&dir) {
+                        Ok(config) => {
+                            let psu_packer::Config {
+                                name,
+                                timestamp,
+                                include,
+                                exclude,
+                                icon_sys,
+                            } = config;
+
+                            app.output = format!("{}.psu", name);
+                            app.name = name;
+                            app.timestamp = timestamp
+                                .map(|t| t.format(TIMESTAMP_FORMAT).to_string())
+                                .unwrap_or_default();
+                            app.include_files = include.unwrap_or_default();
+                            app.exclude_files = exclude.unwrap_or_default();
+                            app.selected_include = None;
+                            app.selected_exclude = None;
+                            if let Some(icon_cfg) = icon_sys {
+                                let psu_packer::IconSysConfig { flags, title, .. } = icon_cfg;
+                                let flag_value = flags.value();
+                                app.icon_sys_enabled = true;
+                                app.icon_sys_title = title;
+                                app.icon_sys_custom_flag = flag_value;
+                                if let Some(index) = ICON_SYS_FLAG_OPTIONS
+                                    .iter()
+                                    .position(|(value, _)| *value == flag_value)
+                                {
+                                    app.icon_sys_flag_selection = IconFlagSelection::Preset(index);
+                                } else {
+                                    app.icon_sys_flag_selection = IconFlagSelection::Custom;
+                                }
+                            } else {
+                                app.reset_icon_sys_fields();
+                            }
+                            app.clear_error_message();
+                            app.status.clear();
+                        }
+                        Err(err) => {
+                            let message = format_load_error(&dir, err);
+                            app.set_error_message(message);
+                            app.output.clear();
+                            app.name.clear();
+                            app.timestamp.clear();
+                            app.include_files.clear();
+                            app.exclude_files.clear();
+                            app.selected_include = None;
+                            app.selected_exclude = None;
+                            app.reset_icon_sys_fields();
+                        }
+                    }
+                    app.loaded_psu_path = None;
+                    app.loaded_psu_files.clear();
+                    app.folder = Some(dir);
+                }
+            }
+        });
+
+        if let Some(folder) = &app.folder {
+            ui.label(format!("Folder: {}", folder.display()));
+        }
+    });
+}
+
+pub(crate) fn loaded_psu_section(app: &PackerApp, ui: &mut egui::Ui) {
+    ui.group(|ui| {
+        ui.heading("Loaded PSU");
+        ui.small("Review the files discovered in the opened PSU archive.");
+        if let Some(path) = &app.loaded_psu_path {
+            ui.label(format!("File: {}", path.display()));
+        }
+        egui::ScrollArea::vertical()
+            .max_height(150.0)
+            .show(ui, |ui| {
+                if app.loaded_psu_files.is_empty() {
+                    ui.label("The archive does not contain any files.");
+                } else {
+                    for file in &app.loaded_psu_files {
+                        ui.label(file);
+                    }
+                }
+            });
+    });
+}
+
+impl PackerApp {
+    pub(crate) fn handle_open_psu(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("PSU", &["psu"])
+            .pick_file()
+        else {
+            return;
+        };
+
+        let data = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                self.set_error_message(format!("Failed to read {}: {err}", path.display()));
+                return;
+            }
+        };
+
+        let parsed = match std::panic::catch_unwind(|| PSU::new(data)) {
+            Ok(psu) => psu,
+            Err(_) => {
+                self.set_error_message(format!("Failed to parse PSU file {}", path.display()));
+                return;
+            }
+        };
+
+        let entries = parsed.entries();
+        let mut root_name: Option<String> = None;
+        let mut root_timestamp = None;
+        let mut files = Vec::new();
+
+        for entry in &entries {
+            match entry.kind {
+                PSUEntryKind::Directory => {
+                    if entry.name != "." && entry.name != ".." && root_name.is_none() {
+                        root_name = Some(entry.name.clone());
+                        root_timestamp = Some(entry.created);
+                    }
+                }
+                PSUEntryKind::File => files.push(entry.name.clone()),
+            }
+        }
+
+        let Some(name) = root_name else {
+            self.set_error_message(format!("{} does not contain PSU metadata", path.display()));
+            return;
+        };
+
+        self.name = name;
+        self.timestamp = root_timestamp
+            .map(|ts| ts.format(TIMESTAMP_FORMAT).to_string())
+            .unwrap_or_default();
+        self.loaded_psu_files = files;
+        self.loaded_psu_path = Some(path.clone());
+        self.clear_error_message();
+        self.status = format!("Loaded PSU from {}", path.display());
+        self.folder = None;
+        self.include_files.clear();
+        self.exclude_files.clear();
+        self.selected_include = None;
+        self.selected_exclude = None;
+        self.reset_icon_sys_fields();
+
+        if self.output.trim().is_empty() {
+            self.output = path.display().to_string();
+        }
+    }
+}
+
+fn format_load_error(folder: &Path, err: psu_packer::Error) -> String {
+    match err {
+        psu_packer::Error::NameError => "Configuration contains an invalid PSU name.".to_string(),
+        psu_packer::Error::ConfigError(message) => {
+            format!("The psu.toml file is invalid: {message}")
+        }
+        psu_packer::Error::IOError(io_err) => {
+            let config_path = folder.join("psu.toml");
+            match io_err.kind() {
+                std::io::ErrorKind::NotFound => format!(
+                    "Could not find {}. Create a psu.toml file in the selected folder.",
+                    config_path.display()
+                ),
+                _ => format!("Failed to read {}: {}", config_path.display(), io_err),
+            }
+        }
+    }
+}
