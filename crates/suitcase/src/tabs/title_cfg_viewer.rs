@@ -1,7 +1,9 @@
 use crate::data::state::AppState;
 use crate::tabs::Tab;
 use crate::VirtualFile;
-use eframe::egui::{menu, CornerRadius, Id, PopupCloseBehavior, Response, TextEdit, Ui};
+use eframe::egui::{
+    menu, CornerRadius, Id, PopupCloseBehavior, Response, ScrollArea, TextEdit, Ui,
+};
 use ps2_filetypes::TitleCfg;
 use relative_path::PathExt;
 use std::ops::Add;
@@ -51,93 +53,95 @@ impl TitleCfgViewer {
             });
             ui.separator();
 
-            if self.is_raw_editor {
-                eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
-                    .num_columns(1)
-                    .min_col_width(ui.available_width())
-                    .show(ui, |ui| {
-                        ui.add(
-                            TextEdit::multiline(&mut self.title_cfg.contents)
-                                .desired_width(ui.available_width()),
-                        )
+            ScrollArea::vertical().show(ui, |ui| {
+                if self.is_raw_editor {
+                    eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
+                        .num_columns(1)
+                        .min_col_width(ui.available_width())
+                        .show(ui, |ui| {
+                            ui.add(
+                                TextEdit::multiline(&mut self.title_cfg.contents)
+                                    .desired_width(ui.available_width()),
+                            )
                             .changed()
                             .then(|| self.modified = true);
-                    });
-            } else {
-                eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
-                    .num_columns(3)
-                    .min_col_width(200.0)
-                    .max_col_width(ui.available_width())
-                    .show(ui, |ui| {
-                        if self.encoding_error {
-                            ui.colored_label(
-                                eframe::egui::Color32::RED,
-                                "Encoding error, please use valid ASCII or UTF-8 encoding.",
-                            );
-                            return;
-                        }
-
-                        if !self.title_cfg.has_mandatory_fields() {
-                            ui.colored_label(
-                                eframe::egui::Color32::RED,
-                                "Missing mandatory fields.",
-                            );
-                            ui.button("Fix").clicked().then(|| {
-                                self.title_cfg.add_missing_fields();
-                                self.modified = true;
-                            });
-                            ui.end_row();
-                        }
-
-                        for (key, value) in self.title_cfg.index_map.iter_mut() {
-                            let key_helper = self.title_cfg.helper.get(key);
-
-                            let mut tooltip_content = "".to_string();
-                            if key_helper.is_some_and(|key| key.get("tooltip").is_some()) {
-                                tooltip_content =
-                                    key_helper.unwrap().get("tooltip").unwrap().to_string();
+                        });
+                } else {
+                    eframe::egui::Grid::new(Id::from("TitleCfgEditor"))
+                        .num_columns(3)
+                        .min_col_width(200.0)
+                        .max_col_width(ui.available_width())
+                        .show(ui, |ui| {
+                            if self.encoding_error {
+                                ui.colored_label(
+                                    eframe::egui::Color32::RED,
+                                    "Encoding error, please use valid ASCII or UTF-8 encoding.",
+                                );
+                                return;
                             }
 
-                            let key_label = ui.label(key.to_string());
-                            if !tooltip_content.is_empty() {
-                                key_label.on_hover_ui(|ui| {
-                                    ui.label(tooltip_content);
+                            if !self.title_cfg.has_mandatory_fields() {
+                                ui.colored_label(
+                                    eframe::egui::Color32::RED,
+                                    "Missing mandatory fields.",
+                                );
+                                ui.button("Fix").clicked().then(|| {
+                                    self.title_cfg.add_missing_fields();
+                                    self.modified = true;
                                 });
+                                ui.end_row();
                             }
 
-                            if key == "Description" {
-                                ui.add(TextEdit::multiline(value).desired_rows(6))
-                                    .changed()
-                                    .then(|| self.modified = true);
-                                if value.len() > MAXIMUM_DESCRIPTION_LENGTH {
-                                    ui.colored_label(
-                                        eframe::egui::Color32::RED,
-                                        format!(
-                                            "Description too long, it will be truncated in OPL. {}/{}",
-                                            value.len(),
-                                            MAXIMUM_DESCRIPTION_LENGTH,
-                                        ),
-                                    );
+                            for (key, value) in self.title_cfg.index_map.iter_mut() {
+                                let key_helper = self.title_cfg.helper.get(key);
+
+                                let mut tooltip_content = "".to_string();
+                                if key_helper.is_some_and(|key| key.get("tooltip").is_some()) {
+                                    tooltip_content =
+                                        key_helper.unwrap().get("tooltip").unwrap().to_string();
                                 }
-                            } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
-                                value_select(
-                                    ui,
-                                    key,
-                                    value,
-                                    key_helper.unwrap().get("values").unwrap(),
-                                )
-                                    .changed()
-                                    .then(|| self.modified = true);
-                            } else {
-                                ui.text_edit_singleline(value)
-                                    .changed()
-                                    .then(|| self.modified = true);
-                            }
 
-                            ui.end_row();
-                        }
-                    });
-            }
+                                let key_label = ui.label(key.to_string());
+                                if !tooltip_content.is_empty() {
+                                    key_label.on_hover_ui(|ui| {
+                                        ui.label(tooltip_content);
+                                    });
+                                }
+
+                                if key == "Description" {
+                                    ui.add(TextEdit::multiline(value).desired_rows(6))
+                                        .changed()
+                                        .then(|| self.modified = true);
+                                    if value.len() > MAXIMUM_DESCRIPTION_LENGTH {
+                                        ui.colored_label(
+                                            eframe::egui::Color32::RED,
+                                            format!(
+                                                "Description too long, it will be truncated in OPL. {}/{}",
+                                                value.len(),
+                                                MAXIMUM_DESCRIPTION_LENGTH,
+                                            ),
+                                        );
+                                    }
+                                } else if key_helper.is_some_and(|key| key.get("values").is_some()) {
+                                    value_select(
+                                        ui,
+                                        key,
+                                        value,
+                                        key_helper.unwrap().get("values").unwrap(),
+                                    )
+                                    .changed()
+                                    .then(|| self.modified = true);
+                                } else {
+                                    ui.text_edit_singleline(value)
+                                        .changed()
+                                        .then(|| self.modified = true);
+                                }
+
+                                ui.end_row();
+                            }
+                        });
+                }
+            });
         });
     }
 
