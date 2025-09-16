@@ -8,6 +8,7 @@ use std::{
 use chrono::NaiveDateTime;
 use eframe::egui;
 use ps2_filetypes::templates;
+use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 
 pub mod ui;
 
@@ -34,6 +35,7 @@ enum EditorTab {
     PsuSettings,
     PsuToml,
     TitleCfg,
+    IconSys,
 }
 
 #[derive(Default)]
@@ -100,9 +102,16 @@ pub struct PackerApp {
     pub(crate) show_exit_confirm: bool,
     pub(crate) source_present_last_frame: bool,
     pub(crate) icon_sys_enabled: bool,
-    pub(crate) icon_sys_title: String,
+    pub(crate) icon_sys_title_line1: String,
+    pub(crate) icon_sys_title_line2: String,
     pub(crate) icon_sys_flag_selection: IconFlagSelection,
     pub(crate) icon_sys_custom_flag: u16,
+    pub(crate) icon_sys_background_transparency: u32,
+    pub(crate) icon_sys_background_colors: [ColorConfig; 4],
+    pub(crate) icon_sys_light_directions: [VectorConfig; 3],
+    pub(crate) icon_sys_light_colors: [ColorFConfig; 3],
+    pub(crate) icon_sys_ambient_color: ColorFConfig,
+    pub(crate) icon_sys_selected_preset: Option<String>,
     pack_job: Option<PackJob>,
     editor_tab: EditorTab,
     psu_toml_editor: TextFileEditor,
@@ -162,9 +171,16 @@ impl Default for PackerApp {
             show_exit_confirm: false,
             source_present_last_frame: false,
             icon_sys_enabled: false,
-            icon_sys_title: String::new(),
+            icon_sys_title_line1: String::new(),
+            icon_sys_title_line2: String::new(),
             icon_sys_flag_selection: IconFlagSelection::Preset(0),
             icon_sys_custom_flag: ICON_SYS_FLAG_OPTIONS[0].0,
+            icon_sys_background_transparency: IconSysConfig::default_background_transparency(),
+            icon_sys_background_colors: IconSysConfig::default_background_colors(),
+            icon_sys_light_directions: IconSysConfig::default_light_directions(),
+            icon_sys_light_colors: IconSysConfig::default_light_colors(),
+            icon_sys_ambient_color: IconSysConfig::default_ambient_color(),
+            icon_sys_selected_preset: None,
             pack_job: None,
             editor_tab: EditorTab::PsuSettings,
             psu_toml_editor: TextFileEditor::default(),
@@ -197,9 +213,57 @@ impl PackerApp {
 
     pub(crate) fn reset_icon_sys_fields(&mut self) {
         self.icon_sys_enabled = false;
-        self.icon_sys_title.clear();
+        self.icon_sys_title_line1.clear();
+        self.icon_sys_title_line2.clear();
         self.icon_sys_flag_selection = IconFlagSelection::Preset(0);
         self.icon_sys_custom_flag = ICON_SYS_FLAG_OPTIONS[0].0;
+        self.icon_sys_background_transparency = IconSysConfig::default_background_transparency();
+        self.icon_sys_background_colors = IconSysConfig::default_background_colors();
+        self.icon_sys_light_directions = IconSysConfig::default_light_directions();
+        self.icon_sys_light_colors = IconSysConfig::default_light_colors();
+        self.icon_sys_ambient_color = IconSysConfig::default_ambient_color();
+        self.icon_sys_selected_preset = None;
+    }
+
+    pub(crate) fn apply_icon_sys_config(&mut self, icon_cfg: psu_packer::IconSysConfig) {
+        let flag_value = icon_cfg.flags.value();
+        self.icon_sys_enabled = true;
+        self.icon_sys_custom_flag = flag_value;
+        if let Some(index) = ICON_SYS_FLAG_OPTIONS
+            .iter()
+            .position(|(value, _)| *value == flag_value)
+        {
+            self.icon_sys_flag_selection = IconFlagSelection::Preset(index);
+        } else {
+            self.icon_sys_flag_selection = IconFlagSelection::Custom;
+        }
+
+        let ascii_chars: Vec<char> = icon_cfg
+            .title
+            .chars()
+            .filter(|c| c.is_ascii() && *c != '\n' && *c != '\r')
+            .collect();
+        let break_index = icon_cfg.linebreak_position() as usize;
+        let break_index = break_index.min(ascii_chars.len());
+        let line1_count = break_index.min(10);
+        self.icon_sys_title_line1 = ascii_chars.iter().take(line1_count).copied().collect();
+        self.icon_sys_title_line2 = ascii_chars
+            .iter()
+            .skip(break_index)
+            .take(10)
+            .copied()
+            .collect();
+
+        self.icon_sys_background_transparency = icon_cfg.background_transparency_value();
+        self.icon_sys_background_colors = icon_cfg.background_colors_array();
+        self.icon_sys_light_directions = icon_cfg.light_directions_array();
+        self.icon_sys_light_colors = icon_cfg.light_colors_array();
+        self.icon_sys_ambient_color = icon_cfg.ambient_color_value();
+        self.icon_sys_selected_preset = icon_cfg.preset.clone();
+    }
+
+    pub(crate) fn clear_icon_sys_preset(&mut self) {
+        self.icon_sys_selected_preset = None;
     }
 
     pub(crate) fn reset_metadata_fields(&mut self) {
@@ -311,6 +375,7 @@ impl PackerApp {
             EditorTab::PsuSettings => self.open_psu_settings_tab(),
             EditorTab::PsuToml => self.open_psu_toml_tab(),
             EditorTab::TitleCfg => self.open_title_cfg_tab(),
+            EditorTab::IconSys => self.open_icon_sys_tab(),
         }
     }
 
@@ -324,6 +389,10 @@ impl PackerApp {
 
     pub(crate) fn open_title_cfg_tab(&mut self) {
         self.editor_tab = EditorTab::TitleCfg;
+    }
+
+    pub(crate) fn open_icon_sys_tab(&mut self) {
+        self.editor_tab = EditorTab::IconSys;
     }
 
     fn has_source(&self) -> bool {
@@ -584,6 +653,7 @@ impl eframe::App for PackerApp {
                     "title.cfg"
                 };
                 ui.selectable_value(&mut self.editor_tab, EditorTab::TitleCfg, title_cfg_label);
+                ui.selectable_value(&mut self.editor_tab, EditorTab::IconSys, "icon.sys");
             });
             ui.separator();
 
@@ -658,6 +728,11 @@ impl eframe::App for PackerApp {
                             }
                         }
                     }
+                }
+                EditorTab::IconSys => {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui::icon_sys::icon_sys_editor(self, ui);
+                    });
                 }
             }
         });
