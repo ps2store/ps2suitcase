@@ -12,6 +12,7 @@ pub enum AppEvent {
     SaveFile,
     OpenSave,
     CreateICN,
+    CreatePsuToml,
     CreateTitleCfg,
     OpenSettings,
     StartPCSX2,
@@ -52,6 +53,9 @@ impl AppState {
     }
     pub fn create_icn(&mut self) {
         self.events.push(AppEvent::CreateICN);
+    }
+    pub fn create_psu_toml(&mut self) {
+        self.events.push(AppEvent::CreatePsuToml);
     }
     pub fn create_title_cfg(&mut self) {
         self.events.push(AppEvent::CreateTitleCfg);
