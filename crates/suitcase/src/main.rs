@@ -16,6 +16,7 @@ use crate::{
     components::menu_bar::{handle_accelerators, menu_bar},
     components::tab_viewer::{TabType, TabViewer},
     components::toolbar::toolbar,
+    data::files::Files,
     data::state::{AppEvent, AppState},
     data::virtual_file::VirtualFile,
     io::export_psu::export_psu,
@@ -28,7 +29,7 @@ use eframe::egui::{Context, Frame, IconData, Margin, ViewportCommand};
 use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, SurfaceIndex, TabIndex};
 use ps2_filetypes::templates::{PSU_TOML_TEMPLATE, TITLE_CFG_TEMPLATE};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() -> eframe::Result<()> {
@@ -157,7 +158,13 @@ impl PSUBuilderApp {
         let folder = config.opened_folder?;
 
         if folder.exists() {
-            self.do_open_folder(folder).ok()
+            match self.do_open_folder(folder.clone()) {
+                Ok(_) => Some(()),
+                Err(err) => {
+                    self.report_folder_error(&folder, &err, false);
+                    None
+                }
+            }
         } else {
             None
         }
@@ -245,7 +252,19 @@ impl PSUBuilderApp {
 
     fn handle_fs_events(&mut self) {
         while let Ok(_event) = self.file_watcher.event_rx.try_recv() {
-            self.state.files = read_folder(self.state.opened_folder.clone().unwrap()).unwrap();
+            let Some(folder) = self.state.opened_folder.clone() else {
+                continue;
+            };
+
+            match read_folder(folder.clone()) {
+                Ok(files) => {
+                    self.state.files = files;
+                }
+                Err(err) => {
+                    self.report_folder_error(&folder, &err, false);
+                    self.clear_opened_folder();
+                }
+            }
         }
     }
 
@@ -321,11 +340,16 @@ impl PSUBuilderApp {
 
     fn open_folder(&mut self) {
         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-            self.do_open_folder(folder).expect("Failed to open folder");
+            if let Err(err) = self.do_open_folder(folder.clone()) {
+                self.report_folder_error(&folder, &err, true);
+            }
         }
     }
 
     fn do_open_folder(&mut self, folder: PathBuf) -> std::io::Result<()> {
+        let files = read_folder(folder.clone())?;
+        self.file_tree.index_folder(&folder)?;
+
         self.state.opened_folder = Some(folder.clone());
         self.state.set_title(
             folder
@@ -335,10 +359,36 @@ impl PSUBuilderApp {
                 .to_string(),
         );
         self.file_watcher.change_path(&folder);
-        self.file_tree.index_folder(&folder);
-        self.state.files = read_folder(folder)?;
+        self.state.files = files;
 
         Ok(())
+    }
+
+    fn clear_opened_folder(&mut self) {
+        self.state.opened_folder = None;
+        self.state.set_title("PS2Suitcase".to_owned());
+        self.state.files = Files::default();
+    }
+
+    fn report_folder_error(&self, folder: &Path, err: &std::io::Error, show_dialog: bool) {
+        eprintln!("Failed to load folder '{}': {err}", folder.display());
+
+        if show_dialog {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                use rfd::{MessageButtons, MessageDialog};
+
+                MessageDialog::new()
+                    .set_title("PS2Suitcase")
+                    .set_description(&format!(
+                        "Failed to load folder '{}':\n{}",
+                        folder.display(),
+                        err
+                    ))
+                    .set_buttons(MessageButtons::Ok)
+                    .show();
+            }
+        }
     }
 
     fn create_title_cfg(&mut self) {
@@ -362,7 +412,9 @@ impl PSUBuilderApp {
                 file_path: filepath,
             });
             if let Some(folder) = &self.state.opened_folder {
-                self.file_tree.index_folder(folder);
+                if let Err(err) = self.file_tree.index_folder(folder) {
+                    self.report_folder_error(folder.as_path(), &err, false);
+                }
             }
         }
     }
@@ -388,7 +440,9 @@ impl PSUBuilderApp {
                 file_path: filepath,
             });
             if let Some(folder) = &self.state.opened_folder {
-                self.file_tree.index_folder(folder);
+                if let Err(err) = self.file_tree.index_folder(folder) {
+                    self.report_folder_error(folder.as_path(), &err, false);
+                }
             }
         }
     }

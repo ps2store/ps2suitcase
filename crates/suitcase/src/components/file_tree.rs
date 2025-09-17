@@ -115,28 +115,58 @@ impl FileTree {
         }
     }
 
-    fn index_folder_internal(&mut self, root: &PathBuf) {
+    fn index_folder_internal(&mut self, root: &PathBuf) -> std::io::Result<()> {
         let mut folders = Vec::new();
         let mut files = Vec::new();
-        let children = std::fs::read_dir(&root).expect("failed to read root directory");
+        let children = match std::fs::read_dir(&root) {
+            Ok(children) => children,
+            Err(err) => {
+                eprintln!("Failed to read contents of '{}': {err}", root.display());
+                return Err(err);
+            }
+        };
 
         for entry in children {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                self.index_folder_internal(&path);
-                folders.push(path);
-            } else {
-                files.push(path);
+            match entry {
+                Ok(entry) => {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if let Err(err) = self.index_folder_internal(&path) {
+                            eprintln!(
+                                "Skipping subdirectory '{}' due to error: {err}",
+                                path.display()
+                            );
+                        } else {
+                            folders.push(path);
+                        }
+                    } else {
+                        files.push(path);
+                    }
+                }
+                Err(err) => {
+                    eprintln!(
+                        "Failed to access directory entry in '{}': {err}",
+                        root.display()
+                    );
+                }
             }
         }
 
         self.dir_cache
             .insert(root.clone(), [folders, files].concat());
+
+        Ok(())
     }
 
-    pub fn index_folder(&mut self, root: &PathBuf) {
+    pub fn index_folder(&mut self, root: &PathBuf) -> std::io::Result<()> {
         self.dir_cache.clear();
-        self.index_folder_internal(root);
+        match self.index_folder_internal(root) {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                self.dir_cache.clear();
+                Err(err)
+            }
+        }
     }
 
     // pub fn show(&mut self, ui: &mut Ui, app: &mut AppState) {
