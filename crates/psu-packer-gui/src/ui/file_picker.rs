@@ -7,50 +7,138 @@ use crate::{PackerApp, SasPrefix, TimestampStrategy};
 
 pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.menu_button("File", |ui| {
-        if ui.button("Save PSU As...").clicked() {
-            app.browse_output_destination();
-            ui.close_menu();
-        }
-
-        if ui.button("Open PSU...").clicked() {
-            app.handle_open_psu();
-            ui.close_menu();
-        }
-
-        ui.add_enabled_ui(app.folder.is_some(), |ui| {
-            if ui.button("Edit psu.toml").clicked() {
-                app.open_psu_toml_tab();
-                ui.close_menu();
-            }
-
-            if ui.button("Edit title.cfg").clicked() {
-                app.open_title_cfg_tab();
-                ui.close_menu();
-            }
-
-            if ui.button("Edit icon.sys").clicked() {
-                app.open_icon_sys_tab();
-                ui.close_menu();
-            }
-
-            if ui.button("Create psu.toml from template").clicked() {
-                app.create_psu_toml_from_template();
-                ui.close_menu();
-            }
-
-            if ui.button("Create title.cfg from template").clicked() {
-                app.create_title_cfg_from_template();
-                ui.close_menu();
-            }
-        });
-
-        ui.separator();
-
-        if ui.button("Exit").clicked() {
-            app.show_exit_confirm = true;
-            ui.close_menu();
-        }
+        file_menu_contents(app, ui, None);
     });
+}
+
+fn file_menu_contents(
+    app: &mut PackerApp,
+    ui: &mut egui::Ui,
+    mut recorder: Option<&mut dyn FileMenuRecorder>,
+) {
+    if ui.button("Save PSU As...").clicked() {
+        app.browse_output_destination();
+        ui.close_menu();
+    }
+
+    if ui.button("Open PSU...").clicked() {
+        app.handle_open_psu();
+        ui.close_menu();
+    }
+
+    let edit_psu_response = ui.button("Edit psu.toml");
+    if let Some(recorder) = recorder.as_mut() {
+        recorder.record(FileMenuItem::EditPsuToml, edit_psu_response.enabled());
+    }
+    if edit_psu_response.clicked() {
+        app.open_psu_toml_tab();
+        ui.close_menu();
+    }
+
+    let edit_title_response = ui.button("Edit title.cfg");
+    if let Some(recorder) = recorder.as_mut() {
+        recorder.record(FileMenuItem::EditTitleCfg, edit_title_response.enabled());
+    }
+    if edit_title_response.clicked() {
+        app.open_title_cfg_tab();
+        ui.close_menu();
+    }
+
+    let edit_icon_response = ui.button("Edit icon.sys");
+    if let Some(recorder) = recorder.as_mut() {
+        recorder.record(FileMenuItem::EditIconSys, edit_icon_response.enabled());
+    }
+    if edit_icon_response.clicked() {
+        app.open_icon_sys_tab();
+        ui.close_menu();
+    }
+
+    let create_psu_response = ui.button("Create psu.toml from template");
+    if let Some(recorder) = recorder.as_mut() {
+        recorder.record(FileMenuItem::CreatePsuToml, create_psu_response.enabled());
+    }
+    if create_psu_response.clicked() {
+        app.create_psu_toml_from_template();
+        ui.close_menu();
+    }
+
+    let create_title_response = ui.button("Create title.cfg from template");
+    if let Some(recorder) = recorder.as_mut() {
+        recorder.record(
+            FileMenuItem::CreateTitleCfg,
+            create_title_response.enabled(),
+        );
+    }
+    if create_title_response.clicked() {
+        app.create_title_cfg_from_template();
+        ui.close_menu();
+    }
+
+    ui.separator();
+
+    if ui.button("Exit").clicked() {
+        app.show_exit_confirm = true;
+        ui.close_menu();
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum FileMenuItem {
+    EditPsuToml,
+    EditTitleCfg,
+    EditIconSys,
+    CreatePsuToml,
+    CreateTitleCfg,
+}
+
+trait FileMenuRecorder {
+    fn record(&mut self, item: FileMenuItem, enabled: bool);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::PackerApp;
+    use eframe::egui;
+    use std::collections::HashMap;
+
+    #[test]
+    fn file_menu_buttons_enabled_without_folder() {
+        let mut app = PackerApp::default();
+        assert!(app.folder.is_none());
+
+        let ctx = egui::Context::default();
+        let mut recorder = RecordingMenuRecorder::default();
+
+        ctx.begin_frame(egui::RawInput::default());
+        egui::CentralPanel::default().show(&ctx, |ui| {
+            file_menu_contents(&mut app, ui, Some(&mut recorder));
+        });
+        let _ = ctx.end_frame();
+
+        assert!(recorder.is_enabled(FileMenuItem::EditPsuToml));
+        assert!(recorder.is_enabled(FileMenuItem::EditTitleCfg));
+        assert!(recorder.is_enabled(FileMenuItem::EditIconSys));
+        assert!(recorder.is_enabled(FileMenuItem::CreatePsuToml));
+        assert!(recorder.is_enabled(FileMenuItem::CreateTitleCfg));
+    }
+
+    #[derive(Default)]
+    struct RecordingMenuRecorder {
+        entries: HashMap<FileMenuItem, bool>,
+    }
+
+    impl RecordingMenuRecorder {
+        fn is_enabled(&self, item: FileMenuItem) -> bool {
+            *self.entries.get(&item).unwrap_or(&false)
+        }
+    }
+
+    impl FileMenuRecorder for RecordingMenuRecorder {
+        fn record(&mut self, item: FileMenuItem, enabled: bool) {
+            self.entries.insert(item, enabled);
+        }
+    }
 }
 
 pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
