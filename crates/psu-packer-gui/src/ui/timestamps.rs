@@ -20,6 +20,8 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
             manual_change = true;
         }
 
+        ui.small("Deterministic timestamps ensure repeated packs produce identical archives for verification.");
+
         if !has_timestamp {
             ui.small("No timestamp will be saved.");
             new_timestamp = None;
