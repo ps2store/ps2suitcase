@@ -9,6 +9,7 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
         let default_timestamp = default_timestamp();
         let source_timestamp = app.source_timestamp;
         let planned_timestamp = app.planned_timestamp_for_current_source();
+        let recommended_strategy = recommended_timestamp_strategy(source_timestamp, planned_timestamp);
 
         ui.small(
             "Deterministic timestamps ensure repeated packs produce identical archives for verification.",
@@ -16,154 +17,294 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
         ui.add_space(6.0);
 
         let mut strategy = app.timestamp_strategy;
-        let mut strategy_changed = false;
+        let recommended_badge = |ui: &mut egui::Ui| {
+            let badge_text = egui::RichText::new("Recommended")
+                .color(egui::Color32::WHITE)
+                .background_color(egui::Color32::from_rgb(38, 166, 65))
+                .strong();
+            ui.add(egui::Label::new(badge_text))
+                .on_hover_text("Best choice based on the available metadata");
+        };
 
-        strategy_changed |= ui
-            .radio_value(
-                &mut strategy,
-                TimestampStrategy::None,
-                "Do not save a timestamp",
-            )
-            .changed();
-        strategy_changed |= ui
-            .radio_value(
-                &mut strategy,
-                TimestampStrategy::InheritSource,
-                "Inherit timestamp from the loaded folder or PSU",
-            )
-            .changed();
-        strategy_changed |= ui
-            .radio_value(
-                &mut strategy,
-                TimestampStrategy::SasRules,
-                "Apply SAS timestamp rules",
-            )
-            .changed();
-        strategy_changed |= ui
-            .radio_value(
-                &mut strategy,
-                TimestampStrategy::Manual,
-                "Enter timestamp manually",
-            )
-            .changed();
-
-        if strategy_changed && strategy != app.timestamp_strategy {
-            app.set_timestamp_strategy(strategy);
-        }
-
-        if matches!(app.timestamp_strategy, TimestampStrategy::Manual)
-            && app.manual_timestamp.is_none()
-        {
-            app.manual_timestamp = Some(default_timestamp);
-            app.refresh_timestamp_from_strategy();
-        }
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    let response = ui.radio_value(
+                        &mut strategy,
+                        TimestampStrategy::None,
+                        "Do not save a timestamp",
+                    );
+                    if response.changed()
+                        && app.timestamp_strategy != TimestampStrategy::None
+                        && strategy == TimestampStrategy::None
+                    {
+                        app.set_timestamp_strategy(strategy);
+                    }
+                });
+                ui.add_space(4.0);
+                ui.label("• Use when verifying contents does not require metadata timestamps.");
+                ui.label("• Relies on: no metadata—timestamp field will be omitted.");
+            });
+        });
 
         ui.add_space(6.0);
 
-        match app.timestamp_strategy {
-            TimestampStrategy::None => {
-                ui.small("No timestamp will be saved in the archive.");
-            }
-            TimestampStrategy::InheritSource => {
-                if let Some(ts) = source_timestamp {
-                    ui.small(format!(
-                        "Source timestamp: {}",
-                        ts.format(TIMESTAMP_FORMAT)
-                    ));
-                } else {
-                    ui.colored_label(
-                        egui::Color32::YELLOW,
-                        "No timestamp is available to inherit from the current source.",
-                    );
-                }
-            }
-            TimestampStrategy::SasRules => {
-                if let Some(ts) = planned_timestamp {
-                    ui.small(format!(
-                        "Planned timestamp: {}",
-                        ts.format(TIMESTAMP_FORMAT)
-                    ));
-                } else {
-                    ui.colored_label(
-                        egui::Color32::YELLOW,
-                        "Automatic rules are unavailable for the current name.",
-                    );
-                }
-            }
-            TimestampStrategy::Manual => {
-                let mut timestamp = app.manual_timestamp.unwrap_or(default_timestamp);
-                let mut date: NaiveDate = timestamp.date();
-                let time = timestamp.time();
-                let mut hour = time.hour();
-                let mut minute = time.minute();
-                let mut second = time.second();
-                let mut changed = false;
-
+        ui.group(|ui| {
+            ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    let date_response = ui.add(
-                        DatePickerButton::new(&mut date)
-                            .id_source("metadata_timestamp_date_picker"),
+                    let response = ui.radio_value(
+                        &mut strategy,
+                        TimestampStrategy::InheritSource,
+                        "Inherit timestamp from the loaded folder or PSU",
                     );
-                    changed |= date_response.changed();
-
-                    ui.label("Time");
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut hour)
-                                .clamp_range(0..=23)
-                                .suffix(" h"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut minute)
-                                .clamp_range(0..=59)
-                                .suffix(" m"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut second)
-                                .clamp_range(0..=59)
-                                .suffix(" s"),
-                        )
-                        .changed();
-                });
-
-                if changed {
-                    if let Some(new_time) = NaiveTime::from_hms_opt(hour, minute, second) {
-                        timestamp = NaiveDateTime::new(date, new_time);
-                        app.manual_timestamp = Some(timestamp);
-                        app.refresh_timestamp_from_strategy();
+                    if recommended_strategy == Some(TimestampStrategy::InheritSource) {
+                        recommended_badge(ui);
                     }
-                } else if app.manual_timestamp != Some(timestamp) {
-                    app.manual_timestamp = Some(timestamp);
+                    if response.changed()
+                        && app.timestamp_strategy != TimestampStrategy::InheritSource
+                        && strategy == TimestampStrategy::InheritSource
+                    {
+                        app.set_timestamp_strategy(strategy);
+                    }
+                });
+                ui.add_space(4.0);
+                ui.label("• Use when the loaded source already contains a trusted timestamp.");
+                ui.label(format!(
+                    "• Relies on: Source timestamp ({}).",
+                    availability_text(source_timestamp, "available", "unavailable")
+                ));
+                if let Some(ts) = source_timestamp {
+                    ui.small(format!("  Source value: {}", ts.format(TIMESTAMP_FORMAT)));
+                }
+            });
+        });
+
+        ui.add_space(6.0);
+
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    let response = ui.radio_value(
+                        &mut strategy,
+                        TimestampStrategy::SasRules,
+                        "Apply SAS timestamp rules",
+                    );
+                    if recommended_strategy == Some(TimestampStrategy::SasRules) {
+                        recommended_badge(ui);
+                    }
+                    if response.changed()
+                        && app.timestamp_strategy != TimestampStrategy::SasRules
+                        && strategy == TimestampStrategy::SasRules
+                    {
+                        app.set_timestamp_strategy(strategy);
+                    }
+                });
+                ui.add_space(4.0);
+                ui.label("• Use when project names follow SAS conventions for deterministic scheduling.");
+                let project_name = project_name_text(app);
+                ui.label(format!(
+                    "• Relies on: Project name ({project_name}) and timestamp rules (planned value {}).",
+                    availability_text(planned_timestamp, "available", "unavailable")
+                ));
+                if let Some(ts) = planned_timestamp {
+                    ui.small(format!("  Planned value: {}", ts.format(TIMESTAMP_FORMAT)));
+                }
+            });
+        });
+
+        ui.add_space(6.0);
+
+        let mut manual_timestamp_changed = false;
+
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    let response = ui.radio_value(
+                        &mut strategy,
+                        TimestampStrategy::Manual,
+                        "Enter timestamp manually",
+                    );
+                    if recommended_strategy == Some(TimestampStrategy::Manual) {
+                        recommended_badge(ui);
+                    }
+                    if response.changed()
+                        && app.timestamp_strategy != TimestampStrategy::Manual
+                        && strategy == TimestampStrategy::Manual
+                    {
+                        app.set_timestamp_strategy(strategy);
+                    }
+                });
+                ui.add_space(4.0);
+                ui.label("• Use when you must pin the archive to an explicit, reviewer-approved timestamp.");
+                ui.label("• Relies on: Manual date and time you enter here.");
+
+                if strategy == TimestampStrategy::Manual
+                    && app.manual_timestamp.is_none()
+                {
+                    app.manual_timestamp = Some(default_timestamp);
                     app.refresh_timestamp_from_strategy();
                 }
 
-                if let Some(ts) = app.manual_timestamp {
-                    ui.small(format!("Selected: {}", ts.format(TIMESTAMP_FORMAT)));
-                }
+                if strategy == TimestampStrategy::Manual {
+                    let mut timestamp = app.manual_timestamp.unwrap_or(default_timestamp);
+                    let mut date: NaiveDate = timestamp.date();
+                    let time = timestamp.time();
+                    let mut hour = time.hour();
+                    let mut minute = time.minute();
+                    let mut second = time.second();
+                    let mut changed = false;
 
-                if let Some(planned) = planned_timestamp {
-                    if ui.button("Copy planned timestamp").clicked() {
-                        app.manual_timestamp = Some(planned);
-                        app.refresh_timestamp_from_strategy();
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        let date_response = ui.add(
+                            DatePickerButton::new(&mut date)
+                                .id_source("metadata_timestamp_date_picker"),
+                        );
+                        changed |= date_response.changed();
+
+                        ui.label("Time");
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(&mut hour)
+                                    .clamp_range(0..=23)
+                                    .suffix(" h"),
+                            )
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(&mut minute)
+                                    .clamp_range(0..=59)
+                                    .suffix(" m"),
+                            )
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(&mut second)
+                                    .clamp_range(0..=59)
+                                    .suffix(" s"),
+                            )
+                            .changed();
+                    });
+
+                    if changed {
+                        if let Some(new_time) = NaiveTime::from_hms_opt(hour, minute, second) {
+                            timestamp = NaiveDateTime::new(date, new_time);
+                            app.manual_timestamp = Some(timestamp);
+                            manual_timestamp_changed = true;
+                        }
+                    } else if app.manual_timestamp != Some(timestamp) {
+                        app.manual_timestamp = Some(timestamp);
+                        manual_timestamp_changed = true;
+                    }
+
+                    if let Some(ts) = app.manual_timestamp {
+                        ui.small(format!("Selected: {}", ts.format(TIMESTAMP_FORMAT)));
+                    }
+
+                    if let Some(planned) = planned_timestamp {
+                        if ui.button("Copy planned timestamp").clicked() {
+                            app.manual_timestamp = Some(planned);
+                            manual_timestamp_changed = true;
+                        }
                     }
                 }
-            }
+            });
+        });
+
+        if strategy != app.timestamp_strategy {
+            app.set_timestamp_strategy(strategy);
         }
 
+        if manual_timestamp_changed {
+            app.refresh_timestamp_from_strategy();
+        }
+
+        ui.add_space(8.0);
+
+        let summary_title = current_strategy_title(app.timestamp_strategy);
+        let summary_reason = current_strategy_reason(app, source_timestamp, planned_timestamp);
+        let summary_text = format!("Currently using: {summary_title} because {summary_reason}.");
+
+        ui.group(|ui| {
+            ui.label(egui::RichText::new(summary_text).strong());
+        });
+
         ui.add_space(6.0);
-        let source_label = source_timestamp
-            .map(|ts| ts.format(TIMESTAMP_FORMAT).to_string())
-            .unwrap_or_else(|| "Unavailable".to_string());
-        let planned_label = planned_timestamp
-            .map(|ts| ts.format(TIMESTAMP_FORMAT).to_string())
-            .unwrap_or_else(|| "Unavailable".to_string());
-        ui.small(format!("Source timestamp: {source_label}"));
-        ui.small(format!("Planned (SAS) timestamp: {planned_label}"));
     });
+}
+
+fn recommended_timestamp_strategy(
+    source_timestamp: Option<NaiveDateTime>,
+    planned_timestamp: Option<NaiveDateTime>,
+) -> Option<TimestampStrategy> {
+    if source_timestamp.is_some() {
+        Some(TimestampStrategy::InheritSource)
+    } else if planned_timestamp.is_some() {
+        Some(TimestampStrategy::SasRules)
+    } else {
+        Some(TimestampStrategy::Manual)
+    }
+}
+
+fn availability_text(
+    timestamp: Option<NaiveDateTime>,
+    available_text: &str,
+    unavailable_text: &str,
+) -> String {
+    if timestamp.is_some() {
+        available_text.to_string()
+    } else {
+        unavailable_text.to_string()
+    }
+}
+
+fn project_name_text(app: &PackerApp) -> String {
+    let name = app.folder_name();
+    if name.trim().is_empty() {
+        "not set".to_string()
+    } else {
+        name
+    }
+}
+
+fn current_strategy_title(strategy: TimestampStrategy) -> &'static str {
+    match strategy {
+        TimestampStrategy::None => "No timestamp",
+        TimestampStrategy::InheritSource => "Inherited source timestamp",
+        TimestampStrategy::SasRules => "SAS rules timestamp",
+        TimestampStrategy::Manual => "Manual timestamp",
+    }
+}
+
+fn current_strategy_reason(
+    app: &PackerApp,
+    source_timestamp: Option<NaiveDateTime>,
+    planned_timestamp: Option<NaiveDateTime>,
+) -> String {
+    match app.timestamp_strategy {
+        TimestampStrategy::None => {
+            "timestamps are intentionally omitted from the archive".to_string()
+        }
+        TimestampStrategy::InheritSource => match source_timestamp {
+            Some(ts) => format!(
+                "the loaded source provided {} to preserve",
+                ts.format(TIMESTAMP_FORMAT)
+            ),
+            None => "no source timestamp was found to inherit".to_string(),
+        },
+        TimestampStrategy::SasRules => match planned_timestamp {
+            Some(ts) => format!(
+                "SAS rules computed {} for {}",
+                ts.format(TIMESTAMP_FORMAT),
+                app.folder_name()
+            ),
+            None => "automatic SAS rules could not determine a timestamp".to_string(),
+        },
+        TimestampStrategy::Manual => match app.manual_timestamp {
+            Some(ts) => format!("you entered {}", ts.format(TIMESTAMP_FORMAT)),
+            None => "a manual timestamp is required until other data is provided".to_string(),
+        },
+    }
 }
 
 pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
@@ -357,4 +498,112 @@ fn parse_aliases(input: &str, key: &str) -> Vec<String> {
 enum MoveDirection {
     Up,
     Down,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{PackerApp, SasPrefix, TimestampStrategy};
+    use chrono::{Duration, NaiveDate};
+    use eframe::egui;
+
+    #[test]
+    fn summary_references_source_when_inheriting() {
+        let mut app = PackerApp::default();
+        let source = NaiveDate::from_ymd_opt(2024, 1, 2)
+            .unwrap()
+            .and_hms_opt(3, 4, 5)
+            .unwrap();
+        app.source_timestamp = Some(source);
+        app.timestamp_strategy = TimestampStrategy::InheritSource;
+        app.refresh_timestamp_from_strategy();
+
+        let rendered = render_metadata_text(&mut app);
+
+        assert!(rendered.contains("Do not save a timestamp"));
+        assert!(rendered.contains("Source timestamp (available)"));
+        assert!(rendered.contains(
+            "Currently using: Inherited source timestamp because the loaded source provided 2024-01-02 03:04:05 to preserve."
+        ));
+        assert!(rendered.contains("Recommended"));
+    }
+
+    #[test]
+    fn summary_references_planned_when_using_sas_rules() {
+        let mut app = PackerApp::default();
+        app.source_timestamp = None;
+        app.selected_prefix = SasPrefix::App;
+        app.folder_base_name = "TEST".to_string();
+        app.timestamp_strategy = TimestampStrategy::SasRules;
+        app.refresh_timestamp_from_strategy();
+
+        let rendered = render_metadata_text(&mut app);
+
+        assert!(rendered.contains("Project name (APP_TEST)"));
+        assert!(rendered.contains("planned value available"));
+        assert!(rendered.contains("SAS rules timestamp because SAS rules computed"));
+        assert!(rendered.contains("Recommended"));
+    }
+
+    #[test]
+    fn manual_summary_updates_after_manual_timestamp_change() {
+        let mut app = PackerApp::default();
+        app.source_timestamp = None;
+        app.timestamp_strategy = TimestampStrategy::Manual;
+        let initial = NaiveDate::from_ymd_opt(2024, 5, 6)
+            .unwrap()
+            .and_hms_opt(7, 8, 9)
+            .unwrap();
+        app.manual_timestamp = Some(initial);
+        app.refresh_timestamp_from_strategy();
+
+        let rendered = render_metadata_text(&mut app);
+        assert!(rendered.contains(
+            "Currently using: Manual timestamp because you entered 2024-05-06 07:08:09."
+        ));
+
+        let updated = initial + Duration::minutes(5);
+        app.manual_timestamp = Some(updated);
+        app.refresh_timestamp_from_strategy();
+
+        let rerendered = render_metadata_text(&mut app);
+        assert!(rerendered.contains(
+            "Currently using: Manual timestamp because you entered 2024-05-06 07:13:09."
+        ));
+    }
+
+    fn render_metadata_text(app: &mut PackerApp) -> String {
+        let ctx = egui::Context::default();
+        ctx.begin_frame(egui::RawInput::default());
+        egui::CentralPanel::default().show(&ctx, |ui| {
+            metadata_timestamp_section(app, ui);
+        });
+        let full_output = ctx.end_frame();
+        let mut texts = Vec::new();
+        collect_text_from_clipped_shapes(&full_output.shapes, &mut texts);
+        texts.join("\n")
+    }
+
+    fn collect_text_from_clipped_shapes(
+        shapes: &[egui::epaint::ClippedShape],
+        output: &mut Vec<String>,
+    ) {
+        for clipped in shapes {
+            collect_text_from_shape(&clipped.shape, output);
+        }
+    }
+
+    fn collect_text_from_shape(shape: &egui::epaint::Shape, output: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Vec(shapes) => {
+                for nested in shapes {
+                    collect_text_from_shape(nested, output);
+                }
+            }
+            egui::epaint::Shape::Text(text_shape) => {
+                output.push(text_shape.galley.text().to_string());
+            }
+            _ => {}
+        }
+    }
 }
