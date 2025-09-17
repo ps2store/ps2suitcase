@@ -7,8 +7,9 @@ use std::{
 
 use chrono::NaiveDateTime;
 use eframe::egui;
-use ps2_filetypes::{templates, IconSys};
+use ps2_filetypes::{templates, IconSys, TitleCfg};
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
+use tempfile::tempdir;
 
 pub(crate) mod sas_timestamps;
 pub mod ui;
@@ -894,6 +895,94 @@ impl PackerApp {
         }
     }
 
+    pub(crate) fn apply_psu_toml_edits(&mut self) -> bool {
+        let temp_dir = match tempdir() {
+            Ok(dir) => dir,
+            Err(err) => {
+                self.set_error_message(format!(
+                    "Failed to prepare temporary psu.toml for parsing: {err}"
+                ));
+                return false;
+            }
+        };
+
+        let config_path = temp_dir.path().join("psu.toml");
+        if let Err(err) = fs::write(&config_path, self.psu_toml_editor.content.as_bytes()) {
+            self.set_error_message(format!("Failed to write temporary psu.toml: {err}"));
+            return false;
+        }
+
+        let config = match psu_packer::load_config(temp_dir.path()) {
+            Ok(config) => config,
+            Err(err) => {
+                self.set_error_message(format!("Failed to parse psu.toml: {err}"));
+                return false;
+            }
+        };
+
+        let previous_default_output = self.default_output_file_name();
+
+        let psu_packer::Config {
+            name,
+            timestamp,
+            include,
+            exclude,
+            icon_sys,
+        } = config;
+
+        self.set_folder_name_from_full(&name);
+        self.psu_file_base_name = self.folder_base_name.clone();
+        self.source_timestamp = timestamp;
+        self.manual_timestamp = timestamp;
+        self.timestamp = timestamp;
+        self.timestamp_strategy = if timestamp.is_some() {
+            TimestampStrategy::Manual
+        } else {
+            TimestampStrategy::None
+        };
+        self.timestamp_from_rules = false;
+        self.metadata_inputs_changed(previous_default_output);
+
+        self.include_files = include.unwrap_or_default();
+        self.exclude_files = exclude.unwrap_or_default();
+        self.selected_include = None;
+        self.selected_exclude = None;
+
+        let existing_icon_sys = self.icon_sys_existing.clone();
+
+        match icon_sys {
+            Some(icon_cfg) => {
+                self.apply_icon_sys_config(icon_cfg, existing_icon_sys.as_ref());
+            }
+            None => {
+                if let Some(existing_icon_sys) = existing_icon_sys.as_ref() {
+                    self.apply_icon_sys_file(existing_icon_sys);
+                } else {
+                    self.reset_icon_sys_fields();
+                }
+            }
+        }
+
+        self.psu_toml_sync_blocked = false;
+        self.clear_error_message();
+        self.status = "Applied psu.toml edits in memory.".to_string();
+        true
+    }
+
+    pub(crate) fn apply_title_cfg_edits(&mut self) -> bool {
+        let cfg = TitleCfg::new(self.title_cfg_editor.content.clone());
+        if !cfg.has_mandatory_fields() {
+            self.set_error_message(
+                "title.cfg is missing mandatory fields. Please include the required keys.",
+            );
+            return false;
+        }
+
+        self.clear_error_message();
+        self.status = "Validated title.cfg contents.".to_string();
+        true
+    }
+
     fn clear_text_editors(&mut self) {
         self.psu_toml_editor.clear();
         self.title_cfg_editor.clear();
@@ -1143,13 +1232,20 @@ fn save_editor_to_disk(
     Ok(path)
 }
 
+#[derive(Default)]
+struct TextEditorActions {
+    save_clicked: bool,
+    apply_clicked: bool,
+}
+
 fn text_editor_ui(
     ui: &mut egui::Ui,
     file_name: &str,
     editing_enabled: bool,
     save_enabled: bool,
     editor: &mut TextFileEditor,
-) -> bool {
+) -> TextEditorActions {
+    let mut actions = TextEditorActions::default();
     if let Some(message) = &editor.load_error {
         ui.colored_label(egui::Color32::YELLOW, message);
         ui.add_space(8.0);
@@ -1177,7 +1273,6 @@ fn text_editor_ui(
 
     ui.add_space(8.0);
 
-    let mut save_clicked = false;
     if save_enabled {
         ui.horizontal(|ui| {
             let button_label = format!("Save {file_name}");
@@ -1185,16 +1280,36 @@ fn text_editor_ui(
                 .add_enabled(editor.modified, egui::Button::new(button_label))
                 .clicked()
             {
-                save_clicked = true;
+                actions.save_clicked = true;
             }
 
             if editor.modified {
+                if ui
+                    .add_enabled(
+                        editor.modified,
+                        egui::Button::new(format!("Apply {file_name}")),
+                    )
+                    .clicked()
+                {
+                    actions.apply_clicked = true;
+                }
                 ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
             }
         });
     } else if editing_enabled {
         if editor.modified {
-            ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        editor.modified,
+                        egui::Button::new(format!("Apply {file_name}")),
+                    )
+                    .clicked()
+                {
+                    actions.apply_clicked = true;
+                }
+                ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
+            });
         }
         ui.label(egui::RichText::new(format!(
             "Edits to {file_name} are kept in memory. Select a folder when you're ready to save them to disk."
@@ -1206,7 +1321,7 @@ fn text_editor_ui(
         ));
     }
 
-    save_clicked
+    actions
 }
 
 impl eframe::App for PackerApp {
@@ -1304,14 +1419,14 @@ impl eframe::App for PackerApp {
                 EditorTab::PsuToml => {
                     let editing_enabled = true; // Allow editing even without a source selection.
                     let save_enabled = self.folder.is_some();
-                    let save_clicked = text_editor_ui(
+                    let actions = text_editor_ui(
                         ui,
                         "psu.toml",
                         editing_enabled,
                         save_enabled,
                         &mut self.psu_toml_editor,
                     );
-                    if save_clicked {
+                    if actions.save_clicked {
                         match save_editor_to_disk(
                             self.folder.as_deref(),
                             "psu.toml",
@@ -1326,18 +1441,21 @@ impl eframe::App for PackerApp {
                             }
                         }
                     }
+                    if actions.apply_clicked {
+                        self.apply_psu_toml_edits();
+                    }
                 }
                 EditorTab::TitleCfg => {
                     let editing_enabled = true; // Allow editing even without a source selection.
                     let save_enabled = self.folder.is_some();
-                    let save_clicked = text_editor_ui(
+                    let actions = text_editor_ui(
                         ui,
                         "title.cfg",
                         editing_enabled,
                         save_enabled,
                         &mut self.title_cfg_editor,
                     );
-                    if save_clicked {
+                    if actions.save_clicked {
                         match save_editor_to_disk(
                             self.folder.as_deref(),
                             "title.cfg",
@@ -1351,6 +1469,9 @@ impl eframe::App for PackerApp {
                                 self.set_error_message(format!("Failed to save title.cfg: {err}"));
                             }
                         }
+                    }
+                    if actions.apply_clicked {
+                        self.apply_title_cfg_edits();
                     }
                 }
                 EditorTab::IconSys => {
@@ -1387,14 +1508,15 @@ mod tests {
 
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let save_clicked = text_editor_ui(
+                let actions = text_editor_ui(
                     ui,
                     "psu.toml",
                     true,
                     app.folder.is_some(),
                     &mut app.psu_toml_editor,
                 );
-                assert!(!save_clicked);
+                assert!(!actions.save_clicked);
+                assert!(!actions.apply_clicked);
             });
         });
 
@@ -1408,14 +1530,15 @@ mod tests {
 
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let save_clicked = text_editor_ui(
+                let actions = text_editor_ui(
                     ui,
                     "title.cfg",
                     true,
                     app.folder.is_some(),
                     &mut app.title_cfg_editor,
                 );
-                assert!(!save_clicked);
+                assert!(!actions.save_clicked);
+                assert!(!actions.apply_clicked);
             });
         });
 
@@ -1426,18 +1549,98 @@ mod tests {
 
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let save_clicked = text_editor_ui(
+                let actions = text_editor_ui(
                     ui,
                     "psu.toml",
                     true,
                     app.folder.is_some(),
                     &mut app.psu_toml_editor,
                 );
-                assert!(!save_clicked);
+                assert!(!actions.save_clicked);
+                assert!(!actions.apply_clicked);
             });
         });
 
         assert_eq!(app.psu_toml_editor.content, "custom configuration");
         assert!(app.psu_toml_editor.modified);
+    }
+
+    #[test]
+    fn apply_psu_toml_updates_state_without_disk() {
+        let mut app = PackerApp::default();
+        let timestamp = "2023-05-17 08:30:00";
+        app.psu_toml_editor.content = format!(
+            r#"[config]
+name = "APP_Custom Save"
+timestamp = "{timestamp}"
+include = ["BOOT.ELF", "DATA.BIN"]
+exclude = ["IGNORE.DAT"]
+
+[icon_sys]
+flags = 1
+title = "HELLOWORLD"
+linebreak_pos = 5
+"#
+        );
+        app.psu_toml_editor.modified = true;
+
+        assert!(app.apply_psu_toml_edits());
+
+        assert_eq!(app.selected_prefix, SasPrefix::App);
+        assert_eq!(app.folder_base_name, "Custom Save");
+        assert_eq!(app.psu_file_base_name, "Custom Save");
+        assert_eq!(app.include_files, vec!["BOOT.ELF", "DATA.BIN"]);
+        assert_eq!(app.exclude_files, vec!["IGNORE.DAT"]);
+        let expected_timestamp =
+            NaiveDateTime::parse_from_str(timestamp, TIMESTAMP_FORMAT).unwrap();
+        assert_eq!(app.timestamp, Some(expected_timestamp));
+        assert_eq!(app.timestamp_strategy, TimestampStrategy::Manual);
+        assert!(app.icon_sys_enabled);
+        assert!(matches!(
+            app.icon_sys_flag_selection,
+            IconFlagSelection::Preset(1)
+        ));
+        assert_eq!(app.icon_sys_custom_flag, 1);
+        assert_eq!(app.icon_sys_title_line1, "HELLO");
+        assert_eq!(app.icon_sys_title_line2, "WORLD");
+        assert!(!app.psu_toml_sync_blocked);
+        assert!(app.psu_toml_editor.modified);
+    }
+
+    #[test]
+    fn apply_invalid_psu_toml_reports_error() {
+        let mut app = PackerApp::default();
+        app.psu_toml_editor.content = "[config".to_string();
+        app.psu_toml_editor.modified = true;
+
+        assert!(!app.apply_psu_toml_edits());
+        assert!(app
+            .error_message
+            .as_ref()
+            .is_some_and(|message| message.contains("Failed to")));
+    }
+
+    #[test]
+    fn apply_title_cfg_validates_contents() {
+        let mut app = PackerApp::default();
+        app.title_cfg_editor.content = templates::TITLE_CFG_TEMPLATE.to_string();
+        app.title_cfg_editor.modified = true;
+
+        assert!(app.apply_title_cfg_edits());
+        assert_eq!(app.status, "Validated title.cfg contents.");
+        assert!(app.error_message.is_none());
+    }
+
+    #[test]
+    fn apply_title_cfg_reports_missing_fields() {
+        let mut app = PackerApp::default();
+        app.title_cfg_editor.content = "title=Example".to_string();
+        app.title_cfg_editor.modified = true;
+
+        assert!(!app.apply_title_cfg_edits());
+        assert!(app
+            .error_message
+            .as_ref()
+            .is_some_and(|message| message.contains("missing mandatory")));
     }
 }
