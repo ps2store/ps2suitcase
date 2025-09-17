@@ -79,7 +79,10 @@ fn create_native_options(renderer: eframe::Renderer) -> NativeOptions {
                 }
             }),
         multisampling: 4,
-        depth_buffer: 1,
+        // Request a standard 24-bit depth buffer. WGPU expects at least 24 bits
+        // on most platforms, and Glow gracefully ignores the request when it
+        // cannot provide a depth buffer.
+        depth_buffer: 24,
         renderer,
         ..Default::default()
     }
