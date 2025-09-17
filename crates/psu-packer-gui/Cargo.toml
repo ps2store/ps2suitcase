@@ -7,10 +7,10 @@ version.workspace = true
 [dependencies]
 psu-packer = { path = "../psu-packer" }
 ps2-filetypes = { path = "../ps2-filetypes" }
-eframe = { version = "0.27", features = ["default", "wgpu"] }
+eframe = { version = "0.31.1", features = ["default", "wgpu"] }
 rfd = "0.14"
 chrono = "0.4.42"
-egui_extras = { version = "0.27", features = ["chrono"] }
+egui_extras = { version = "0.31.1", features = ["chrono"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
