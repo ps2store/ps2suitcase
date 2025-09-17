@@ -7,7 +7,7 @@ use std::{
 
 use chrono::NaiveDateTime;
 use eframe::egui;
-use ps2_filetypes::{templates, IconSys, TitleCfg};
+use ps2_filetypes::{templates, IconSys, PSUEntryKind, TitleCfg, PSU};
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 use tempfile::tempdir;
 
@@ -1023,19 +1023,88 @@ impl PackerApp {
             return;
         }
 
+        let Some((folder, config)) = self.prepare_pack_inputs() else {
+            return;
+        };
+
+        let output_path = PathBuf::from(&self.output);
+        self.start_pack_job(folder, output_path, config);
+    }
+
+    pub(crate) fn handle_update_psu_request(&mut self) {
+        if self.is_pack_running() {
+            return;
+        }
+
+        let destination = match self.determine_update_destination() {
+            Ok(path) => path,
+            Err(message) => {
+                self.set_error_message(message);
+                return;
+            }
+        };
+
+        if !destination.exists() {
+            self.set_error_message(format!(
+                "Cannot update because {} does not exist.",
+                destination.display()
+            ));
+            return;
+        }
+
+        let Some((folder, config)) = self.prepare_pack_inputs() else {
+            return;
+        };
+
+        self.start_pack_job(folder, destination, config);
+    }
+
+    pub(crate) fn handle_save_as_folder_with_contents(&mut self) {
+        if self.is_pack_running() {
+            return;
+        }
+
+        let source_path = match self.determine_export_source_path() {
+            Ok(path) => path,
+            Err(message) => {
+                self.set_error_message(message);
+                return;
+            }
+        };
+
+        let Some(destination_parent) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
+
+        match self.export_psu_to_folder(&source_path, &destination_parent) {
+            Ok(export_root) => {
+                self.clear_error_message();
+                self.status = format!(
+                    "Exported PSU contents from {} to {}",
+                    source_path.display(),
+                    export_root.display()
+                );
+            }
+            Err(message) => {
+                self.set_error_message(message);
+            }
+        }
+    }
+
+    fn prepare_pack_inputs(&mut self) -> Option<(PathBuf, psu_packer::Config)> {
         let Some(folder) = self.folder.clone() else {
             self.set_error_message("Please select a folder");
-            return;
+            return None;
         };
 
         if self.folder_base_name.trim().is_empty() {
             self.set_error_message("Please provide a folder name");
-            return;
+            return None;
         }
 
         if self.psu_file_base_name.trim().is_empty() {
             self.set_error_message("Please provide a PSU filename");
-            return;
+            return None;
         }
 
         let missing = self.missing_required_project_files_for(&folder);
@@ -1044,19 +1113,124 @@ impl PackerApp {
             let message = Self::format_missing_required_files_message(&missing);
             let failed_files = missing.iter().map(|entry| entry.name.clone()).collect();
             self.set_error_message((message, failed_files));
-            return;
+            return None;
         }
 
         let config = match self.build_config() {
             Ok(config) => config,
             Err(err) => {
                 self.set_error_message(err);
-                return;
+                return None;
             }
         };
 
-        let output_path = PathBuf::from(&self.output);
-        self.start_pack_job(folder, output_path, config);
+        Some((folder, config))
+    }
+
+    fn determine_update_destination(&self) -> Result<PathBuf, String> {
+        if let Some(path) = &self.loaded_psu_path {
+            return Ok(path.clone());
+        }
+
+        let trimmed = self.output.trim();
+        if trimmed.is_empty() {
+            Err("Load a PSU file or set the output path before updating.".to_string())
+        } else {
+            Ok(PathBuf::from(trimmed))
+        }
+    }
+
+    fn determine_export_source_path(&self) -> Result<PathBuf, String> {
+        if let Some(path) = &self.loaded_psu_path {
+            return Ok(path.clone());
+        }
+
+        let trimmed = self.output.trim();
+        if trimmed.is_empty() {
+            Err("Load a PSU file or select a packed PSU before exporting its contents.".to_string())
+        } else {
+            Ok(PathBuf::from(trimmed))
+        }
+    }
+
+    fn export_psu_to_folder(
+        &self,
+        source_path: &Path,
+        destination_parent: &Path,
+    ) -> Result<PathBuf, String> {
+        if !source_path.is_file() {
+            return Err(format!(
+                "Cannot export because {} does not exist.",
+                source_path.display()
+            ));
+        }
+
+        let data = fs::read(source_path)
+            .map_err(|err| format!("Failed to read {}: {err}", source_path.display()))?;
+
+        let parsed = std::panic::catch_unwind(|| PSU::new(data))
+            .map_err(|_| format!("Failed to parse PSU file {}", source_path.display()))?;
+
+        let entries = parsed.entries();
+        let root_name = entries
+            .iter()
+            .find(|entry| {
+                matches!(entry.kind, PSUEntryKind::Directory)
+                    && entry.name != "."
+                    && entry.name != ".."
+            })
+            .map(|entry| entry.name.clone())
+            .ok_or_else(|| format!("{} does not contain PSU metadata", source_path.display()))?;
+
+        if root_name.trim().is_empty() {
+            return Err(format!(
+                "{} does not contain a valid root directory entry.",
+                source_path.display()
+            ));
+        }
+
+        let export_root = destination_parent.join(&root_name);
+        fs::create_dir_all(&export_root)
+            .map_err(|err| format!("Failed to create {}: {err}", export_root.display()))?;
+
+        for entry in entries {
+            match entry.kind {
+                PSUEntryKind::Directory => {
+                    if entry.name == "." || entry.name == ".." {
+                        continue;
+                    }
+
+                    let target = if entry.name == root_name {
+                        export_root.clone()
+                    } else {
+                        export_root.join(&entry.name)
+                    };
+
+                    fs::create_dir_all(&target)
+                        .map_err(|err| format!("Failed to create {}: {err}", target.display()))?;
+                }
+                PSUEntryKind::File => {
+                    let Some(contents) = entry.contents else {
+                        return Err(format!(
+                            "{} is missing file data in the PSU archive.",
+                            entry.name
+                        ));
+                    };
+
+                    let target = export_root.join(&entry.name);
+                    if let Some(parent) = target.parent() {
+                        fs::create_dir_all(parent).map_err(|err| {
+                            format!("Failed to create {}: {err}", parent.display())
+                        })?;
+                    }
+
+                    fs::write(&target, contents)
+                        .map_err(|err| format!("Failed to write {}: {err}", target.display()))?;
+                }
+            }
+        }
+
+        Ok(export_root)
     }
 
     pub(crate) fn reload_project_files(&mut self) {
@@ -1391,6 +1565,125 @@ fn load_text_file_into_editor(folder: &Path, file_name: &str, editor: &mut TextF
                 editor.set_error_message(format!("Failed to read {}: {err}", file_name));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod packer_app_tests {
+    use super::*;
+    use psu_packer::Config as PsuConfig;
+    use std::{path::Path, thread, time::Duration};
+    use tempfile::tempdir;
+
+    fn wait_for_pack_completion(app: &mut PackerApp) {
+        while app.pack_job.is_some() {
+            thread::sleep(Duration::from_millis(10));
+            app.poll_pack_job();
+        }
+    }
+
+    fn write_required_files(folder: &Path) {
+        for file in REQUIRED_PROJECT_FILES {
+            let path = folder.join(file);
+            fs::write(&path, b"data").expect("write required file");
+        }
+    }
+
+    #[test]
+    fn update_psu_overwrites_existing_file() {
+        let workspace = tempdir().expect("temp workspace");
+        let project_dir = workspace.path().join("project");
+        fs::create_dir_all(&project_dir).expect("create project folder");
+        write_required_files(&project_dir);
+
+        let existing_output = workspace.path().join("existing.psu");
+        fs::write(&existing_output, b"old").expect("create placeholder output");
+
+        let mut app = PackerApp::default();
+        app.folder = Some(project_dir);
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name = "SAVE".to_string();
+        app.selected_prefix = SasPrefix::App;
+        app.output = existing_output.display().to_string();
+        app.loaded_psu_path = Some(existing_output.clone());
+
+        app.handle_update_psu_request();
+
+        assert!(app.pack_job.is_some(), "pack job should start");
+        wait_for_pack_completion(&mut app);
+
+        assert!(app.error_message.is_none(), "no error after update");
+        assert!(app.status.contains(&existing_output.display().to_string()));
+        let metadata = fs::metadata(&existing_output).expect("output metadata");
+        assert!(metadata.len() > 0, "packed PSU should not be empty");
+    }
+
+    #[test]
+    fn update_psu_reports_missing_destination() {
+        let workspace = tempdir().expect("temp workspace");
+        let project_dir = workspace.path().join("project");
+        fs::create_dir_all(&project_dir).expect("create project folder");
+        write_required_files(&project_dir);
+
+        let missing_output = workspace.path().join("missing.psu");
+
+        let mut app = PackerApp::default();
+        app.folder = Some(project_dir);
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name = "SAVE".to_string();
+        app.selected_prefix = SasPrefix::App;
+        app.output = missing_output.display().to_string();
+        app.loaded_psu_path = Some(missing_output.clone());
+
+        app.handle_update_psu_request();
+
+        assert!(app.pack_job.is_none(), "pack job should not start");
+        let message = app.error_message.expect("error message expected");
+        assert!(message.contains("does not exist"));
+    }
+
+    #[test]
+    fn export_psu_contents_to_folder() {
+        let workspace = tempdir().expect("temp workspace");
+        let project_dir = workspace.path().join("project");
+        fs::create_dir_all(&project_dir).expect("create project folder");
+        write_required_files(&project_dir);
+        fs::write(project_dir.join("EXTRA.BIN"), b"payload").expect("write extra file");
+
+        let psu_path = workspace.path().join("source.psu");
+        let config = PsuConfig {
+            name: "APP_SAVE".to_string(),
+            timestamp: None,
+            include: None,
+            exclude: None,
+            icon_sys: None,
+        };
+        psu_packer::pack_with_config(&project_dir, &psu_path, config).expect("pack source PSU");
+
+        let export_parent = workspace.path().join("export");
+        fs::create_dir_all(&export_parent).expect("create export parent");
+
+        let app = PackerApp::default();
+        let exported_root = app
+            .export_psu_to_folder(&psu_path, &export_parent)
+            .expect("export succeeds");
+
+        assert_eq!(exported_root, export_parent.join("APP_SAVE"));
+        assert!(exported_root.join("psu.toml").exists());
+        assert!(exported_root.join("title.cfg").exists());
+        assert!(exported_root.join("icon.icn").exists());
+        assert!(exported_root.join("EXTRA.BIN").exists());
+    }
+
+    #[test]
+    fn export_psu_fails_for_missing_source() {
+        let workspace = tempdir().expect("temp workspace");
+        let destination = workspace.path();
+        let app = PackerApp::default();
+
+        let result = app.export_psu_to_folder(Path::new("/nonexistent.psu"), destination);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
     }
 }
 

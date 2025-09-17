@@ -173,13 +173,32 @@ pub(crate) fn packaging_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             );
             ui.colored_label(egui::Color32::YELLOW, warning);
         }
-        let pack_button = ui
-            .add_enabled(!pack_in_progress, egui::Button::new("Pack"))
-            .on_hover_text("Create the PSU archive using the settings above.");
+        ui.horizontal(|ui| {
+            let pack_button = ui
+                .add_enabled(!pack_in_progress, egui::Button::new("Pack PSU"))
+                .on_hover_text("Create the PSU archive using the settings above.");
 
-        if pack_button.clicked() {
-            app.handle_pack_request();
-        }
+            if pack_button.clicked() {
+                app.handle_pack_request();
+            }
+
+            let update_button = ui
+                .add_enabled(!pack_in_progress, egui::Button::new("Update PSU"))
+                .on_hover_text("Repack the current project into the existing PSU file.");
+            if update_button.clicked() {
+                app.handle_update_psu_request();
+            }
+
+            let export_button = ui
+                .add_enabled(
+                    !pack_in_progress,
+                    egui::Button::new("Save as Folder with contents"),
+                )
+                .on_hover_text("Export the contents of the current PSU archive to a folder.");
+            if export_button.clicked() {
+                app.handle_save_as_folder_with_contents();
+            }
+        });
 
         if pack_in_progress {
             ui.label("Packing in progress…");
