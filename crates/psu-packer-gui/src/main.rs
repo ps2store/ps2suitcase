@@ -2,16 +2,19 @@
 
 use eframe::{egui, NativeOptions, Renderer};
 use psu_packer_gui::PackerApp;
+use std::any::Any;
+use std::fmt;
+use std::panic::{self, AssertUnwindSafe};
 
 fn main() -> eframe::Result<()> {
-    let wgpu_result = run_app(create_native_options(Renderer::Wgpu));
+    let wgpu_result = run_app_with_renderer(Renderer::Wgpu);
 
     match wgpu_result {
         Ok(result) => Ok(result),
         Err(wgpu_error) => {
             report_renderer_error("WGPU", &wgpu_error);
 
-            let glow_result = run_app(create_native_options(Renderer::Glow));
+            let glow_result = run_app_with_renderer(Renderer::Glow);
             match glow_result {
                 Ok(result) => Ok(result),
                 Err(glow_error) => {
@@ -50,6 +53,41 @@ fn run_app(options: NativeOptions) -> eframe::Result<()> {
         Box::new(|cc| Ok(Box::new(PackerApp::new(cc)))),
     )
 }
+
+fn run_app_with_renderer(renderer: Renderer) -> eframe::Result<()> {
+    let options = create_native_options(renderer);
+    match panic::catch_unwind(AssertUnwindSafe(|| run_app(options))) {
+        Ok(result) => result,
+        Err(payload) => Err(panic_payload_to_error(payload)),
+    }
+}
+
+fn panic_payload_to_error(payload: Box<dyn Any + Send>) -> eframe::Error {
+    let message = panic_message(payload);
+    eframe::Error::AppCreation(Box::new(PanicAppError(message)))
+}
+
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    let payload_ref = &*payload;
+    if let Some(message) = payload_ref.downcast_ref::<&str>() {
+        (*message).to_owned()
+    } else if let Some(message) = payload_ref.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "Unknown panic".to_owned()
+    }
+}
+
+#[derive(Debug)]
+struct PanicAppError(String);
+
+impl fmt::Display for PanicAppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for PanicAppError {}
 
 fn report_renderer_error(renderer: &str, error: &eframe::Error) {
     eprintln!("Failed to initialize {renderer} renderer: {error}");
