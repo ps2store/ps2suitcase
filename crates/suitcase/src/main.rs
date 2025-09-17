@@ -29,30 +29,49 @@ use eframe::egui::{Context, Frame, IconData, Margin, ViewportCommand};
 use eframe::{egui, NativeOptions, Storage};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, SurfaceIndex, TabIndex};
 use ps2_filetypes::templates::{PSU_TOML_TEMPLATE, TITLE_CFG_TEMPLATE};
+use std::any::Any;
+use std::fmt;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() -> eframe::Result<()> {
-    let wgpu_result = run_app(create_native_options(eframe::Renderer::Wgpu));
+    let mut attempts: Vec<(eframe::Renderer, &str, u16)> = Vec::new();
 
-    match wgpu_result {
-        Ok(result) => Ok(result),
-        Err(wgpu_error) => {
-            report_renderer_error("WGPU", &wgpu_error);
+    #[cfg(feature = "wgpu")]
+    {
+        attempts.push((eframe::Renderer::Wgpu, "WGPU", 4));
+        attempts.push((eframe::Renderer::Wgpu, "WGPU", 1));
+    }
 
-            let glow_result = run_app(create_native_options(eframe::Renderer::Glow));
-            match glow_result {
-                Ok(result) => Ok(result),
-                Err(glow_error) => {
-                    report_renderer_error("Glow", &glow_error);
-                    Err(wgpu_error)
-                }
+    #[cfg(feature = "glow")]
+    {
+        attempts.push((eframe::Renderer::Glow, "Glow", 4));
+        attempts.push((eframe::Renderer::Glow, "Glow", 1));
+    }
+
+    let mut last_failure = None;
+    let total_attempts = attempts.len();
+
+    for (index, (renderer, name, multisampling)) in attempts.into_iter().enumerate() {
+        match try_run_renderer(renderer, multisampling) {
+            Ok(()) => return Ok(()),
+            Err(failure) => {
+                let has_fallback = index + 1 < total_attempts;
+                report_renderer_error(name, multisampling, &failure, has_fallback);
+                last_failure = Some(failure);
             }
         }
     }
+
+    if let Some(failure) = last_failure {
+        Err(failure.into_error())
+    } else {
+        Ok(())
+    }
 }
 
-fn create_native_options(renderer: eframe::Renderer) -> NativeOptions {
+fn create_native_options(renderer: eframe::Renderer, multisampling: u16) -> NativeOptions {
     NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1920.0, 1080.0])
@@ -79,7 +98,7 @@ fn create_native_options(renderer: eframe::Renderer) -> NativeOptions {
                     }
                 }
             }),
-        multisampling: 4,
+        multisampling,
         // Request a standard 24-bit depth buffer. WGPU expects at least 24 bits
         // on most platforms, and Glow gracefully ignores the request when it
         // cannot provide a depth buffer.
@@ -100,8 +119,26 @@ fn run_app(options: NativeOptions) -> eframe::Result<()> {
     )
 }
 
-fn report_renderer_error(renderer: &str, error: &eframe::Error) {
-    eprintln!("Failed to initialize {renderer} renderer: {error}");
+fn report_renderer_error(
+    renderer: &str,
+    multisampling: u16,
+    failure: &RendererFailure,
+    has_fallback: bool,
+) {
+    let msaa_description = if multisampling > 1 {
+        format!("{multisampling}x MSAA")
+    } else {
+        "no MSAA".to_owned()
+    };
+
+    let mut message =
+        format!("Failed to initialize {renderer} renderer with {msaa_description}: {failure}");
+
+    if has_fallback {
+        message.push_str("\n\nAttempting fallback...");
+    }
+
+    eprintln!("{message}");
 
     #[cfg(target_os = "windows")]
     {
@@ -109,13 +146,76 @@ fn report_renderer_error(renderer: &str, error: &eframe::Error) {
 
         MessageDialog::new()
             .set_title("PS2Suitcase")
-            .set_description(&format!(
-                "Failed to initialize {renderer} renderer:\n{error}\n\nAttempting fallback..."
-            ))
+            .set_description(&message)
             .set_buttons(rfd::MessageButtons::Ok)
             .show();
     }
 }
+
+fn try_run_renderer(renderer: eframe::Renderer, multisampling: u16) -> Result<(), RendererFailure> {
+    let options = create_native_options(renderer, multisampling);
+    match panic::catch_unwind(AssertUnwindSafe(|| run_app(options))) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(err)) => Err(RendererFailure::Error(err)),
+        Err(payload) => Err(RendererFailure::Panic(panic_message(payload))),
+    }
+}
+
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    let payload_ref = &*payload;
+    if let Some(message) = payload_ref.downcast_ref::<&str>() {
+        (*message).to_owned()
+    } else if let Some(message) = payload_ref.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "Unknown panic".to_owned()
+    }
+}
+
+enum RendererFailure {
+    Panic(String),
+    Error(eframe::Error),
+}
+
+impl RendererFailure {
+    fn into_error(self) -> eframe::Error {
+        match self {
+            RendererFailure::Panic(message) => {
+                eframe::Error::AppCreation(Box::new(PanicAppError(message)))
+            }
+            RendererFailure::Error(err) => err,
+        }
+    }
+}
+
+impl fmt::Display for RendererFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RendererFailure::Panic(message) => write!(f, "panic: {message}"),
+            RendererFailure::Error(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl fmt::Debug for RendererFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RendererFailure::Panic(message) => f.debug_tuple("Panic").field(message).finish(),
+            RendererFailure::Error(err) => f.debug_tuple("Error").field(err).finish(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PanicAppError(String);
+
+impl fmt::Display for PanicAppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for PanicAppError {}
 
 struct PSUBuilderApp {
     tree: DockState<Box<TabType>>,
