@@ -3,27 +3,13 @@
 use eframe::{egui, NativeOptions, Renderer};
 use psu_packer_gui::PackerApp;
 
-trait NativeOptionsExt {
-    fn with_centered(self, centered: bool) -> Self;
-}
-
-impl NativeOptionsExt for eframe::NativeOptions {
-    fn with_centered(mut self, centered: bool) -> Self {
-        self.centered = centered;
-        self
-    }
-}
-
 fn main() -> eframe::Result<()> {
-    let wgpu_result = run_app(create_native_options(Renderer::Wgpu));
-
-    match wgpu_result {
+    match run_with_renderer(Renderer::Wgpu) {
         Ok(result) => Ok(result),
         Err(wgpu_error) => {
             report_renderer_error("WGPU", &wgpu_error);
 
-            let glow_result = run_app(create_native_options(Renderer::Glow));
-            match glow_result {
+            match run_with_renderer(Renderer::Glow) {
                 Ok(result) => Ok(result),
                 Err(glow_error) => {
                     report_renderer_error("Glow", &glow_error);
@@ -34,8 +20,12 @@ fn main() -> eframe::Result<()> {
     }
 }
 
+fn run_with_renderer(renderer: Renderer) -> eframe::Result<()> {
+    run_app(create_native_options(renderer))
+}
+
 fn create_native_options(renderer: Renderer) -> NativeOptions {
-    NativeOptions {
+    let mut options = NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1024.0, 768.0])
             .with_min_inner_size([1024.0, 768.0])
@@ -43,8 +33,10 @@ fn create_native_options(renderer: Renderer) -> NativeOptions {
             .with_resizable(false),
         renderer,
         ..Default::default()
-    }
-    .with_centered(true)
+    };
+
+    options.centered = true;
+    options
 }
 
 fn run_app(options: NativeOptions) -> eframe::Result<()> {
