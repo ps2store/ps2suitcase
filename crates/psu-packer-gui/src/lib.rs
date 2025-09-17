@@ -22,6 +22,7 @@ pub(crate) const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] =
     &[(0, "Save Data"), (1, "System Software"), (4, "Settings")];
 pub(crate) const ICON_SYS_TITLE_CHAR_LIMIT: usize = 16;
+const ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER: char = '\u{FFFD}';
 const TIMESTAMP_RULES_FILE: &str = "timestamp_rules.json";
 pub(crate) const REQUIRED_PROJECT_FILES: &[&str] = &[
     "BOOT.ELF",
@@ -31,6 +32,33 @@ pub(crate) const REQUIRED_PROJECT_FILES: &[&str] = &[
     "title.cfg",
     TIMESTAMP_RULES_FILE,
 ];
+
+fn split_icon_sys_title(title: &str, break_index: usize) -> (String, String) {
+    let sanitized_chars: Vec<char> = title
+        .chars()
+        .map(|c| {
+            if c.is_control() {
+                ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER
+            } else {
+                c
+            }
+        })
+        .collect();
+
+    let break_index = break_index.min(sanitized_chars.len());
+    let line1_count = break_index.min(ICON_SYS_TITLE_CHAR_LIMIT);
+    let skip_count = line1_count;
+
+    let line1: String = sanitized_chars.iter().take(line1_count).copied().collect();
+    let line2: String = sanitized_chars
+        .iter()
+        .skip(skip_count)
+        .take(ICON_SYS_TITLE_CHAR_LIMIT)
+        .copied()
+        .collect();
+
+    (line1, line2)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SasPrefix {
@@ -639,22 +667,10 @@ impl PackerApp {
             self.icon_sys_flag_selection = IconFlagSelection::Custom;
         }
 
-        let ascii_chars: Vec<char> = icon_cfg
-            .title
-            .chars()
-            .filter(|c| c.is_ascii() && *c != '\n' && *c != '\r')
-            .collect();
         let break_index = icon_cfg.linebreak_position() as usize;
-        let break_index = break_index.min(ascii_chars.len());
-        let line1_count = break_index.min(ICON_SYS_TITLE_CHAR_LIMIT);
-        let skip_count = line1_count;
-        self.icon_sys_title_line1 = ascii_chars.iter().take(line1_count).copied().collect();
-        self.icon_sys_title_line2 = ascii_chars
-            .iter()
-            .skip(skip_count)
-            .take(ICON_SYS_TITLE_CHAR_LIMIT)
-            .copied()
-            .collect();
+        let (line1, line2) = split_icon_sys_title(&icon_cfg.title, break_index);
+        self.icon_sys_title_line1 = line1;
+        self.icon_sys_title_line2 = line2;
 
         self.icon_sys_background_transparency =
             icon_cfg.background_transparency.unwrap_or_else(|| {
@@ -744,21 +760,10 @@ impl PackerApp {
             self.icon_sys_flag_selection = IconFlagSelection::Custom;
         }
 
-        let ascii_chars: Vec<char> = icon_sys
-            .title
-            .chars()
-            .filter(|c| c.is_ascii() && *c != '\n' && *c != '\r')
-            .collect();
-        let break_index = (icon_sys.linebreak_pos as usize).min(ascii_chars.len());
-        let line1_count = break_index.min(ICON_SYS_TITLE_CHAR_LIMIT);
-        let skip_count = line1_count;
-        self.icon_sys_title_line1 = ascii_chars.iter().take(line1_count).copied().collect();
-        self.icon_sys_title_line2 = ascii_chars
-            .iter()
-            .skip(skip_count)
-            .take(ICON_SYS_TITLE_CHAR_LIMIT)
-            .copied()
-            .collect();
+        let break_index = icon_sys.linebreak_pos as usize;
+        let (line1, line2) = split_icon_sys_title(&icon_sys.title, break_index);
+        self.icon_sys_title_line1 = line1;
+        self.icon_sys_title_line2 = line2;
 
         self.icon_sys_background_transparency = icon_sys.background_transparency;
         for (target, color) in self
@@ -1595,6 +1600,7 @@ impl eframe::App for PackerApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use psu_packer::IconSysFlags;
     use std::fs;
     use tempfile::tempdir;
 
@@ -1708,6 +1714,65 @@ linebreak_pos = 5
         assert_eq!(app.icon_sys_title_line2, "WORLD");
         assert!(!app.psu_toml_sync_blocked);
         assert!(app.psu_toml_editor.modified);
+    }
+
+    #[test]
+    fn apply_icon_sys_file_preserves_multibyte_characters() {
+        let mut app = PackerApp::default();
+        let title = "メモリーカード";
+
+        let icon_sys = IconSys {
+            flags: 4,
+            linebreak_pos: 4,
+            background_transparency: IconSysConfig::default_background_transparency(),
+            background_colors: IconSysConfig::default_background_colors().map(Into::into),
+            light_directions: IconSysConfig::default_light_directions().map(Into::into),
+            light_colors: IconSysConfig::default_light_colors().map(Into::into),
+            ambient_color: IconSysConfig::default_ambient_color().into(),
+            title: title.to_string(),
+            icon_file: "icon.icn".to_string(),
+            icon_copy_file: "icon.icn".to_string(),
+            icon_delete_file: "icon.icn".to_string(),
+        };
+
+        app.apply_icon_sys_file(&icon_sys);
+
+        assert_eq!(app.icon_sys_title_line1, "メモリー");
+        assert_eq!(app.icon_sys_title_line2, "カード");
+    }
+
+    #[test]
+    fn apply_icon_sys_config_preserves_multibyte_characters() {
+        let mut app = PackerApp::default();
+        let title = "メモリーカード";
+
+        let icon_cfg = IconSysConfig {
+            flags: IconSysFlags::new(1),
+            title: title.to_string(),
+            linebreak_pos: Some(4),
+            preset: None,
+            background_transparency: None,
+            background_colors: None,
+            light_directions: None,
+            light_colors: None,
+            ambient_color: None,
+        };
+
+        app.apply_icon_sys_config(icon_cfg, None);
+
+        assert_eq!(app.icon_sys_title_line1, "メモリー");
+        assert_eq!(app.icon_sys_title_line2, "カード");
+    }
+
+    #[test]
+    fn split_icon_sys_title_replaces_control_characters() {
+        let (line1, line2) = split_icon_sys_title("A\u{0001}B\rC", 3);
+
+        assert_eq!(
+            line1,
+            format!("A{}B", ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER)
+        );
+        assert_eq!(line2, format!("{}C", ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER));
     }
 
     #[test]
