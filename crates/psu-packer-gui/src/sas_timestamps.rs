@@ -153,12 +153,20 @@ pub(crate) fn planned_timestamp_for_folder(
     path: &Path,
     rules: &TimestampRules,
 ) -> Option<NaiveDateTime> {
-    let name = path.file_name()?.to_str()?.trim();
-    if name.is_empty() {
+    let name = path.file_name()?.to_str()?;
+    planned_timestamp_for_name(name, rules)
+}
+
+pub(crate) fn planned_timestamp_for_name(
+    name: &str,
+    rules: &TimestampRules,
+) -> Option<NaiveDateTime> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
         return None;
     }
 
-    let offset_seconds = deterministic_offset_seconds(name, rules)?;
+    let offset_seconds = deterministic_offset_seconds(trimmed, rules)?;
     let base = base_datetime_local_to_utc()?;
     let planned_utc = base - Duration::seconds(offset_seconds);
     let snapped = snap_even_second(planned_utc);

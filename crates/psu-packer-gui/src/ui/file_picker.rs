@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use eframe::egui;
 use ps2_filetypes::{IconSys, PSUEntryKind, PSU};
 
-use crate::{sas_timestamps, PackerApp, SasPrefix};
+use crate::{PackerApp, SasPrefix, TimestampStrategy};
 
 pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.menu_button("File", |ui| {
@@ -81,15 +81,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.set_folder_name_from_full(&name);
                             app.psu_file_base_name = app.folder_base_name.clone();
                             app.output = app.default_output_file_name().unwrap_or_default();
-                            let planned_timestamp = timestamp.or_else(|| {
-                                sas_timestamps::planned_timestamp_for_folder(
-                                    &folder,
-                                    &app.timestamp_rules,
-                                )
-                            });
-                            app.timestamp = planned_timestamp;
-                            app.timestamp_from_rules =
-                                timestamp.is_none() && planned_timestamp.is_some();
+                            app.source_timestamp = timestamp;
                             app.include_files = include.unwrap_or_default();
                             app.exclude_files = exclude.unwrap_or_default();
                             app.selected_include = None;
@@ -140,7 +132,10 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.folder_base_name.clear();
                             app.psu_file_base_name.clear();
                             app.timestamp = None;
+                            app.timestamp_strategy = TimestampStrategy::None;
                             app.timestamp_from_rules = false;
+                            app.source_timestamp = None;
+                            app.manual_timestamp = None;
                             app.include_files.clear();
                             app.exclude_files.clear();
                             app.selected_include = None;
@@ -151,10 +146,8 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                     app.loaded_psu_path = None;
                     app.loaded_psu_files.clear();
                     app.folder = Some(folder.clone());
+                    app.sync_timestamp_after_source_update();
                     app.reload_project_files();
-                    if app.timestamp_from_rules {
-                        app.refresh_psu_toml_editor();
-                    }
                     if app.icon_sys_enabled {
                         app.open_icon_sys_tab();
                     } else {
@@ -275,13 +268,13 @@ impl PackerApp {
         } else {
             self.psu_file_base_name = self.folder_base_name.clone();
         }
-        self.timestamp = root_timestamp;
-        self.timestamp_from_rules = false;
+        self.source_timestamp = root_timestamp;
         self.loaded_psu_files = files;
         self.loaded_psu_path = Some(path.clone());
         self.clear_error_message();
         self.status = format!("Loaded PSU from {}", path.display());
         self.folder = None;
+        self.sync_timestamp_after_source_update();
         self.include_files.clear();
         self.exclude_files.clear();
         self.selected_include = None;
