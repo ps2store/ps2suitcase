@@ -100,6 +100,20 @@ pub(crate) enum IconFlagSelection {
     Custom,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TimestampStrategy {
+    None,
+    InheritSource,
+    SasRules,
+    Manual,
+}
+
+impl Default for TimestampStrategy {
+    fn default() -> Self {
+        TimestampStrategy::None
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EditorTab {
     PsuSettings,
@@ -199,7 +213,10 @@ pub struct PackerApp {
     pub(crate) folder_base_name: String,
     pub(crate) psu_file_base_name: String,
     pub(crate) timestamp: Option<NaiveDateTime>,
+    pub(crate) timestamp_strategy: TimestampStrategy,
     pub(crate) timestamp_from_rules: bool,
+    pub(crate) source_timestamp: Option<NaiveDateTime>,
+    pub(crate) manual_timestamp: Option<NaiveDateTime>,
     pub(crate) timestamp_rules: TimestampRules,
     pub(crate) timestamp_rules_modified: bool,
     pub(crate) timestamp_rules_error: Option<String>,
@@ -280,7 +297,10 @@ impl Default for PackerApp {
             folder_base_name: String::new(),
             psu_file_base_name: String::new(),
             timestamp: None,
+            timestamp_strategy: TimestampStrategy::default(),
             timestamp_from_rules: false,
+            source_timestamp: None,
+            manual_timestamp: None,
             timestamp_rules,
             timestamp_rules_modified: false,
             timestamp_rules_error: None,
@@ -376,45 +396,99 @@ impl PackerApp {
         Ok(path)
     }
 
+    pub(crate) fn set_timestamp_strategy(&mut self, strategy: TimestampStrategy) {
+        if self.timestamp_strategy == strategy {
+            return;
+        }
+
+        self.timestamp_strategy = strategy;
+
+        if matches!(self.timestamp_strategy, TimestampStrategy::Manual)
+            && self.manual_timestamp.is_none()
+        {
+            if let Some(source) = self.source_timestamp {
+                self.manual_timestamp = Some(source);
+            } else if let Some(planned) = self.planned_timestamp_for_current_source() {
+                self.manual_timestamp = Some(planned);
+            }
+        }
+
+        self.refresh_timestamp_from_strategy();
+    }
+
+    pub(crate) fn refresh_timestamp_from_strategy(&mut self) {
+        let new_timestamp = match self.timestamp_strategy {
+            TimestampStrategy::None => None,
+            TimestampStrategy::InheritSource => self.source_timestamp,
+            TimestampStrategy::SasRules => self.planned_timestamp_for_current_source(),
+            TimestampStrategy::Manual => self.manual_timestamp,
+        };
+
+        let changed = self.timestamp != new_timestamp;
+        self.timestamp = new_timestamp;
+        self.timestamp_from_rules = matches!(self.timestamp_strategy, TimestampStrategy::SasRules)
+            && self.timestamp.is_some();
+
+        if changed {
+            self.refresh_psu_toml_editor();
+        }
+    }
+
+    pub(crate) fn sync_timestamp_after_source_update(&mut self) {
+        let planned = self.planned_timestamp_for_current_source();
+
+        if matches!(self.timestamp_strategy, TimestampStrategy::None) {
+            if self.source_timestamp.is_some() {
+                self.timestamp_strategy = TimestampStrategy::InheritSource;
+            } else if planned.is_some() {
+                self.timestamp_strategy = TimestampStrategy::SasRules;
+            }
+        }
+
+        if matches!(self.timestamp_strategy, TimestampStrategy::Manual)
+            && self.manual_timestamp.is_none()
+        {
+            if let Some(source) = self.source_timestamp {
+                self.manual_timestamp = Some(source);
+            } else if let Some(planned) = planned {
+                self.manual_timestamp = Some(planned);
+            }
+        }
+
+        self.refresh_timestamp_from_strategy();
+    }
+
     pub(crate) fn mark_timestamp_rules_modified(&mut self) {
         self.timestamp_rules_modified = true;
         self.recompute_timestamp_from_rules();
     }
 
     fn recompute_timestamp_from_rules(&mut self) {
-        if !self.timestamp_from_rules {
+        if !matches!(self.timestamp_strategy, TimestampStrategy::SasRules) {
             return;
         }
 
-        let Some(folder) = self.folder.as_ref() else {
-            return;
-        };
-
-        let planned =
-            sas_timestamps::planned_timestamp_for_folder(folder.as_path(), &self.timestamp_rules);
-        if self.timestamp != planned {
-            self.timestamp = planned;
-            self.timestamp_from_rules = planned.is_some();
-            self.refresh_psu_toml_editor();
-        }
+        self.refresh_timestamp_from_strategy();
     }
 
     pub(crate) fn apply_planned_timestamp(&mut self) {
-        let Some(folder) = self.folder.as_ref() else {
-            self.timestamp_from_rules = false;
-            return;
-        };
-
-        let planned =
-            sas_timestamps::planned_timestamp_for_folder(folder.as_path(), &self.timestamp_rules);
-        self.timestamp = planned;
-        self.timestamp_from_rules = planned.is_some();
-        self.refresh_psu_toml_editor();
+        self.set_timestamp_strategy(TimestampStrategy::SasRules);
     }
 
-    pub(crate) fn planned_timestamp_for_current_folder(&self) -> Option<NaiveDateTime> {
-        let folder = self.folder.as_ref()?;
-        sas_timestamps::planned_timestamp_for_folder(folder.as_path(), &self.timestamp_rules)
+    pub(crate) fn planned_timestamp_for_current_source(&self) -> Option<NaiveDateTime> {
+        if let Some(folder) = self.folder.as_ref() {
+            return sas_timestamps::planned_timestamp_for_folder(
+                folder.as_path(),
+                &self.timestamp_rules,
+            );
+        }
+
+        let name = self.folder_name();
+        if name.trim().is_empty() {
+            return None;
+        }
+
+        sas_timestamps::planned_timestamp_for_name(&name, &self.timestamp_rules)
     }
 
     pub(crate) fn move_timestamp_category_up(&mut self, index: usize) {
@@ -686,7 +760,10 @@ impl PackerApp {
         self.folder_base_name.clear();
         self.psu_file_base_name.clear();
         self.timestamp = None;
+        self.timestamp_strategy = TimestampStrategy::None;
         self.timestamp_from_rules = false;
+        self.source_timestamp = None;
+        self.manual_timestamp = None;
         self.include_files.clear();
         self.exclude_files.clear();
         self.selected_include = None;
@@ -746,6 +823,9 @@ impl PackerApp {
 
     pub(crate) fn metadata_inputs_changed(&mut self, previous_default_output: Option<String>) {
         self.update_output_if_matches_default(previous_default_output);
+        if matches!(self.timestamp_strategy, TimestampStrategy::SasRules) {
+            self.refresh_timestamp_from_strategy();
+        }
         self.refresh_psu_toml_editor();
     }
 
