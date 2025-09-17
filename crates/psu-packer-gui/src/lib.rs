@@ -1048,7 +1048,8 @@ fn save_editor_to_disk(
 fn text_editor_ui(
     ui: &mut egui::Ui,
     file_name: &str,
-    folder_selected: bool,
+    editing_enabled: bool,
+    save_enabled: bool,
     editor: &mut TextFileEditor,
 ) -> bool {
     if let Some(message) = &editor.load_error {
@@ -1056,14 +1057,14 @@ fn text_editor_ui(
         ui.add_space(8.0);
     }
 
-    let show_editor = folder_selected || !editor.content.is_empty();
+    let show_editor = editing_enabled || !editor.content.is_empty();
 
     if show_editor {
         let response = egui::ScrollArea::vertical()
             .id_source(format!("{file_name}_editor_scroll"))
             .show(ui, |ui| {
                 ui.add_enabled(
-                    folder_selected,
+                    editing_enabled,
                     egui::TextEdit::multiline(&mut editor.content)
                         .desired_rows(20)
                         .code_editor(),
@@ -1071,7 +1072,7 @@ fn text_editor_ui(
             })
             .inner;
 
-        if folder_selected && response.changed() {
+        if editing_enabled && response.changed() {
             editor.modified = true;
         }
     }
@@ -1079,7 +1080,7 @@ fn text_editor_ui(
     ui.add_space(8.0);
 
     let mut save_clicked = false;
-    if folder_selected {
+    if save_enabled {
         ui.horizontal(|ui| {
             let button_label = format!("Save {file_name}");
             if ui
@@ -1093,8 +1094,17 @@ fn text_editor_ui(
                 ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
             }
         });
+    } else if editing_enabled {
+        if editor.modified {
+            ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
+        }
+        ui.label(format!(
+            "Select a folder to enable saving {file_name} to disk."
+        ));
     } else {
-        ui.label(format!("Select a folder to edit {file_name}."));
+        ui.label(format!(
+            "Select a folder or open a PSU to edit {file_name}."
+        ));
     }
 
     save_clicked
@@ -1193,9 +1203,11 @@ impl eframe::App for PackerApp {
                     });
                 }
                 EditorTab::PsuToml => {
+                    let editing_enabled = self.folder.is_some() || self.showing_loaded_psu();
                     let save_clicked = text_editor_ui(
                         ui,
                         "psu.toml",
+                        editing_enabled,
                         self.folder.is_some(),
                         &mut self.psu_toml_editor,
                     );
@@ -1216,9 +1228,11 @@ impl eframe::App for PackerApp {
                     }
                 }
                 EditorTab::TitleCfg => {
+                    let editing_enabled = self.folder.is_some() || self.showing_loaded_psu();
                     let save_clicked = text_editor_ui(
                         ui,
                         "title.cfg",
+                        editing_enabled,
                         self.folder.is_some(),
                         &mut self.title_cfg_editor,
                     );

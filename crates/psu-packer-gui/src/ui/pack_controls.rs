@@ -212,6 +212,32 @@ impl ListKind {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn build_config_uses_loaded_psu_edits() {
+        let mut app = PackerApp::default();
+        app.loaded_psu_path = Some(PathBuf::from("input.psu"));
+        app.selected_prefix = SasPrefix::Ps2;
+        app.folder_base_name = "SAVE".to_string();
+        let timestamp = NaiveDate::from_ymd_opt(2023, 11, 14)
+            .and_then(|date| date.and_hms_opt(12, 34, 56))
+            .expect("valid timestamp");
+        app.timestamp = Some(timestamp);
+        app.include_files.push("FILE.BIN".to_string());
+        app.exclude_files.push("SKIP.DAT".to_string());
+
+        let config = app.build_config().expect("config builds successfully");
+        assert_eq!(config.name, "PS2_SAVE");
+        assert_eq!(config.timestamp, Some(timestamp));
+        assert_eq!(config.include, Some(vec!["FILE.BIN".to_string()]));
+        assert_eq!(config.exclude, Some(vec!["SKIP.DAT".to_string()]));
+    }
+}
+
 fn file_list_ui(
     ui: &mut egui::Ui,
     label: &str,
