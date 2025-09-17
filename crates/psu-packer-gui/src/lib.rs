@@ -26,6 +26,7 @@ const ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER: char = '\u{FFFD}';
 const TIMESTAMP_RULES_FILE: &str = "timestamp_rules.json";
 pub(crate) const REQUIRED_PROJECT_FILES: &[&str] =
     &["icon.icn", "icon.sys", "psu.toml", "title.cfg"];
+const CENTERED_COLUMN_MAX_WIDTH: f32 = 720.0;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MissingFileReason {
@@ -1862,27 +1863,29 @@ impl eframe::App for PackerApp {
             match self.editor_tab {
                 EditorTab::PsuSettings => {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui::file_picker::folder_section(self, ui);
+                        ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
+                            ui::file_picker::folder_section(self, ui);
 
-                        let showing_psu = self.showing_loaded_psu();
-                        if showing_psu {
+                            let showing_psu = self.showing_loaded_psu();
+                            if showing_psu {
+                                ui.add_space(8.0);
+                                ui::file_picker::loaded_psu_section(self, ui);
+                            }
+
                             ui.add_space(8.0);
-                            ui::file_picker::loaded_psu_section(self, ui);
-                        }
+                            ui::pack_controls::metadata_section(self, ui);
 
-                        ui.add_space(8.0);
-                        ui::pack_controls::metadata_section(self, ui);
+                            if !showing_psu {
+                                ui.add_space(8.0);
+                                ui::pack_controls::file_filters_section(self, ui);
+                            }
 
-                        if !showing_psu {
                             ui.add_space(8.0);
-                            ui::pack_controls::file_filters_section(self, ui);
-                        }
+                            ui::pack_controls::output_section(self, ui);
 
-                        ui.add_space(8.0);
-                        ui::pack_controls::output_section(self, ui);
-
-                        ui.add_space(8.0);
-                        ui::pack_controls::packaging_section(self, ui);
+                            ui.add_space(8.0);
+                            ui::pack_controls::packaging_section(self, ui);
+                        });
                     });
                 }
                 EditorTab::PsuToml => {
@@ -1945,12 +1948,16 @@ impl eframe::App for PackerApp {
                 }
                 EditorTab::IconSys => {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui::icon_sys::icon_sys_editor(self, ui);
+                        ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
+                            ui::icon_sys::icon_sys_editor(self, ui);
+                        });
                     });
                 }
                 EditorTab::TimestampAuto => {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui::timestamps::timestamp_rules_editor(self, ui);
+                        ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
+                            ui::timestamps::timestamp_rules_editor(self, ui);
+                        });
                     });
                 }
             }
