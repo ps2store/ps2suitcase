@@ -333,6 +333,7 @@ pub struct PackerApp {
     pub(crate) icon_sys_selected_preset: Option<String>,
     pub(crate) icon_sys_use_existing: bool,
     pub(crate) icon_sys_existing: Option<IconSys>,
+    zoom_factor: f32,
     pack_job: Option<PackJob>,
     editor_tab: EditorTab,
     psu_toml_editor: TextFileEditor,
@@ -421,6 +422,7 @@ impl Default for PackerApp {
             icon_sys_selected_preset: None,
             icon_sys_use_existing: false,
             icon_sys_existing: None,
+            zoom_factor: 1.0,
             pack_job: None,
             editor_tab: EditorTab::PsuSettings,
             psu_toml_editor: TextFileEditor::default(),
@@ -433,7 +435,8 @@ impl Default for PackerApp {
 
 impl PackerApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let app = Self::default();
+        let mut app = Self::default();
+        app.zoom_factor = cc.egui_ctx.pixels_per_point();
         theme::install(&cc.egui_ctx, &app.theme);
         app
     }
@@ -1937,6 +1940,9 @@ impl eframe::App for PackerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_pack_job();
 
+        self.zoom_factor = self.zoom_factor.clamp(0.5, 2.0);
+        ctx.set_pixels_per_point(self.zoom_factor);
+
         let source_present = self.has_source();
         if !source_present && self.source_present_last_frame {
             self.reset_metadata_fields();
@@ -1983,6 +1989,25 @@ impl eframe::App for PackerApp {
                 theme::draw_separator(ui.painter(), separator_rect, self.theme.separator);
                 egui::menu::bar(ui, |ui| {
                     ui::file_picker::file_menu(self, ui);
+                    ui.menu_button("View", |ui| {
+                        if ui.button("Zoom In").clicked() {
+                            self.zoom_factor = (self.zoom_factor + 0.1).min(2.0);
+                            ui.close_menu();
+                        }
+                        if ui.button("Zoom Out").clicked() {
+                            self.zoom_factor = (self.zoom_factor - 0.1).max(0.5);
+                            ui.close_menu();
+                        }
+                        if ui.button("Reset Zoom").clicked() {
+                            self.zoom_factor = 1.0;
+                            ui.close_menu();
+                        }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(12.0);
+                        let zoom_text = format!("Zoom: {:.0}%", self.zoom_factor * 100.0);
+                        ui.label(egui::RichText::new(zoom_text).color(self.theme.neon_accent));
+                    });
                 });
             });
 
