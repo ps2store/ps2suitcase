@@ -67,7 +67,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 .clicked()
             {
                 if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-                    let mut deterministic_timestamp_added = false;
+                    app.load_timestamp_rules_from_folder(&folder);
                     match psu_packer::load_config(&folder) {
                         Ok(config) => {
                             let psu_packer::Config {
@@ -81,11 +81,15 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.set_folder_name_from_full(&name);
                             app.psu_file_base_name = app.folder_base_name.clone();
                             app.output = app.default_output_file_name().unwrap_or_default();
-                            let planned_timestamp = timestamp
-                                .or_else(|| sas_timestamps::planned_timestamp_for_folder(&folder));
-                            deterministic_timestamp_added =
-                                timestamp.is_none() && planned_timestamp.is_some();
+                            let planned_timestamp = timestamp.or_else(|| {
+                                sas_timestamps::planned_timestamp_for_folder(
+                                    &folder,
+                                    &app.timestamp_rules,
+                                )
+                            });
                             app.timestamp = planned_timestamp;
+                            app.timestamp_from_rules =
+                                timestamp.is_none() && planned_timestamp.is_some();
                             app.include_files = include.unwrap_or_default();
                             app.exclude_files = exclude.unwrap_or_default();
                             app.selected_include = None;
@@ -136,6 +140,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.folder_base_name.clear();
                             app.psu_file_base_name.clear();
                             app.timestamp = None;
+                            app.timestamp_from_rules = false;
                             app.include_files.clear();
                             app.exclude_files.clear();
                             app.selected_include = None;
@@ -147,7 +152,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                     app.loaded_psu_files.clear();
                     app.folder = Some(folder.clone());
                     app.reload_project_files();
-                    if deterministic_timestamp_added {
+                    if app.timestamp_from_rules {
                         app.refresh_psu_toml_editor();
                     }
                     if app.icon_sys_enabled {
@@ -271,6 +276,7 @@ impl PackerApp {
             self.psu_file_base_name = self.folder_base_name.clone();
         }
         self.timestamp = root_timestamp;
+        self.timestamp_from_rules = false;
         self.loaded_psu_files = files;
         self.loaded_psu_path = Some(path.clone());
         self.clear_error_message();
