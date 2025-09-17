@@ -1,5 +1,6 @@
 use eframe::egui::{
-    self, Color32, FontData, FontDefinitions, FontFamily, FontId, Margin, Style, Vec2,
+    self, Color32, FontData, FontDefinitions, FontFamily, FontId, Margin, RichText, Style,
+    TextStyle, Vec2,
 };
 
 pub const DISPLAY_FONT_NAME: &str = "ps2_display";
@@ -57,13 +58,13 @@ fn install_fonts(ctx: &egui::Context) {
         .entry(FontFamily::Name(DISPLAY_FONT_NAME.into()))
         .or_default()
         .insert(0, DISPLAY_FONT_NAME.to_owned());
-    fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .insert(0, DISPLAY_FONT_NAME.to_owned());
 
     ctx.set_fonts(fonts);
+}
+
+pub fn display_heading_text(ui: &egui::Ui, text: impl Into<String>) -> RichText {
+    let size = ui.style().text_styles[&TextStyle::Heading].size;
+    RichText::new(text).font(display_font(size))
 }
 
 fn apply_visuals(ctx: &egui::Context, palette: &Palette) {

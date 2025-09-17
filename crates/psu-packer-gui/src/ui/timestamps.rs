@@ -2,7 +2,7 @@ use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use eframe::egui;
 use egui_extras::DatePickerButton;
 
-use crate::{PackerApp, TimestampStrategy, TIMESTAMP_FORMAT};
+use crate::{ui::theme, PackerApp, TimestampStrategy, TIMESTAMP_FORMAT};
 
 pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.vertical(|ui| {
@@ -306,7 +306,7 @@ fn current_strategy_reason(
 pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
     app.timestamp_rules_ui.ensure_matches(&app.timestamp_rules);
 
-    ui.heading("Automatic timestamp rules");
+    ui.heading(theme::display_heading_text(ui, "Automatic timestamp rules"));
     ui.small("Adjust deterministic timestamp spacing, category order, and aliases.");
 
     if let Some(error) = &app.timestamp_rules_error {
@@ -361,7 +361,10 @@ pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
         });
 
     ui.add_space(12.0);
-    ui.heading("Category order and aliases");
+    ui.heading(theme::display_heading_text(
+        ui,
+        "Category order and aliases",
+    ));
     ui.small("Aliases map names without prefixes to their categories (one per line).");
     ui.add_space(6.0);
 
