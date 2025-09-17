@@ -4,12 +4,15 @@ use eframe::{egui, NativeOptions, Renderer};
 use psu_packer_gui::PackerApp;
 
 fn main() -> eframe::Result<()> {
-    match run_with_renderer(Renderer::Wgpu) {
+    let wgpu_result = run_app(create_native_options(Renderer::Wgpu));
+
+    match wgpu_result {
         Ok(result) => Ok(result),
         Err(wgpu_error) => {
             report_renderer_error("WGPU", &wgpu_error);
 
-            match run_with_renderer(Renderer::Glow) {
+            let glow_result = run_app(create_native_options(Renderer::Glow));
+            match glow_result {
                 Ok(result) => Ok(result),
                 Err(glow_error) => {
                     report_renderer_error("Glow", &glow_error);
@@ -20,18 +23,19 @@ fn main() -> eframe::Result<()> {
     }
 }
 
-fn run_with_renderer(renderer: Renderer) -> eframe::Result<()> {
-    run_app(create_native_options(renderer))
+fn create_native_options(renderer: Renderer) -> NativeOptions {
+    let mut options = shared_native_options();
+    options.renderer = renderer;
+    options
 }
 
-fn create_native_options(renderer: Renderer) -> NativeOptions {
+fn shared_native_options() -> NativeOptions {
     let mut options = NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1024.0, 768.0])
             .with_min_inner_size([1024.0, 768.0])
             .with_max_inner_size([1024.0, 768.0])
             .with_resizable(false),
-        renderer,
         ..Default::default()
     };
 
@@ -43,7 +47,7 @@ fn run_app(options: NativeOptions) -> eframe::Result<()> {
     eframe::run_native(
         "PSU Packer",
         options,
-        Box::new(|cc| Box::new(PackerApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(PackerApp::new(cc)))),
     )
 }
 

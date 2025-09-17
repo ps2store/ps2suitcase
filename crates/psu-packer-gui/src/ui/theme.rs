@@ -49,7 +49,7 @@ fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
         DISPLAY_FONT_NAME.to_owned(),
-        FontData::from_static(include_bytes!("../../assets/fonts/Orbitron-Regular.ttf")),
+        FontData::from_static(include_bytes!("../../assets/fonts/Orbitron-Regular.ttf")).into(),
     );
 
     fonts
@@ -86,8 +86,8 @@ fn apply_visuals(ctx: &egui::Context, palette: &Palette) {
 fn apply_spacing(style: &mut Style) {
     style.spacing.item_spacing = Vec2::new(12.0, 8.0);
     style.spacing.button_padding = Vec2::new(14.0, 8.0);
-    style.spacing.window_margin = Margin::same(14.0);
-    style.spacing.menu_margin = Margin::same(10.0);
+    style.spacing.window_margin = Margin::same(14);
+    style.spacing.menu_margin = Margin::same(10);
     style.spacing.indent = 20.0;
 }
 
