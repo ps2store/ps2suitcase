@@ -23,6 +23,14 @@ pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] =
     &[(0, "Save Data"), (1, "System Software"), (4, "Settings")];
 pub(crate) const ICON_SYS_TITLE_CHAR_LIMIT: usize = 16;
 const TIMESTAMP_RULES_FILE: &str = "timestamp_rules.json";
+pub(crate) const REQUIRED_PROJECT_FILES: &[&str] = &[
+    "BOOT.ELF",
+    "icon.icn",
+    "icon.sys",
+    "psu.toml",
+    "title.cfg",
+    TIMESTAMP_RULES_FILE,
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SasPrefix {
@@ -226,6 +234,7 @@ pub struct PackerApp {
     pub(crate) exclude_files: Vec<String>,
     pub(crate) selected_include: Option<usize>,
     pub(crate) selected_exclude: Option<usize>,
+    pub(crate) missing_required_project_files: Vec<String>,
     pub(crate) loaded_psu_path: Option<PathBuf>,
     pub(crate) loaded_psu_files: Vec<String>,
     pub(crate) show_exit_confirm: bool,
@@ -310,6 +319,7 @@ impl Default for PackerApp {
             exclude_files: Vec::new(),
             selected_include: None,
             selected_exclude: None,
+            missing_required_project_files: Vec::new(),
             loaded_psu_path: None,
             loaded_psu_files: Vec::new(),
             show_exit_confirm: false,
@@ -345,6 +355,28 @@ impl PackerApp {
         self.folder
             .as_ref()
             .map(|folder| Self::timestamp_rules_path_from(folder))
+    }
+
+    pub(crate) fn missing_required_project_files(folder: &Path) -> Vec<String> {
+        REQUIRED_PROJECT_FILES
+            .iter()
+            .filter_map(|name| {
+                let candidate = folder.join(name);
+                if candidate.is_file() {
+                    None
+                } else {
+                    Some((*name).to_string())
+                }
+            })
+            .collect()
+    }
+
+    pub(crate) fn refresh_missing_required_project_files(&mut self) {
+        if let Some(folder) = self.folder.clone() {
+            self.missing_required_project_files = Self::missing_required_project_files(&folder);
+        } else {
+            self.missing_required_project_files.clear();
+        }
     }
 
     pub(crate) fn load_timestamp_rules_from_folder(&mut self, folder: &Path) {
@@ -542,6 +574,18 @@ impl PackerApp {
         }
         self.error_message = Some(text);
         self.status.clear();
+    }
+
+    pub(crate) fn format_missing_required_files_message(missing: &[String]) -> String {
+        let formatted = missing
+            .iter()
+            .map(|name| format!("• {name}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "The selected folder is missing required files:\n{}",
+            formatted
+        )
     }
 
     pub(crate) fn clear_error_message(&mut self) {
@@ -885,13 +929,55 @@ impl PackerApp {
             .collect()
     }
 
+    pub(crate) fn handle_pack_request(&mut self) {
+        if self.is_pack_running() {
+            return;
+        }
+
+        let Some(folder) = self.folder.clone() else {
+            self.set_error_message("Please select a folder");
+            return;
+        };
+
+        if self.folder_base_name.trim().is_empty() {
+            self.set_error_message("Please provide a folder name");
+            return;
+        }
+
+        if self.psu_file_base_name.trim().is_empty() {
+            self.set_error_message("Please provide a PSU filename");
+            return;
+        }
+
+        let missing = Self::missing_required_project_files(&folder);
+        self.missing_required_project_files = missing.clone();
+        if !missing.is_empty() {
+            let message = Self::format_missing_required_files_message(&missing);
+            self.set_error_message((message, missing));
+            return;
+        }
+
+        let config = match self.build_config() {
+            Ok(config) => config,
+            Err(err) => {
+                self.set_error_message(err);
+                return;
+            }
+        };
+
+        let output_path = PathBuf::from(&self.output);
+        self.start_pack_job(folder, output_path, config);
+    }
+
     pub(crate) fn reload_project_files(&mut self) {
         if let Some(folder) = self.folder.clone() {
             load_text_file_into_editor(folder.as_path(), "psu.toml", &mut self.psu_toml_editor);
             load_text_file_into_editor(folder.as_path(), "title.cfg", &mut self.title_cfg_editor);
             self.psu_toml_sync_blocked = false;
+            self.refresh_missing_required_project_files();
         } else {
             self.clear_text_editors();
+            self.missing_required_project_files.clear();
         }
     }
 
@@ -1494,6 +1580,8 @@ impl eframe::App for PackerApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn manual_edits_persist_without_folder_selection() {
@@ -1642,5 +1730,87 @@ linebreak_pos = 5
             .error_message
             .as_ref()
             .is_some_and(|message| message.contains("missing mandatory")));
+    }
+
+    #[test]
+    fn load_warning_flags_missing_required_files() {
+        let temp_dir = tempdir().expect("temporary directory");
+        for file in REQUIRED_PROJECT_FILES {
+            let path = temp_dir.path().join(file);
+            let contents: &[u8] = if *file == TIMESTAMP_RULES_FILE {
+                b"{}"
+            } else {
+                b"placeholder"
+            };
+            fs::write(&path, contents).expect("create required file");
+        }
+
+        let mut app = PackerApp::default();
+        app.folder = Some(temp_dir.path().to_path_buf());
+
+        app.refresh_missing_required_project_files();
+        assert!(app.missing_required_project_files.is_empty());
+
+        for file in REQUIRED_PROJECT_FILES {
+            let path = temp_dir.path().join(file);
+            fs::remove_file(&path).expect("remove required file");
+            app.refresh_missing_required_project_files();
+            assert_eq!(
+                app.missing_required_project_files,
+                vec![(*file).to_string()]
+            );
+            let contents: &[u8] = if *file == TIMESTAMP_RULES_FILE {
+                b"{}"
+            } else {
+                b"placeholder"
+            };
+            fs::write(&path, contents).expect("restore required file");
+            app.refresh_missing_required_project_files();
+            assert!(app.missing_required_project_files.is_empty());
+        }
+    }
+
+    #[test]
+    fn pack_request_blocks_missing_required_files() {
+        let temp_dir = tempdir().expect("temporary directory");
+        for file in REQUIRED_PROJECT_FILES {
+            let path = temp_dir.path().join(file);
+            let contents: &[u8] = if *file == TIMESTAMP_RULES_FILE {
+                b"{}"
+            } else {
+                b"placeholder"
+            };
+            fs::write(&path, contents).expect("create required file");
+        }
+
+        let mut app = PackerApp::default();
+        app.folder = Some(temp_dir.path().to_path_buf());
+        app.folder_base_name = "Sample".to_string();
+        app.psu_file_base_name = "Sample".to_string();
+        app.output = temp_dir.path().join("Sample.psu").display().to_string();
+
+        for file in REQUIRED_PROJECT_FILES {
+            let path = temp_dir.path().join(file);
+            fs::remove_file(&path).expect("remove required file");
+            app.handle_pack_request();
+            let error = app
+                .error_message
+                .as_ref()
+                .expect("missing files should block packing");
+            assert!(error.contains(file));
+            assert_eq!(
+                app.missing_required_project_files,
+                vec![(*file).to_string()]
+            );
+            let contents: &[u8] = if *file == TIMESTAMP_RULES_FILE {
+                b"{}"
+            } else {
+                b"placeholder"
+            };
+            fs::write(&path, contents).expect("restore required file");
+            app.clear_error_message();
+            app.refresh_missing_required_project_files();
+            assert!(app.missing_required_project_files.is_empty());
+        }
     }
 }

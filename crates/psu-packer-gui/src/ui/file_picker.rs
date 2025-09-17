@@ -257,6 +257,12 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
         if let Some(folder) = &app.folder {
             ui.label(format!("Folder: {}", folder.display()));
+            if !app.missing_required_project_files.is_empty() {
+                let warning = PackerApp::format_missing_required_files_message(
+                    &app.missing_required_project_files,
+                );
+                ui.colored_label(egui::Color32::YELLOW, warning);
+            }
         }
     });
 }
@@ -362,6 +368,7 @@ impl PackerApp {
         self.clear_error_message();
         self.status = format!("Loaded PSU from {}", path.display());
         self.folder = None;
+        self.missing_required_project_files.clear();
         self.sync_timestamp_after_source_update();
         self.include_files.clear();
         self.exclude_files.clear();
