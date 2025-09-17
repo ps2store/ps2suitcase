@@ -21,16 +21,16 @@ pub struct Palette {
 impl Default for Palette {
     fn default() -> Self {
         Self {
-            background: Color32::from_rgb(8, 10, 28),
-            panel: Color32::from_rgb(16, 20, 46),
-            header_top: Color32::from_rgb(20, 32, 72),
-            header_bottom: Color32::from_rgb(16, 64, 112),
-            footer_top: Color32::from_rgb(12, 24, 60),
-            footer_bottom: Color32::from_rgb(12, 48, 92),
-            neon_accent: Color32::from_rgb(48, 188, 255),
-            soft_accent: Color32::from_rgb(96, 160, 255),
-            separator: Color32::from_rgb(0, 120, 200),
-            text_primary: Color32::from_rgb(208, 220, 255),
+            background: Color32::from_rgb(6, 8, 20),
+            panel: Color32::from_rgb(18, 38, 52),
+            header_top: Color32::from_rgb(12, 16, 40),
+            header_bottom: Color32::from_rgb(60, 40, 120),
+            footer_top: Color32::from_rgb(16, 30, 52),
+            footer_bottom: Color32::from_rgb(52, 52, 112),
+            neon_accent: Color32::from_rgb(150, 92, 255),
+            soft_accent: Color32::from_rgb(124, 148, 220),
+            separator: Color32::from_rgb(88, 68, 168),
+            text_primary: Color32::from_rgb(214, 220, 240),
         }
     }
 }
