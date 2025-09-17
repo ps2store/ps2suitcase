@@ -13,6 +13,9 @@ argh = { version = "0.1.13" }
 chrono = "0.4.42"
 colored = "3.0.0"
 
+[dev-dependencies]
+tempfile = "3.14.0"
+
 [profile.release]
 opt-level = "z"
 lto = true
