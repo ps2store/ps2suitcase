@@ -329,10 +329,11 @@ impl PackerApp {
         let break_index = icon_cfg.linebreak_position() as usize;
         let break_index = break_index.min(ascii_chars.len());
         let line1_count = break_index.min(10);
+        let skip_count = line1_count;
         self.icon_sys_title_line1 = ascii_chars.iter().take(line1_count).copied().collect();
         self.icon_sys_title_line2 = ascii_chars
             .iter()
-            .skip(break_index)
+            .skip(skip_count)
             .take(10)
             .copied()
             .collect();
@@ -432,10 +433,11 @@ impl PackerApp {
             .collect();
         let break_index = (icon_sys.linebreak_pos as usize).min(ascii_chars.len());
         let line1_count = break_index.min(10);
+        let skip_count = line1_count;
         self.icon_sys_title_line1 = ascii_chars.iter().take(line1_count).copied().collect();
         self.icon_sys_title_line2 = ascii_chars
             .iter()
-            .skip(break_index)
+            .skip(skip_count)
             .take(10)
             .copied()
             .collect();
