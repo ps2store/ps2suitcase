@@ -273,7 +273,6 @@ fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     ui.group(|ui| {
         ui.heading("Title");
         ui.small("Each line supports up to 10 ASCII characters.");
-        ui.add_space(4.0);
 
         egui::Grid::new("icon_sys_title_grid")
             .num_columns(2)
@@ -351,7 +350,6 @@ fn flag_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     let mut changed = false;
     ui.group(|ui| {
         ui.heading("Flags");
-        ui.add_space(4.0);
         egui::Grid::new("icon_sys_flag_grid")
             .num_columns(2)
             .spacing(egui::vec2(8.0, 4.0))
@@ -405,7 +403,6 @@ fn presets_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     ui.group(|ui| {
         ui.heading("Presets");
         ui.small("Choose a preset to populate the colors and lights automatically.");
-        ui.add_space(4.0);
 
         let selected_label = match app.icon_sys_selected_preset.as_deref() {
             Some(id) => find_preset(id)
@@ -474,7 +471,6 @@ fn background_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     ui.group(|ui| {
         ui.heading("Background");
         ui.small("Adjust the gradient colors and alpha layer.");
-        ui.add_space(4.0);
 
         if ui
             .add(
@@ -489,7 +485,6 @@ fn background_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
             changed = true;
         }
 
-        ui.add_space(4.0);
         let mut background_changed = false;
         egui::Grid::new("icon_sys_background_grid")
             .num_columns(2)
@@ -518,7 +513,6 @@ fn lighting_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     ui.group(|ui| {
         ui.heading("Lighting");
         ui.small("Tweak light directions, colors, and the ambient glow.");
-        ui.add_space(4.0);
 
         let mut lighting_changed = false;
 

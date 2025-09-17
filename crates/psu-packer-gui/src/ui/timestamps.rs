@@ -41,7 +41,6 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
                         app.set_timestamp_strategy(strategy);
                     }
                 });
-                ui.add_space(4.0);
                 ui.label("• Use when verifying contents does not require metadata timestamps.");
                 ui.label("• Relies on: no metadata—timestamp field will be omitted.");
             });
@@ -67,7 +66,6 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
                         app.set_timestamp_strategy(strategy);
                     }
                 });
-                ui.add_space(4.0);
                 ui.label("• Use when the loaded source already contains a trusted timestamp.");
                 ui.label(format!(
                     "• Relies on: Source timestamp ({}).",
@@ -99,7 +97,6 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
                         app.set_timestamp_strategy(strategy);
                     }
                 });
-                ui.add_space(4.0);
                 ui.label("• Use when project names follow SAS conventions for deterministic scheduling.");
                 let project_name = project_name_text(app);
                 ui.label(format!(
@@ -134,7 +131,6 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
                         app.set_timestamp_strategy(strategy);
                     }
                 });
-                ui.add_space(4.0);
                 ui.label("• Use when you must pin the archive to an explicit, reviewer-approved timestamp.");
                 ui.label("• Relies on: Manual date and time you enter here.");
 
@@ -319,15 +315,12 @@ pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
     }
 
     if let Some(path) = app.timestamp_rules_path() {
-        ui.add_space(4.0);
         ui.label(format!("Configuration file: {}", path.display()));
     } else {
-        ui.add_space(4.0);
         ui.small("Select a project folder to save these settings alongside psu.toml.");
     }
 
     if app.timestamp_rules_modified {
-        ui.add_space(4.0);
         ui.colored_label(egui::Color32::LIGHT_YELLOW, "Unsaved changes");
     }
 
@@ -402,7 +395,6 @@ pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
                     }
                 });
 
-                ui.add_space(4.0);
                 ui.label("Aliases (one per line):");
                 if let Some(buffer) = app.timestamp_rules_ui.alias_texts.get_mut(index) {
                     if ui
