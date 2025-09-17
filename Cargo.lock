@@ -4124,6 +4124,8 @@ dependencies = [
  "rfd 0.14.1",
  "serde",
  "serde_json",
+ "tempfile",
+ "winresource",
 ]
 
 [[package]]
