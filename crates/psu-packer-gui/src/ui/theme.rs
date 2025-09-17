@@ -97,11 +97,49 @@ pub fn draw_vertical_gradient(
     top: Color32,
     bottom: Color32,
 ) {
-    let mid_y = rect.center().y;
-    let top_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, mid_y));
-    let bottom_rect = egui::Rect::from_min_max(egui::pos2(rect.min.x, mid_y), rect.max);
-    painter.rect_filled(top_rect, 0.0, top);
-    painter.rect_filled(bottom_rect, 0.0, bottom);
+    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return;
+    }
+
+    let mut mesh = egui::epaint::Mesh::default();
+
+    let top_left = rect.left_top();
+    let top_right = rect.right_top();
+    let bottom_left = rect.left_bottom();
+    let bottom_right = rect.right_bottom();
+
+    let base_index = mesh.vertices.len() as u32;
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: top_left,
+        uv: egui::pos2(0.0, 0.0),
+        color: top,
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: top_right,
+        uv: egui::pos2(1.0, 0.0),
+        color: top,
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: bottom_left,
+        uv: egui::pos2(0.0, 1.0),
+        color: bottom,
+    });
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: bottom_right,
+        uv: egui::pos2(1.0, 1.0),
+        color: bottom,
+    });
+
+    mesh.indices.extend_from_slice(&[
+        base_index,
+        base_index + 1,
+        base_index + 2,
+        base_index + 2,
+        base_index + 1,
+        base_index + 3,
+    ]);
+
+    painter.add(egui::Shape::mesh(mesh));
 }
 
 pub fn draw_separator(painter: &egui::Painter, rect: egui::Rect, color: Color32) {
