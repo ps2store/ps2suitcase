@@ -13,11 +13,14 @@ use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 pub(crate) mod sas_timestamps;
 pub mod ui;
 
+use sas_timestamps::TimestampRules;
+
 pub use ui::{dialogs, file_picker, pack_controls};
 
 pub(crate) const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] =
     &[(0, "Save Data"), (1, "System Software"), (4, "Settings")];
+const TIMESTAMP_RULES_FILE: &str = "timestamp_rules.json";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SasPrefix {
@@ -102,6 +105,7 @@ enum EditorTab {
     PsuToml,
     TitleCfg,
     IconSys,
+    TimestampAuto,
 }
 
 #[derive(Default)]
@@ -152,6 +156,39 @@ enum PackOutcome {
     },
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct TimestampRulesUiState {
+    pub(crate) alias_texts: Vec<String>,
+}
+
+impl TimestampRulesUiState {
+    pub(crate) fn from_rules(rules: &TimestampRules) -> Self {
+        Self {
+            alias_texts: rules
+                .categories
+                .iter()
+                .map(|category| category.aliases.join("\n"))
+                .collect(),
+        }
+    }
+
+    pub(crate) fn ensure_matches(&mut self, rules: &TimestampRules) {
+        if self.alias_texts.len() != rules.categories.len() {
+            *self = Self::from_rules(rules);
+        }
+    }
+
+    fn swap(&mut self, a: usize, b: usize) {
+        if a >= self.alias_texts.len() || b >= self.alias_texts.len() {
+            return;
+        }
+        if a == b {
+            return;
+        }
+        self.alias_texts.swap(a, b);
+    }
+}
+
 pub struct PackerApp {
     pub(crate) folder: Option<PathBuf>,
     pub(crate) output: String,
@@ -161,6 +198,11 @@ pub struct PackerApp {
     pub(crate) folder_base_name: String,
     pub(crate) psu_file_base_name: String,
     pub(crate) timestamp: Option<NaiveDateTime>,
+    pub(crate) timestamp_from_rules: bool,
+    pub(crate) timestamp_rules: TimestampRules,
+    pub(crate) timestamp_rules_modified: bool,
+    pub(crate) timestamp_rules_error: Option<String>,
+    pub(crate) timestamp_rules_ui: TimestampRulesUiState,
     pub(crate) include_files: Vec<String>,
     pub(crate) exclude_files: Vec<String>,
     pub(crate) selected_include: Option<usize>,
@@ -226,6 +268,8 @@ where
 
 impl Default for PackerApp {
     fn default() -> Self {
+        let timestamp_rules = TimestampRules::default();
+        let timestamp_rules_ui = TimestampRulesUiState::from_rules(&timestamp_rules);
         Self {
             folder: None,
             output: String::new(),
@@ -235,6 +279,11 @@ impl Default for PackerApp {
             folder_base_name: String::new(),
             psu_file_base_name: String::new(),
             timestamp: None,
+            timestamp_from_rules: false,
+            timestamp_rules,
+            timestamp_rules_modified: false,
+            timestamp_rules_error: None,
+            timestamp_rules_ui,
             include_files: Vec::new(),
             exclude_files: Vec::new(),
             selected_include: None,
@@ -266,6 +315,142 @@ impl Default for PackerApp {
 }
 
 impl PackerApp {
+    fn timestamp_rules_path_from(folder: &Path) -> PathBuf {
+        folder.join(TIMESTAMP_RULES_FILE)
+    }
+
+    pub(crate) fn timestamp_rules_path(&self) -> Option<PathBuf> {
+        self.folder
+            .as_ref()
+            .map(|folder| Self::timestamp_rules_path_from(folder))
+    }
+
+    pub(crate) fn load_timestamp_rules_from_folder(&mut self, folder: &Path) {
+        let path = Self::timestamp_rules_path_from(folder);
+        match fs::read_to_string(&path) {
+            Ok(content) => match serde_json::from_str::<TimestampRules>(&content) {
+                Ok(mut rules) => {
+                    rules.sanitize();
+                    self.timestamp_rules = rules;
+                    self.timestamp_rules_error = None;
+                }
+                Err(err) => {
+                    self.timestamp_rules = TimestampRules::default();
+                    self.timestamp_rules_error =
+                        Some(format!("Failed to parse {}: {err}", path.display()));
+                }
+            },
+            Err(err) => {
+                if err.kind() == io::ErrorKind::NotFound {
+                    self.timestamp_rules = TimestampRules::default();
+                    self.timestamp_rules_error = None;
+                } else {
+                    self.timestamp_rules = TimestampRules::default();
+                    self.timestamp_rules_error =
+                        Some(format!("Failed to read {}: {err}", path.display()));
+                }
+            }
+        }
+
+        self.timestamp_rules_ui = TimestampRulesUiState::from_rules(&self.timestamp_rules);
+        self.timestamp_rules_modified = false;
+    }
+
+    pub(crate) fn save_timestamp_rules(&mut self) -> Result<PathBuf, String> {
+        let Some(folder) = self.folder.as_ref() else {
+            return Err("Select a folder before saving timestamp rules.".to_string());
+        };
+
+        self.timestamp_rules.sanitize();
+        let serialized = serde_json::to_string_pretty(&self.timestamp_rules)
+            .map_err(|err| format!("Failed to serialize timestamp rules: {err}"))?;
+
+        let path = Self::timestamp_rules_path_from(folder);
+        fs::write(&path, serialized)
+            .map_err(|err| format!("Failed to write {}: {err}", path.display()))?;
+
+        self.timestamp_rules_ui = TimestampRulesUiState::from_rules(&self.timestamp_rules);
+        self.timestamp_rules_modified = false;
+        self.timestamp_rules_error = None;
+        Ok(path)
+    }
+
+    pub(crate) fn mark_timestamp_rules_modified(&mut self) {
+        self.timestamp_rules_modified = true;
+        self.recompute_timestamp_from_rules();
+    }
+
+    fn recompute_timestamp_from_rules(&mut self) {
+        if !self.timestamp_from_rules {
+            return;
+        }
+
+        let Some(folder) = self.folder.as_ref() else {
+            return;
+        };
+
+        let planned =
+            sas_timestamps::planned_timestamp_for_folder(folder.as_path(), &self.timestamp_rules);
+        if self.timestamp != planned {
+            self.timestamp = planned;
+            self.timestamp_from_rules = planned.is_some();
+            self.refresh_psu_toml_editor();
+        }
+    }
+
+    pub(crate) fn apply_planned_timestamp(&mut self) {
+        let Some(folder) = self.folder.as_ref() else {
+            self.timestamp_from_rules = false;
+            return;
+        };
+
+        let planned =
+            sas_timestamps::planned_timestamp_for_folder(folder.as_path(), &self.timestamp_rules);
+        self.timestamp = planned;
+        self.timestamp_from_rules = planned.is_some();
+        self.refresh_psu_toml_editor();
+    }
+
+    pub(crate) fn planned_timestamp_for_current_folder(&self) -> Option<NaiveDateTime> {
+        let folder = self.folder.as_ref()?;
+        sas_timestamps::planned_timestamp_for_folder(folder.as_path(), &self.timestamp_rules)
+    }
+
+    pub(crate) fn move_timestamp_category_up(&mut self, index: usize) {
+        if index == 0 || index >= self.timestamp_rules.categories.len() {
+            return;
+        }
+        self.timestamp_rules.categories.swap(index - 1, index);
+        self.timestamp_rules_ui.swap(index - 1, index);
+        self.mark_timestamp_rules_modified();
+    }
+
+    pub(crate) fn move_timestamp_category_down(&mut self, index: usize) {
+        let len = self.timestamp_rules.categories.len();
+        if index + 1 >= len {
+            return;
+        }
+        self.timestamp_rules.categories.swap(index, index + 1);
+        self.timestamp_rules_ui.swap(index, index + 1);
+        self.mark_timestamp_rules_modified();
+    }
+
+    pub(crate) fn set_timestamp_aliases(&mut self, index: usize, aliases: Vec<String>) {
+        if let Some(category) = self.timestamp_rules.categories.get_mut(index) {
+            if category.aliases != aliases {
+                category.aliases = aliases;
+                self.mark_timestamp_rules_modified();
+            }
+        }
+    }
+
+    pub(crate) fn reset_timestamp_rules_to_default(&mut self) {
+        self.timestamp_rules = TimestampRules::default();
+        self.timestamp_rules_error = None;
+        self.timestamp_rules_ui = TimestampRulesUiState::from_rules(&self.timestamp_rules);
+        self.mark_timestamp_rules_modified();
+    }
+
     pub(crate) fn set_error_message<M>(&mut self, message: M)
     where
         M: Into<ErrorMessage>,
@@ -500,6 +685,7 @@ impl PackerApp {
         self.folder_base_name.clear();
         self.psu_file_base_name.clear();
         self.timestamp = None;
+        self.timestamp_from_rules = false;
         self.include_files.clear();
         self.exclude_files.clear();
         self.selected_include = None;
@@ -679,6 +865,7 @@ impl PackerApp {
             EditorTab::PsuToml => self.open_psu_toml_tab(),
             EditorTab::TitleCfg => self.open_title_cfg_tab(),
             EditorTab::IconSys => self.open_icon_sys_tab(),
+            EditorTab::TimestampAuto => self.open_timestamp_auto_tab(),
         }
     }
 
@@ -696,6 +883,10 @@ impl PackerApp {
 
     pub(crate) fn open_icon_sys_tab(&mut self) {
         self.editor_tab = EditorTab::IconSys;
+    }
+
+    pub(crate) fn open_timestamp_auto_tab(&mut self) {
+        self.editor_tab = EditorTab::TimestampAuto;
     }
 
     fn has_source(&self) -> bool {
@@ -961,6 +1152,16 @@ impl eframe::App for PackerApp {
                 };
                 ui.selectable_value(&mut self.editor_tab, EditorTab::TitleCfg, title_cfg_label);
                 ui.selectable_value(&mut self.editor_tab, EditorTab::IconSys, "icon.sys");
+                let timestamp_label = if self.timestamp_rules_modified {
+                    "Timestamp rules*"
+                } else {
+                    "Timestamp rules"
+                };
+                ui.selectable_value(
+                    &mut self.editor_tab,
+                    EditorTab::TimestampAuto,
+                    timestamp_label,
+                );
             });
             ui.separator();
 
@@ -1039,6 +1240,11 @@ impl eframe::App for PackerApp {
                 EditorTab::IconSys => {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui::icon_sys::icon_sys_editor(self, ui);
+                    });
+                }
+                EditorTab::TimestampAuto => {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui::timestamps::timestamp_rules_editor(self, ui);
                     });
                 }
             }

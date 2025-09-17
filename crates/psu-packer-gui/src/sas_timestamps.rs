@@ -1,41 +1,164 @@
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use chrono::{
     DateTime, Duration, Local, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
     Timelike, Utc,
 };
+use serde::{Deserialize, Serialize};
 
-const SECONDS_BETWEEN_ITEMS: i64 = 2;
-const SLOTS_PER_CATEGORY: i64 = 86_400;
-const CATEGORY_ORDER: [&str; 13] = [
-    "APP_", "APPS", "PS1_", "EMU_", "GME_", "DST_", "DBG_", "RAA_", "RTE_", "DEFAULT", "SYS_",
-    "ZZY_", "ZZZ_",
-];
-const CATEGORY_BLOCK_SECONDS: i64 = SECONDS_BETWEEN_ITEMS * SLOTS_PER_CATEGORY;
 const CHARSET: &str = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-.";
 
-const UNPREFIXED_MAP: [(&str, &[&str]); 12] = [
-    ("APP_", &["OSDXMB", "XEBPLUS"]),
-    ("APPS", &[]),
-    ("PS1_", &[]),
-    ("EMU_", &[]),
-    ("GME_", &[]),
-    ("DST_", &[]),
-    ("DBG_", &[]),
-    ("RAA_", &["RESTART", "POWEROFF"]),
-    ("RTE_", &["NEUTRINO"]),
-    ("SYS_", &["BOOT"]),
-    ("ZZY_", &["EXPLOITS"]),
-    ("ZZZ_", &["BM", "MATRIXTEAM", "OPL"]),
-];
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct TimestampRules {
+    #[serde(default = "TimestampRules::default_seconds_between_items")]
+    pub(crate) seconds_between_items: u32,
+    #[serde(default = "TimestampRules::default_slots_per_category")]
+    pub(crate) slots_per_category: u32,
+    #[serde(default = "TimestampRules::default_categories")]
+    pub(crate) categories: Vec<CategoryRule>,
+}
 
-pub(crate) fn planned_timestamp_for_folder(path: &Path) -> Option<NaiveDateTime> {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct CategoryRule {
+    pub(crate) key: String,
+    #[serde(default)]
+    pub(crate) aliases: Vec<String>,
+}
+
+impl CategoryRule {
+    fn new(key: &'static str) -> Self {
+        Self {
+            key: key.to_string(),
+            aliases: Vec::new(),
+        }
+    }
+
+    fn with_aliases(mut self, aliases: &'static [&'static str]) -> Self {
+        self.aliases = aliases.iter().map(|alias| alias.to_string()).collect();
+        self
+    }
+}
+
+impl TimestampRules {
+    const fn default_seconds_between_items() -> u32 {
+        2
+    }
+
+    const fn default_slots_per_category() -> u32 {
+        86_400
+    }
+
+    fn default_categories() -> Vec<CategoryRule> {
+        vec![
+            CategoryRule::new("APP_").with_aliases(&["OSDXMB", "XEBPLUS"]),
+            CategoryRule::new("APPS"),
+            CategoryRule::new("PS1_"),
+            CategoryRule::new("EMU_"),
+            CategoryRule::new("GME_"),
+            CategoryRule::new("DST_"),
+            CategoryRule::new("DBG_"),
+            CategoryRule::new("RAA_").with_aliases(&["RESTART", "POWEROFF"]),
+            CategoryRule::new("RTE_").with_aliases(&["NEUTRINO"]),
+            CategoryRule::new("DEFAULT"),
+            CategoryRule::new("SYS_").with_aliases(&["BOOT"]),
+            CategoryRule::new("ZZY_").with_aliases(&["EXPLOITS"]),
+            CategoryRule::new("ZZZ_").with_aliases(&["BM", "MATRIXTEAM", "OPL"]),
+        ]
+    }
+
+    pub(crate) fn sanitize(&mut self) {
+        if self.seconds_between_items == 0 {
+            self.seconds_between_items = Self::default_seconds_between_items();
+        }
+        if self.slots_per_category == 0 {
+            self.slots_per_category = Self::default_slots_per_category();
+        }
+
+        if self.categories.is_empty() {
+            *self = Self::default();
+            return;
+        }
+
+        let mut sanitized = Vec::with_capacity(self.categories.len());
+        let mut seen_keys: HashSet<String> = HashSet::new();
+
+        for category in self.categories.drain(..) {
+            let key = category.key.trim().to_ascii_uppercase();
+            if key.is_empty() {
+                continue;
+            }
+            if !seen_keys.insert(key.clone()) {
+                continue;
+            }
+
+            let mut aliases: Vec<String> = category
+                .aliases
+                .into_iter()
+                .filter_map(|alias| sanitize_alias(alias, &key))
+                .collect();
+
+            let mut seen_aliases = HashSet::new();
+            aliases.retain(|alias| seen_aliases.insert(alias.clone()));
+
+            sanitized.push(CategoryRule { key, aliases });
+        }
+
+        if !sanitized.iter().any(|category| category.key == "DEFAULT") {
+            sanitized.push(CategoryRule {
+                key: "DEFAULT".to_string(),
+                aliases: Vec::new(),
+            });
+        }
+
+        self.categories = sanitized;
+    }
+
+    pub(crate) fn seconds_between_items_i64(&self) -> i64 {
+        i64::from(self.seconds_between_items)
+    }
+
+    pub(crate) fn slots_per_category_i64(&self) -> i64 {
+        i64::from(self.slots_per_category)
+    }
+}
+
+impl Default for TimestampRules {
+    fn default() -> Self {
+        Self {
+            seconds_between_items: Self::default_seconds_between_items(),
+            slots_per_category: Self::default_slots_per_category(),
+            categories: Self::default_categories(),
+        }
+    }
+}
+
+fn sanitize_alias(alias: String, key: &str) -> Option<String> {
+    let mut value = alias.trim().to_ascii_uppercase();
+    if value.is_empty() {
+        return None;
+    }
+
+    if key != "APPS" && key != "DEFAULT" && value.starts_with(key) {
+        value = value[key.len()..].to_string();
+    }
+
+    if value.is_empty() {
+        return None;
+    }
+
+    Some(value)
+}
+
+pub(crate) fn planned_timestamp_for_folder(
+    path: &Path,
+    rules: &TimestampRules,
+) -> Option<NaiveDateTime> {
     let name = path.file_name()?.to_str()?.trim();
     if name.is_empty() {
         return None;
     }
 
-    let offset_seconds = deterministic_offset_seconds(name)?;
+    let offset_seconds = deterministic_offset_seconds(name, rules)?;
     let base = base_datetime_local_to_utc()?;
     let planned_utc = base - Duration::seconds(offset_seconds);
     let snapped = snap_even_second(planned_utc);
@@ -43,16 +166,17 @@ pub(crate) fn planned_timestamp_for_folder(path: &Path) -> Option<NaiveDateTime>
     Some(local.naive_local())
 }
 
-fn deterministic_offset_seconds(name: &str) -> Option<i64> {
-    let effective = normalize_name_for_rules(name)?;
-    let category_index = category_priority_index(&effective)?;
-    let slot = slot_index_within_category(&effective);
-    let category_offset = category_index as i64 * CATEGORY_BLOCK_SECONDS;
-    let name_offset = slot * SECONDS_BETWEEN_ITEMS;
+fn deterministic_offset_seconds(name: &str, rules: &TimestampRules) -> Option<i64> {
+    let effective = normalize_name_for_rules(name, rules)?;
+    let category_index = category_priority_index(&effective, rules)?;
+    let slot = slot_index_within_category(&effective, rules);
+    let category_block_seconds = rules.seconds_between_items_i64() * rules.slots_per_category_i64();
+    let category_offset = category_index as i64 * category_block_seconds;
+    let name_offset = slot * rules.seconds_between_items_i64();
     Some(category_offset + name_offset)
 }
 
-fn normalize_name_for_rules(name: &str) -> Option<String> {
+fn normalize_name_for_rules(name: &str, rules: &TimestampRules) -> Option<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return None;
@@ -60,65 +184,50 @@ fn normalize_name_for_rules(name: &str) -> Option<String> {
 
     let upper = trimmed.to_ascii_uppercase();
 
-    for (category, entries) in UNPREFIXED_MAP.iter() {
-        if entries.iter().any(|entry| *entry == upper) {
-            if *category == "APPS" {
-                return Some(String::from("APPS"));
-            }
-            return Some(format!("{}{}", category, upper));
+    for category in &rules.categories {
+        if category.aliases.iter().any(|alias| *alias == upper) {
+            return Some(match category.key.as_str() {
+                "APPS" => String::from("APPS"),
+                "DEFAULT" => upper,
+                key => format!("{key}{upper}"),
+            });
         }
     }
 
-    match upper.as_str() {
-        "OSDXMB" | "XEBPLUS" => Some(format!("APP_{}", upper)),
-        "RESTART" | "POWEROFF" => Some(format!("RAA_{}", upper)),
-        "NEUTRINO" => Some(format!("RTE_{}", upper)),
-        "BOOT" => Some(String::from("SYS_BOOT")),
-        "EXPLOITS" => Some(String::from("ZZY_EXPLOITS")),
-        "BM" | "MATRIXTEAM" | "OPL" => Some(format!("ZZZ_{}", upper)),
-        _ => Some(upper),
+    Some(upper)
+}
+
+fn category_priority_index(effective: &str, rules: &TimestampRules) -> Option<usize> {
+    find_category(effective, rules).map(|(index, _)| index)
+}
+
+fn find_category<'a>(
+    effective: &str,
+    rules: &'a TimestampRules,
+) -> Option<(usize, &'a CategoryRule)> {
+    let mut fallback: Option<(usize, &'a CategoryRule)> = None;
+
+    for (index, category) in rules.categories.iter().enumerate() {
+        match category.key.as_str() {
+            "DEFAULT" => fallback = Some((index, category)),
+            "APPS" => {
+                if effective == "APPS" {
+                    return Some((index, category));
+                }
+            }
+            key => {
+                if effective.starts_with(key) {
+                    return Some((index, category));
+                }
+            }
+        }
     }
+
+    fallback
 }
 
-fn category_priority_index(effective: &str) -> Option<usize> {
-    let key = effective_category_key(effective);
-    CATEGORY_ORDER
-        .iter()
-        .position(|candidate| *candidate == key)
-}
-
-fn effective_category_key(effective: &str) -> &str {
-    if effective.starts_with("APP_") {
-        "APP_"
-    } else if effective == "APPS" {
-        "APPS"
-    } else if effective.starts_with("PS1_") {
-        "PS1_"
-    } else if effective.starts_with("EMU_") {
-        "EMU_"
-    } else if effective.starts_with("GME_") {
-        "GME_"
-    } else if effective.starts_with("DST_") {
-        "DST_"
-    } else if effective.starts_with("DBG_") {
-        "DBG_"
-    } else if effective.starts_with("RAA_") {
-        "RAA_"
-    } else if effective.starts_with("RTE_") {
-        "RTE_"
-    } else if effective.starts_with("SYS_") || effective == "SYS" {
-        "SYS_"
-    } else if effective.starts_with("ZZY_") {
-        "ZZY_"
-    } else if effective.starts_with("ZZZ_") {
-        "ZZZ_"
-    } else {
-        "DEFAULT"
-    }
-}
-
-fn slot_index_within_category(effective: &str) -> i64 {
-    let payload = payload_for_effective(effective);
+fn slot_index_within_category(effective: &str, rules: &TimestampRules) -> i64 {
+    let payload = payload_for_effective(effective, rules);
 
     let mut total = 0.0f64;
     let mut scale = 1.0f64;
@@ -132,21 +241,24 @@ fn slot_index_within_category(effective: &str) -> i64 {
         total += index / scale;
     }
 
-    let mut slot = (total * SLOTS_PER_CATEGORY as f64).floor() as i64;
-    if slot >= SLOTS_PER_CATEGORY {
-        slot = SLOTS_PER_CATEGORY - 1;
+    let slots_per_category = rules.slots_per_category_i64();
+    let mut slot = (total * slots_per_category as f64).floor() as i64;
+    if slot >= slots_per_category {
+        slot = slots_per_category - 1;
     }
     slot
 }
 
-fn payload_for_effective(effective: &str) -> String {
-    let key = effective_category_key(effective);
-    if key == "APPS" {
-        "APPS".to_string()
-    } else if key == "DEFAULT" {
-        effective.replace('-', "")
-    } else if let Some(stripped) = effective.strip_prefix(key) {
-        stripped.replace('-', "")
+fn payload_for_effective(effective: &str, rules: &TimestampRules) -> String {
+    if let Some((_, category)) = find_category(effective, rules) {
+        match category.key.as_str() {
+            "APPS" => "APPS".to_string(),
+            "DEFAULT" => effective.replace('-', ""),
+            key => effective
+                .strip_prefix(key)
+                .unwrap_or(effective)
+                .replace('-', ""),
+        }
     } else {
         effective.replace('-', "")
     }
@@ -182,17 +294,43 @@ mod tests {
     #[test]
     fn produces_even_seconds() {
         let path = PathBuf::from("APP_SAMPLE");
-        let timestamp = planned_timestamp_for_folder(&path).expect("timestamp");
+        let rules = TimestampRules::default();
+        let timestamp = planned_timestamp_for_folder(&path, &rules).expect("timestamp");
         assert_eq!(timestamp.second() % 2, 0);
         assert_eq!(timestamp.nanosecond(), 0);
     }
 
     #[test]
     fn handles_aliases() {
+        let mut rules = TimestampRules::default();
+        rules.sanitize();
         let path = PathBuf::from("boot");
-        let ts_boot = planned_timestamp_for_folder(&path).expect("timestamp");
+        let ts_boot = planned_timestamp_for_folder(&path, &rules).expect("timestamp");
         let sys_path = PathBuf::from("SYS_BOOT");
-        let ts_sys = planned_timestamp_for_folder(&sys_path).expect("timestamp");
+        let ts_sys = planned_timestamp_for_folder(&sys_path, &rules).expect("timestamp");
         assert_eq!(ts_boot, ts_sys);
+    }
+
+    #[test]
+    fn custom_aliases_match_prefixed_names() {
+        let mut rules = TimestampRules::default();
+        if let Some(category) = rules
+            .categories
+            .iter_mut()
+            .find(|category| category.key == "APP_")
+        {
+            category.aliases.push("CUSTOM".to_string());
+        }
+        rules.sanitize();
+
+        let alias_path = PathBuf::from("custom");
+        let prefixed_path = PathBuf::from("APP_CUSTOM");
+
+        let alias_timestamp =
+            planned_timestamp_for_folder(&alias_path, &rules).expect("alias timestamp");
+        let prefixed_timestamp =
+            planned_timestamp_for_folder(&prefixed_path, &rules).expect("prefixed timestamp");
+
+        assert_eq!(alias_timestamp, prefixed_timestamp);
     }
 }
