@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(not(any(feature = "wgpu", feature = "glow")))]
+compile_error!("PS2Suitcase must be built with at least one renderer feature enabled: enable either the \"wgpu\" feature, the \"glow\" feature, or both.");
+
 mod components;
 mod data;
 mod io;
