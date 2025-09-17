@@ -159,13 +159,13 @@ impl PsuTomlViewer {
                 .id_source(path.to_owned())
                 .default_open(true)
                 .show(ui, |ui| Self::render_table(ui, path, table))
-                .inner
+                .body_returned
                 .unwrap_or(false),
             Value::Array(array) => egui::CollapsingHeader::new(label)
                 .id_source(path.to_owned())
                 .default_open(true)
                 .show(ui, |ui| Self::render_array(ui, path, array))
-                .inner
+                .body_returned
                 .unwrap_or(false),
             Value::String(text) => {
                 ui.horizontal(|ui| {

@@ -36,14 +36,13 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1920.0, 1080.0])
             .with_icon({
-                let icon = include_bytes!("../assets/app_icon.png");
-                let result = image::load_from_memory(icon).expect("Failed to load icon");
-
-                let width = result.width();
-                let height = result.height();
+                let icon = include_bytes!("../assets/icon.ico");
+                let image = image::load_from_memory(icon).expect("Failed to load icon");
+                let image = image.into_rgba8();
+                let (width, height) = image.dimensions();
 
                 IconData {
-                    rgba: result.as_rgba8().unwrap().clone().into_raw(),
+                    rgba: image.into_raw(),
                     width,
                     height,
                 }
