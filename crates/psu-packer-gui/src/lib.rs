@@ -24,14 +24,54 @@ pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] =
 pub(crate) const ICON_SYS_TITLE_CHAR_LIMIT: usize = 16;
 const ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER: char = '\u{FFFD}';
 const TIMESTAMP_RULES_FILE: &str = "timestamp_rules.json";
-pub(crate) const REQUIRED_PROJECT_FILES: &[&str] = &[
-    "BOOT.ELF",
-    "icon.icn",
-    "icon.sys",
-    "psu.toml",
-    "title.cfg",
-    TIMESTAMP_RULES_FILE,
-];
+pub(crate) const REQUIRED_PROJECT_FILES: &[&str] =
+    &["icon.icn", "icon.sys", "psu.toml", "title.cfg"];
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum MissingFileReason {
+    AlwaysRequired,
+    ExplicitlyIncluded,
+    TimestampAutomation,
+}
+
+impl MissingFileReason {
+    fn detail(&self) -> Option<&'static str> {
+        match self {
+            MissingFileReason::AlwaysRequired => None,
+            MissingFileReason::ExplicitlyIncluded => Some("listed in Include files"),
+            MissingFileReason::TimestampAutomation => Some("needed for SAS timestamp automation"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MissingRequiredFile {
+    pub(crate) name: String,
+    pub(crate) reason: MissingFileReason,
+}
+
+impl MissingRequiredFile {
+    fn always(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            reason: MissingFileReason::AlwaysRequired,
+        }
+    }
+
+    fn included(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            reason: MissingFileReason::ExplicitlyIncluded,
+        }
+    }
+
+    fn timestamp_rules() -> Self {
+        Self {
+            name: TIMESTAMP_RULES_FILE.to_string(),
+            reason: MissingFileReason::TimestampAutomation,
+        }
+    }
+}
 
 fn split_icon_sys_title(title: &str, break_index: usize) -> (String, String) {
     let sanitized_chars: Vec<char> = title
@@ -273,7 +313,7 @@ pub struct PackerApp {
     pub(crate) exclude_manual_entry: String,
     pub(crate) selected_include: Option<usize>,
     pub(crate) selected_exclude: Option<usize>,
-    pub(crate) missing_required_project_files: Vec<String>,
+    pub(crate) missing_required_project_files: Vec<MissingRequiredFile>,
     pub(crate) loaded_psu_path: Option<PathBuf>,
     pub(crate) loaded_psu_files: Vec<String>,
     pub(crate) show_exit_confirm: bool,
@@ -398,23 +438,49 @@ impl PackerApp {
             .map(|folder| Self::timestamp_rules_path_from(folder))
     }
 
-    pub(crate) fn missing_required_project_files(folder: &Path) -> Vec<String> {
-        REQUIRED_PROJECT_FILES
+    fn missing_required_project_files_for(&self, folder: &Path) -> Vec<MissingRequiredFile> {
+        let mut missing = REQUIRED_PROJECT_FILES
             .iter()
             .filter_map(|name| {
                 let candidate = folder.join(name);
                 if candidate.is_file() {
                     None
                 } else {
-                    Some((*name).to_string())
+                    Some(MissingRequiredFile::always(name))
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        if self.include_requires_file("BOOT.ELF") {
+            let candidate = folder.join("BOOT.ELF");
+            if !candidate.is_file() {
+                missing.push(MissingRequiredFile::included("BOOT.ELF"));
+            }
+        }
+
+        if self.uses_timestamp_rules_file() {
+            let candidate = folder.join(TIMESTAMP_RULES_FILE);
+            if !candidate.is_file() {
+                missing.push(MissingRequiredFile::timestamp_rules());
+            }
+        }
+
+        missing
+    }
+
+    fn include_requires_file(&self, file_name: &str) -> bool {
+        self.include_files
+            .iter()
+            .any(|entry| entry.eq_ignore_ascii_case(file_name))
+    }
+
+    fn uses_timestamp_rules_file(&self) -> bool {
+        matches!(self.timestamp_strategy, TimestampStrategy::SasRules)
     }
 
     pub(crate) fn refresh_missing_required_project_files(&mut self) {
         if let Some(folder) = self.folder.clone() {
-            self.missing_required_project_files = Self::missing_required_project_files(&folder);
+            self.missing_required_project_files = self.missing_required_project_files_for(&folder);
         } else {
             self.missing_required_project_files.clear();
         }
@@ -617,14 +683,17 @@ impl PackerApp {
         self.status.clear();
     }
 
-    pub(crate) fn format_missing_required_files_message(missing: &[String]) -> String {
+    pub(crate) fn format_missing_required_files_message(missing: &[MissingRequiredFile]) -> String {
         let formatted = missing
             .iter()
-            .map(|name| format!("• {name}"))
+            .map(|entry| match entry.reason.detail() {
+                Some(detail) => format!("• {} ({detail})", entry.name),
+                None => format!("• {}", entry.name),
+            })
             .collect::<Vec<_>>()
             .join("\n");
         format!(
-            "The selected folder is missing required files:\n{}",
+            "The selected folder is missing files needed to pack the PSU:\n{}",
             formatted
         )
     }
@@ -969,11 +1038,12 @@ impl PackerApp {
             return;
         }
 
-        let missing = Self::missing_required_project_files(&folder);
+        let missing = self.missing_required_project_files_for(&folder);
         self.missing_required_project_files = missing.clone();
         if !missing.is_empty() {
             let message = Self::format_missing_required_files_message(&missing);
-            self.set_error_message((message, missing));
+            let failed_files = missing.iter().map(|entry| entry.name.clone()).collect();
+            self.set_error_message((message, failed_files));
             return;
         }
 
@@ -1817,12 +1887,7 @@ linebreak_pos = 5
         let temp_dir = tempdir().expect("temporary directory");
         for file in REQUIRED_PROJECT_FILES {
             let path = temp_dir.path().join(file);
-            let contents: &[u8] = if *file == TIMESTAMP_RULES_FILE {
-                b"{}"
-            } else {
-                b"placeholder"
-            };
-            fs::write(&path, contents).expect("create required file");
+            fs::write(&path, b"placeholder").expect("create required file");
         }
 
         let mut app = PackerApp::default();
@@ -1837,17 +1902,41 @@ linebreak_pos = 5
             app.refresh_missing_required_project_files();
             assert_eq!(
                 app.missing_required_project_files,
-                vec![(*file).to_string()]
+                vec![MissingRequiredFile::always(file)]
             );
-            let contents: &[u8] = if *file == TIMESTAMP_RULES_FILE {
-                b"{}"
-            } else {
-                b"placeholder"
-            };
-            fs::write(&path, contents).expect("restore required file");
+            fs::write(&path, b"placeholder").expect("restore required file");
             app.refresh_missing_required_project_files();
             assert!(app.missing_required_project_files.is_empty());
         }
+
+        // Optional files should only be required when their features are enabled.
+        app.include_files.push("BOOT.ELF".to_string());
+        app.refresh_missing_required_project_files();
+        assert_eq!(
+            app.missing_required_project_files,
+            vec![MissingRequiredFile::included("BOOT.ELF")]
+        );
+
+        let boot_path = temp_dir.path().join("BOOT.ELF");
+        fs::write(&boot_path, b"boot").expect("create BOOT.ELF");
+        app.refresh_missing_required_project_files();
+        assert!(app.missing_required_project_files.is_empty());
+
+        let timestamp_path = temp_dir.path().join(TIMESTAMP_RULES_FILE);
+        if timestamp_path.exists() {
+            fs::remove_file(&timestamp_path).expect("remove timestamp rules");
+        }
+
+        app.timestamp_strategy = TimestampStrategy::SasRules;
+        app.refresh_missing_required_project_files();
+        assert_eq!(
+            app.missing_required_project_files,
+            vec![MissingRequiredFile::timestamp_rules()]
+        );
+
+        fs::write(&timestamp_path, b"{}").expect("create timestamp rules");
+        app.refresh_missing_required_project_files();
+        assert!(app.missing_required_project_files.is_empty());
     }
 
     #[test]
@@ -1855,12 +1944,7 @@ linebreak_pos = 5
         let temp_dir = tempdir().expect("temporary directory");
         for file in REQUIRED_PROJECT_FILES {
             let path = temp_dir.path().join(file);
-            let contents: &[u8] = if *file == TIMESTAMP_RULES_FILE {
-                b"{}"
-            } else {
-                b"placeholder"
-            };
-            fs::write(&path, contents).expect("create required file");
+            fs::write(&path, b"placeholder").expect("create required file");
         }
 
         let mut app = PackerApp::default();
@@ -1880,17 +1964,54 @@ linebreak_pos = 5
             assert!(error.contains(file));
             assert_eq!(
                 app.missing_required_project_files,
-                vec![(*file).to_string()]
+                vec![MissingRequiredFile::always(file)]
             );
-            let contents: &[u8] = if *file == TIMESTAMP_RULES_FILE {
-                b"{}"
-            } else {
-                b"placeholder"
-            };
-            fs::write(&path, contents).expect("restore required file");
+            fs::write(&path, b"placeholder").expect("restore required file");
             app.clear_error_message();
             app.refresh_missing_required_project_files();
             assert!(app.missing_required_project_files.is_empty());
         }
+
+        // BOOT.ELF becomes required when referenced in the include list.
+        let boot_path = temp_dir.path().join("BOOT.ELF");
+        if boot_path.exists() {
+            fs::remove_file(&boot_path).expect("remove BOOT.ELF");
+        }
+        app.include_files.push("BOOT.ELF".to_string());
+        app.handle_pack_request();
+        let error = app
+            .error_message
+            .as_ref()
+            .expect("missing BOOT.ELF should block packing");
+        assert!(error.contains("BOOT.ELF"));
+        assert_eq!(
+            app.missing_required_project_files,
+            vec![MissingRequiredFile::included("BOOT.ELF")]
+        );
+        fs::write(&boot_path, b"boot").expect("restore BOOT.ELF");
+        app.clear_error_message();
+        app.refresh_missing_required_project_files();
+        assert!(app.missing_required_project_files.is_empty());
+
+        // Timestamp automation requires timestamp_rules.json when enabled.
+        let timestamp_path = temp_dir.path().join(TIMESTAMP_RULES_FILE);
+        if timestamp_path.exists() {
+            fs::remove_file(&timestamp_path).expect("remove timestamp rules");
+        }
+        app.timestamp_strategy = TimestampStrategy::SasRules;
+        app.handle_pack_request();
+        let error = app
+            .error_message
+            .as_ref()
+            .expect("missing timestamp rules should block packing");
+        assert!(error.contains(TIMESTAMP_RULES_FILE));
+        assert_eq!(
+            app.missing_required_project_files,
+            vec![MissingRequiredFile::timestamp_rules()]
+        );
+        fs::write(&timestamp_path, b"{}").expect("restore timestamp rules");
+        app.clear_error_message();
+        app.refresh_missing_required_project_files();
+        assert!(app.missing_required_project_files.is_empty());
     }
 }
