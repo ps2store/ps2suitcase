@@ -788,47 +788,51 @@ fn text_editor_ui(
     folder_selected: bool,
     editor: &mut TextFileEditor,
 ) -> bool {
-    if !folder_selected {
-        ui.label(format!("Select a folder to edit {file_name}."));
-        return false;
-    }
-
     if let Some(message) = &editor.load_error {
         ui.colored_label(egui::Color32::YELLOW, message);
         ui.add_space(8.0);
     }
 
-    let response = egui::ScrollArea::vertical()
-        .id_source(format!("{file_name}_editor_scroll"))
-        .show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut editor.content)
-                    .desired_rows(20)
-                    .code_editor(),
-            )
-        })
-        .inner;
+    let show_editor = folder_selected || !editor.content.is_empty();
 
-    if response.changed() {
-        editor.modified = true;
+    if show_editor {
+        let response = egui::ScrollArea::vertical()
+            .id_source(format!("{file_name}_editor_scroll"))
+            .show(ui, |ui| {
+                ui.add_enabled(
+                    folder_selected,
+                    egui::TextEdit::multiline(&mut editor.content)
+                        .desired_rows(20)
+                        .code_editor(),
+                )
+            })
+            .inner;
+
+        if folder_selected && response.changed() {
+            editor.modified = true;
+        }
     }
 
     ui.add_space(8.0);
 
     let mut save_clicked = false;
-    ui.horizontal(|ui| {
-        let button_label = format!("Save {file_name}");
-        if ui
-            .add_enabled(editor.modified, egui::Button::new(button_label))
-            .clicked()
-        {
-            save_clicked = true;
-        }
+    if folder_selected {
+        ui.horizontal(|ui| {
+            let button_label = format!("Save {file_name}");
+            if ui
+                .add_enabled(editor.modified, egui::Button::new(button_label))
+                .clicked()
+            {
+                save_clicked = true;
+            }
 
-        if editor.modified {
-            ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
-        }
-    });
+            if editor.modified {
+                ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
+            }
+        });
+    } else {
+        ui.label(format!("Select a folder to edit {file_name}."));
+    }
 
     save_clicked
 }

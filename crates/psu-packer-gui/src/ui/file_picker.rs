@@ -231,6 +231,9 @@ impl PackerApp {
         let mut root_name: Option<String> = None;
         let mut root_timestamp = None;
         let mut files = Vec::new();
+        let mut psu_toml_bytes: Option<Vec<u8>> = None;
+        let mut title_cfg_bytes: Option<Vec<u8>> = None;
+        let mut icon_sys_bytes: Option<Vec<u8>> = None;
 
         for entry in &entries {
             match entry.kind {
@@ -240,7 +243,25 @@ impl PackerApp {
                         root_timestamp = Some(entry.created);
                     }
                 }
-                PSUEntryKind::File => files.push(entry.name.clone()),
+                PSUEntryKind::File => {
+                    let name_matches = entry.name.as_str();
+                    if psu_toml_bytes.is_none() && name_matches.eq_ignore_ascii_case("psu.toml") {
+                        if let Some(bytes) = entry.contents.clone() {
+                            psu_toml_bytes = Some(bytes);
+                        }
+                    }
+                    if title_cfg_bytes.is_none() && name_matches.eq_ignore_ascii_case("title.cfg") {
+                        if let Some(bytes) = entry.contents.clone() {
+                            title_cfg_bytes = Some(bytes);
+                        }
+                    }
+                    if icon_sys_bytes.is_none() && name_matches.eq_ignore_ascii_case("icon.sys") {
+                        if let Some(bytes) = entry.contents.clone() {
+                            icon_sys_bytes = Some(bytes);
+                        }
+                    }
+                    files.push(entry.name.clone());
+                }
             }
         }
 
@@ -265,8 +286,46 @@ impl PackerApp {
         self.exclude_files.clear();
         self.selected_include = None;
         self.selected_exclude = None;
-        self.reset_icon_sys_fields();
-        self.reload_project_files();
+        let decode_text = |bytes: Vec<u8>| match String::from_utf8(bytes) {
+            Ok(content) => content,
+            Err(err) => {
+                let bytes = err.into_bytes();
+                String::from_utf8_lossy(&bytes).into_owned()
+            }
+        };
+
+        if let Some(bytes) = psu_toml_bytes {
+            self.psu_toml_editor.set_content(decode_text(bytes));
+        } else {
+            self.psu_toml_editor
+                .set_error_message("psu.toml not found in the opened archive.".to_string());
+        }
+
+        if let Some(bytes) = title_cfg_bytes {
+            self.title_cfg_editor.set_content(decode_text(bytes));
+        } else {
+            self.title_cfg_editor
+                .set_error_message("title.cfg not found in the opened archive.".to_string());
+        }
+
+        self.psu_toml_sync_blocked = false;
+
+        if let Some(bytes) = icon_sys_bytes {
+            match std::panic::catch_unwind(|| IconSys::new(bytes)) {
+                Ok(parsed_icon_sys) => {
+                    self.apply_icon_sys_file(&parsed_icon_sys);
+                }
+                Err(_) => {
+                    self.reset_icon_sys_fields();
+                    self.set_error_message(format!(
+                        "Failed to parse icon.sys from {}.",
+                        path.display()
+                    ));
+                }
+            }
+        } else {
+            self.reset_icon_sys_fields();
+        }
         self.open_psu_settings_tab();
 
         if self.output.trim().is_empty() {
