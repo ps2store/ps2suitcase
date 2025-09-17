@@ -15,8 +15,14 @@ impl NativeOptionsExt for eframe::NativeOptions {
 }
 
 fn main() -> eframe::Result<()> {
+    let viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1024.0, 768.0])
+        .with_min_inner_size([1024.0, 768.0])
+        .with_max_inner_size([1024.0, 768.0])
+        .with_resizable(false);
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1024.0, 768.0]),
+        viewport,
         ..Default::default()
     }
     .with_centered(true);
