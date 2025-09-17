@@ -6,7 +6,8 @@ use eframe::egui::{
     Style, TextWrapMode, Ui,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 pub struct FileTree {
     show_timestamp: bool,
@@ -48,18 +49,20 @@ impl FileTree {
 
     pub fn show(&mut self, ui: &mut Ui, state: &mut AppState) {
         set_menu_style(ui.style_mut());
-        ScrollArea::new([true, true]).show(ui, |ui| {
-            ui.with_layout(
-                Layout::top_down(Align::Min).with_cross_justify(true),
-                |ui| {
-                    self.show_folder(ui, state.opened_folder.clone().unwrap(), state);
-                },
-            );
-        });
+        if let Some(folder) = state.opened_folder.as_ref() {
+            ScrollArea::new([true, true]).show(ui, |ui| {
+                ui.with_layout(
+                    Layout::top_down(Align::Min).with_cross_justify(true),
+                    |ui| {
+                        self.show_folder(ui, folder.clone(), state);
+                    },
+                );
+            });
+        }
     }
 
     pub fn show_folder(&mut self, ui: &mut Ui, path: PathBuf, state: &mut AppState) {
-        let file_name = path.file_name().unwrap().to_str().unwrap().to_owned();
+        let file_name = Self::display_name(&path);
 
         let (_, response, _) =
             CollapsingState::load_with_default_open(ui.ctx(), Id::new(&path), false)
@@ -99,7 +102,7 @@ impl FileTree {
     }
 
     pub fn show_file(&mut self, ui: &mut Ui, path: PathBuf, state: &mut AppState) {
-        let file_name = path.file_name().unwrap().to_str().unwrap().to_owned();
+        let file_name = Self::display_name(&path);
 
         let response = ui.add(
             Button::image_and_text(Self::icon(&file_name), file_name.clone())
@@ -112,6 +115,18 @@ impl FileTree {
                 size: 0,
                 file_path: path.clone(),
             });
+        }
+    }
+
+    fn display_name(path: &Path) -> String {
+        let file_name = path.file_name();
+
+        if let Some(valid) = file_name.and_then(OsStr::to_str) {
+            valid.to_owned()
+        } else if let Some(name) = file_name {
+            name.to_string_lossy().into_owned()
+        } else {
+            path.display().to_string()
         }
     }
 
