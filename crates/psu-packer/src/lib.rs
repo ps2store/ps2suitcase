@@ -765,8 +765,9 @@ pub fn pack_with_config(folder: &Path, output: &Path, cfg: Config) -> Result<(),
         }
     }
 
-    add_psu_defaults(&mut psu, &name, files.len(), timestamp.unwrap_or_default());
-    add_files_to_psu(&mut psu, &files)?;
+    let timestamp_value = timestamp.unwrap_or_default();
+    add_psu_defaults(&mut psu, &name, files.len(), timestamp_value);
+    add_files_to_psu(&mut psu, &files, timestamp)?;
     std::fs::write(output, PSUWriter::new(psu).to_bytes()?)?;
     Ok(())
 }
@@ -831,21 +832,33 @@ fn add_psu_defaults(psu: &mut PSU, name: &str, file_count: usize, timestamp: Nai
     });
 }
 
-fn add_files_to_psu(psu: &mut PSU, files: &[PathBuf]) -> Result<(), Error> {
+fn add_files_to_psu(
+    psu: &mut PSU,
+    files: &[PathBuf],
+    timestamp: Option<NaiveDateTime>,
+) -> Result<(), Error> {
     for file in files {
         let name = file.file_name().unwrap().to_str().unwrap();
 
         let f = std::fs::read(file)?;
-        let stat = std::fs::metadata(file)?;
+        let (created, modified) = if let Some(timestamp) = timestamp {
+            (timestamp, timestamp)
+        } else {
+            let stat = std::fs::metadata(file)?;
+            (
+                convert_timestamp(stat.created()?),
+                convert_timestamp(stat.modified()?),
+            )
+        };
 
         println!("+ {} {}", "Adding", name.green());
 
         psu.entries.push(PSUEntry {
             id: FILE_ID,
             size: f.len() as u32,
-            created: convert_timestamp(stat.created()?),
+            created,
             sector: 0,
-            modified: convert_timestamp(stat.modified()?),
+            modified,
             name: name.to_owned(),
             kind: PSUEntryKind::File,
             contents: Some(f),
