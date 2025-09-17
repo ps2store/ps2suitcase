@@ -1980,7 +1980,7 @@ impl eframe::App for PackerApp {
                 );
                 let separator_rect =
                     egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - 2.0), rect.max);
-                theme::draw_separator(ui.painter(), separator_rect, self.theme.neon_accent);
+                theme::draw_separator(ui.painter(), separator_rect, self.theme.separator);
                 egui::menu::bar(ui, |ui| {
                     ui::file_picker::file_menu(self, ui);
                 });
@@ -1998,10 +1998,10 @@ impl eframe::App for PackerApp {
                 );
                 let top_separator =
                     egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.min.y + 2.0));
-                theme::draw_separator(ui.painter(), top_separator, self.theme.neon_accent);
+                theme::draw_separator(ui.painter(), top_separator, self.theme.separator);
                 let bottom_separator =
                     egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - 2.0), rect.max);
-                theme::draw_separator(ui.painter(), bottom_separator, self.theme.neon_accent);
+                theme::draw_separator(ui.painter(), bottom_separator, self.theme.separator);
                 ui.add_space(8.0);
 
                 let tab_bar = ui.horizontal(|ui| {
@@ -2009,13 +2009,14 @@ impl eframe::App for PackerApp {
                     let mut tab_button =
                         |ui: &mut egui::Ui, tab: EditorTab, label: &str, highlight: bool| {
                             let is_selected = self.editor_tab == tab;
-                            let mut text = egui::RichText::new(label).font(tab_font.clone()).color(
-                                if is_selected || highlight {
-                                    self.theme.neon_accent
-                                } else {
-                                    self.theme.soft_accent
-                                },
-                            );
+                            let base_color = if is_selected || highlight {
+                                self.theme.neon_accent
+                            } else {
+                                self.theme.soft_accent.gamma_multiply(0.85)
+                            };
+                            let mut text = egui::RichText::new(label)
+                                .font(tab_font.clone())
+                                .color(base_color);
                             if is_selected {
                                 text = text.strong();
                             }
@@ -2064,7 +2065,7 @@ impl eframe::App for PackerApp {
                     egui::pos2(rect.min.x, tab_rect.max.y + 4.0),
                     egui::pos2(rect.max.x, tab_rect.max.y + 6.0),
                 );
-                theme::draw_separator(ui.painter(), tab_separator, self.theme.neon_accent);
+                theme::draw_separator(ui.painter(), tab_separator, self.theme.separator);
                 ui.add_space(10.0);
 
                 match self.editor_tab {
