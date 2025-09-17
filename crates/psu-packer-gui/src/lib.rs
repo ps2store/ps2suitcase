@@ -1196,9 +1196,10 @@ fn text_editor_ui(
         if editor.modified {
             ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
         }
-        ui.label(format!(
-            "Select a folder to enable saving {file_name} to disk."
-        ));
+        ui.label(egui::RichText::new(format!(
+            "Edits to {file_name} are kept in memory. Select a folder when you're ready to save them to disk."
+        ))
+        .italics());
     } else {
         ui.label(format!(
             "Select a folder or open a PSU to edit {file_name}."
@@ -1301,12 +1302,13 @@ impl eframe::App for PackerApp {
                     });
                 }
                 EditorTab::PsuToml => {
-                    let editing_enabled = true;
+                    let editing_enabled = true; // Allow editing even without a source selection.
+                    let save_enabled = self.folder.is_some();
                     let save_clicked = text_editor_ui(
                         ui,
                         "psu.toml",
                         editing_enabled,
-                        self.folder.is_some(),
+                        save_enabled,
                         &mut self.psu_toml_editor,
                     );
                     if save_clicked {
@@ -1326,12 +1328,13 @@ impl eframe::App for PackerApp {
                     }
                 }
                 EditorTab::TitleCfg => {
-                    let editing_enabled = true;
+                    let editing_enabled = true; // Allow editing even without a source selection.
+                    let save_enabled = self.folder.is_some();
                     let save_clicked = text_editor_ui(
                         ui,
                         "title.cfg",
                         editing_enabled,
-                        self.folder.is_some(),
+                        save_enabled,
                         &mut self.title_cfg_editor,
                     );
                     if save_clicked {
@@ -1364,5 +1367,77 @@ impl eframe::App for PackerApp {
         });
 
         ui::dialogs::exit_confirmation(self, ctx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manual_edits_persist_without_folder_selection() {
+        let mut app = PackerApp::default();
+        app.open_psu_toml_tab();
+
+        app.psu_toml_editor
+            .set_content("custom configuration".to_string());
+        app.psu_toml_editor.modified = true;
+
+        let ctx = egui::Context::default();
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let save_clicked = text_editor_ui(
+                    ui,
+                    "psu.toml",
+                    true,
+                    app.folder.is_some(),
+                    &mut app.psu_toml_editor,
+                );
+                assert!(!save_clicked);
+            });
+        });
+
+        assert_eq!(app.psu_toml_editor.content, "custom configuration");
+        assert!(app.psu_toml_editor.modified);
+
+        app.open_title_cfg_tab();
+        app.title_cfg_editor
+            .set_content("title settings".to_string());
+        app.title_cfg_editor.modified = true;
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let save_clicked = text_editor_ui(
+                    ui,
+                    "title.cfg",
+                    true,
+                    app.folder.is_some(),
+                    &mut app.title_cfg_editor,
+                );
+                assert!(!save_clicked);
+            });
+        });
+
+        assert_eq!(app.psu_toml_editor.content, "custom configuration");
+        assert!(app.psu_toml_editor.modified);
+
+        app.open_psu_toml_tab();
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let save_clicked = text_editor_ui(
+                    ui,
+                    "psu.toml",
+                    true,
+                    app.folder.is_some(),
+                    &mut app.psu_toml_editor,
+                );
+                assert!(!save_clicked);
+            });
+        });
+
+        assert_eq!(app.psu_toml_editor.content, "custom configuration");
+        assert!(app.psu_toml_editor.modified);
     }
 }
