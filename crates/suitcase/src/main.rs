@@ -36,7 +36,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1920.0, 1080.0])
             .with_icon({
-                let icon = include_bytes!("../assets/ps2.png");
+                let icon = include_bytes!("../assets/app_icon.png");
                 let result = image::load_from_memory(icon).expect("Failed to load icon");
 
                 let width = result.width();
