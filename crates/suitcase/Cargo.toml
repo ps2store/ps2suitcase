@@ -3,6 +3,11 @@ name = "suitcase"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["glow", "wgpu"]
+glow = []
+wgpu = ["eframe/wgpu"]
+
 [dependencies]
 macros = { path = "../macros" }
 eframe = { version = "0.31.1", features = ["default", "persistence"] }
