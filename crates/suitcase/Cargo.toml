@@ -10,7 +10,7 @@ egui_extras = { version = "0.31.1", features = ["svg", "image"] }
 egui_dock = "0.16.0"
 cgmath = "0.18.0"
 ps2-filetypes = { path = "../ps2-filetypes" }
-image = { version = "0.25.6" }
+image = { version = "0.25.6", features = ["ico"] }
 rfd = "0.15.3"
 wavefront_obj = "11.0.0"
 bytesize = "2.0.1"
