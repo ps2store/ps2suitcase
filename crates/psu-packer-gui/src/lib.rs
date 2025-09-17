@@ -232,6 +232,8 @@ pub struct PackerApp {
     pub(crate) timestamp_rules_ui: TimestampRulesUiState,
     pub(crate) include_files: Vec<String>,
     pub(crate) exclude_files: Vec<String>,
+    pub(crate) include_manual_entry: String,
+    pub(crate) exclude_manual_entry: String,
     pub(crate) selected_include: Option<usize>,
     pub(crate) selected_exclude: Option<usize>,
     pub(crate) missing_required_project_files: Vec<String>,
@@ -317,6 +319,8 @@ impl Default for PackerApp {
             timestamp_rules_ui,
             include_files: Vec::new(),
             exclude_files: Vec::new(),
+            include_manual_entry: String::new(),
+            exclude_manual_entry: String::new(),
             selected_include: None,
             selected_exclude: None,
             missing_required_project_files: Vec::new(),
@@ -811,6 +815,8 @@ impl PackerApp {
         self.manual_timestamp = None;
         self.include_files.clear();
         self.exclude_files.clear();
+        self.include_manual_entry.clear();
+        self.exclude_manual_entry.clear();
         self.selected_include = None;
         self.selected_exclude = None;
         self.reset_icon_sys_fields();

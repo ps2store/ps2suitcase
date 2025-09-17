@@ -89,37 +89,51 @@ pub(crate) fn file_filters_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
         ui.heading("File filters");
         ui.small("Manage which files to include or exclude before creating the archive.");
-        if app.folder.is_some() {
-            ui.columns(2, |columns| {
-                let (include_add, include_remove) = file_list_ui(
-                    &mut columns[0],
-                    ListKind::Include.label(),
-                    &mut app.include_files,
-                    &mut app.selected_include,
-                );
-                if include_add && app.handle_add_file(ListKind::Include) {
-                    app.refresh_psu_toml_editor();
-                }
-                if include_remove && app.handle_remove_file(ListKind::Include) {
-                    app.refresh_psu_toml_editor();
-                }
-
-                let (exclude_add, exclude_remove) = file_list_ui(
-                    &mut columns[1],
-                    ListKind::Exclude.label(),
-                    &mut app.exclude_files,
-                    &mut app.selected_exclude,
-                );
-                if exclude_add && app.handle_add_file(ListKind::Exclude) {
-                    app.refresh_psu_toml_editor();
-                }
-                if exclude_remove && app.handle_remove_file(ListKind::Exclude) {
-                    app.refresh_psu_toml_editor();
-                }
-            });
-        } else {
-            ui.label("Select a folder to configure file filters.");
+        let folder_selected = app.folder.is_some();
+        if !folder_selected {
+            ui.small("No folder selected. Enter file names manually or choose a folder to browse.");
         }
+        ui.columns(2, |columns| {
+            let include_actions = file_list_ui(
+                &mut columns[0],
+                ListKind::Include.label(),
+                &mut app.include_files,
+                &mut app.selected_include,
+                &mut app.include_manual_entry,
+                folder_selected,
+            );
+            if include_actions.browse_add && app.handle_add_file(ListKind::Include) {
+                app.refresh_psu_toml_editor();
+            }
+            if let Some(entry) = include_actions.manual_add {
+                if app.handle_add_file_from_entry(ListKind::Include, &entry) {
+                    app.refresh_psu_toml_editor();
+                }
+            }
+            if include_actions.remove && app.handle_remove_file(ListKind::Include) {
+                app.refresh_psu_toml_editor();
+            }
+
+            let exclude_actions = file_list_ui(
+                &mut columns[1],
+                ListKind::Exclude.label(),
+                &mut app.exclude_files,
+                &mut app.selected_exclude,
+                &mut app.exclude_manual_entry,
+                folder_selected,
+            );
+            if exclude_actions.browse_add && app.handle_add_file(ListKind::Exclude) {
+                app.refresh_psu_toml_editor();
+            }
+            if let Some(entry) = exclude_actions.manual_add {
+                if app.handle_add_file_from_entry(ListKind::Exclude, &entry) {
+                    app.refresh_psu_toml_editor();
+                }
+            }
+            if exclude_actions.remove && app.handle_remove_file(ListKind::Exclude) {
+                app.refresh_psu_toml_editor();
+            }
+        });
     });
 }
 
@@ -220,6 +234,38 @@ mod tests {
         assert_eq!(config.include, Some(vec!["FILE.BIN".to_string()]));
         assert_eq!(config.exclude, Some(vec!["SKIP.DAT".to_string()]));
     }
+
+    #[test]
+    fn manual_filter_entries_allowed_without_folder() {
+        let mut app = PackerApp::default();
+        app.selected_prefix = SasPrefix::Ps2;
+        app.folder_base_name = "SAVE".to_string();
+
+        assert!(app.handle_add_file_from_entry(ListKind::Include, "BOOT.ELF"));
+        assert!(app.handle_add_file_from_entry(ListKind::Exclude, "THUMBS.DB"));
+
+        let config = app.build_config().expect("config builds successfully");
+        assert_eq!(config.include, Some(vec!["BOOT.ELF".to_string()]));
+        assert_eq!(config.exclude, Some(vec!["THUMBS.DB".to_string()]));
+    }
+
+    #[test]
+    fn manual_filter_entries_trim_and_reject_duplicates() {
+        let mut app = PackerApp::default();
+
+        assert!(app.handle_add_file_from_entry(ListKind::Include, "  DATA.BIN  "));
+        assert_eq!(app.include_files, vec!["DATA.BIN"]);
+
+        assert!(!app.handle_add_file_from_entry(ListKind::Include, "DATA.BIN"));
+        assert_eq!(app.include_files, vec!["DATA.BIN"]);
+        assert!(app.error_message.is_some());
+    }
+}
+
+struct FileListActions {
+    browse_add: bool,
+    remove: bool,
+    manual_add: Option<String>,
 }
 
 fn file_list_ui(
@@ -227,21 +273,24 @@ fn file_list_ui(
     label: &str,
     files: &mut Vec<String>,
     selected: &mut Option<usize>,
-) -> (bool, bool) {
-    let mut add_clicked = false;
+    manual_entry: &mut String,
+    allow_browse: bool,
+) -> FileListActions {
+    let mut browse_clicked = false;
     let mut remove_clicked = false;
+    let mut manual_added: Option<String> = None;
     let has_selection = selected.is_some();
 
     ui.horizontal(|ui| {
         ui.label(label);
         ui.add_space(ui.spacing().item_spacing.x);
 
-        if ui
-            .add(egui::Button::new("➕").small())
-            .on_hover_text("Add files from the selected folder to this list.")
-            .clicked()
-        {
-            add_clicked = true;
+        let browse_button = egui::Button::new("📁").small();
+        let browse_response = ui
+            .add_enabled(allow_browse, browse_button)
+            .on_hover_text("Browse for files in the selected folder.");
+        if browse_response.clicked() {
+            browse_clicked = true;
         }
 
         if ui
@@ -250,6 +299,24 @@ fn file_list_ui(
             .clicked()
         {
             remove_clicked = true;
+        }
+    });
+
+    ui.horizontal(|ui| {
+        let response =
+            ui.add(egui::TextEdit::singleline(manual_entry).hint_text("Add file by name"));
+        let add_manual = ui
+            .add(egui::Button::new("Add").small())
+            .on_hover_text("Add the typed entry to this list.")
+            .clicked();
+        let enter_pressed = ui.input(|input| input.key_pressed(egui::Key::Enter));
+
+        if add_manual || (response.lost_focus() && enter_pressed) {
+            let value = manual_entry.trim();
+            if !value.is_empty() {
+                manual_added = Some(value.to_string());
+                manual_entry.clear();
+            }
         }
     });
 
@@ -277,7 +344,11 @@ fn file_list_ui(
             }
         });
 
-    (add_clicked, remove_clicked)
+    FileListActions {
+        browse_add: browse_clicked,
+        remove: remove_clicked,
+        manual_add: manual_added,
+    }
 }
 
 impl PackerApp {
@@ -358,12 +429,10 @@ impl PackerApp {
 
     pub(crate) fn handle_add_file(&mut self, kind: ListKind) -> bool {
         let Some(folder) = self.folder.clone() else {
-            self.set_error_message("Please select a folder before adding files");
             return false;
         };
 
         let list_label = kind.label();
-        let (files, selected) = self.list_mut(kind);
 
         let Some(paths) = rfd::FileDialog::new().set_directory(&folder).pick_files() else {
             return false;
@@ -374,7 +443,6 @@ impl PackerApp {
         }
 
         let mut invalid_entries = Vec::new();
-        let mut last_added = None;
         let mut added_any = false;
 
         for path in paths {
@@ -399,24 +467,18 @@ impl PackerApp {
                 continue;
             };
 
-            let name = name.to_string();
-
-            if files.iter().any(|entry| entry == &name) {
-                invalid_entries.push(format!("{name} (already listed)"));
-                continue;
+            match self.add_file_entry(kind, name) {
+                Ok(_) => {
+                    added_any = true;
+                }
+                Err(err) => {
+                    invalid_entries.push(err);
+                }
             }
-
-            files.push(name);
-            last_added = Some(files.len() - 1);
-            added_any = true;
-        }
-
-        if let Some(index) = last_added {
-            *selected = Some(index);
         }
 
         if invalid_entries.is_empty() {
-            if last_added.is_some() {
+            if added_any {
                 self.clear_error_message();
                 self.status.clear();
             }
@@ -426,6 +488,22 @@ impl PackerApp {
         }
 
         added_any
+    }
+
+    pub(crate) fn handle_add_file_from_entry(&mut self, kind: ListKind, entry: &str) -> bool {
+        let list_label = kind.label();
+        match self.add_file_entry(kind, entry) {
+            Ok(_) => {
+                self.clear_error_message();
+                self.status.clear();
+                true
+            }
+            Err(err) => {
+                let message = format!("Could not add the entry to the {list_label} list");
+                self.set_error_message((message, vec![err]));
+                false
+            }
+        }
     }
 
     pub(crate) fn handle_remove_file(&mut self, kind: ListKind) -> bool {
@@ -450,6 +528,23 @@ impl PackerApp {
             ListKind::Include => (&mut self.include_files, &mut self.selected_include),
             ListKind::Exclude => (&mut self.exclude_files, &mut self.selected_exclude),
         }
+    }
+
+    fn add_file_entry(&mut self, kind: ListKind, entry: &str) -> Result<usize, String> {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            return Err("File name cannot be empty".to_string());
+        }
+
+        let (files, selected) = self.list_mut(kind);
+        if files.iter().any(|existing| existing == trimmed) {
+            return Err(format!("{trimmed} (already listed)"));
+        }
+
+        files.push(trimmed.to_string());
+        let index = files.len() - 1;
+        *selected = Some(index);
+        Ok(index)
     }
 
     fn validate_icon_sys_settings(&self) -> Result<(), String> {
