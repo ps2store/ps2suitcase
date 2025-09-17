@@ -1,9 +1,10 @@
 use eframe::egui::{self, Color32};
 
-use crate::{IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS};
+use crate::{IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS, ICON_SYS_TITLE_CHAR_LIMIT};
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 
-const TITLE_CHAR_LIMIT: usize = 10;
+const TITLE_CHAR_LIMIT: usize = ICON_SYS_TITLE_CHAR_LIMIT;
+const TITLE_INPUT_WIDTH: f32 = (ICON_SYS_TITLE_CHAR_LIMIT as f32) * 9.0;
 
 #[derive(Clone, Copy)]
 struct IconSysPreset {
@@ -300,8 +301,16 @@ fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
 
                 ui.label("Preview");
                 ui.vertical(|ui| {
-                    ui.monospace(format!("{:<10}", app.icon_sys_title_line1));
-                    ui.monospace(format!("{:<10}", app.icon_sys_title_line2));
+                    ui.monospace(format!(
+                        "{:<width$}",
+                        app.icon_sys_title_line1,
+                        width = ICON_SYS_TITLE_CHAR_LIMIT
+                    ));
+                    ui.monospace(format!(
+                        "{:<width$}",
+                        app.icon_sys_title_line2,
+                        width = ICON_SYS_TITLE_CHAR_LIMIT
+                    ));
                     let break_pos = app.icon_sys_title_line1.chars().count();
                     ui.small(format!("Line break position: {break_pos}"));
                 });
@@ -314,26 +323,27 @@ fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
 fn title_input(ui: &mut egui::Ui, id: egui::Id, value: &mut String) -> bool {
     let mut edit = egui::TextEdit::singleline(value)
         .char_limit(TITLE_CHAR_LIMIT)
-        .desired_width(120.0);
+        .desired_width(TITLE_INPUT_WIDTH);
     edit = edit.id_source(id);
 
     let response = ui.add(edit);
     let mut changed = false;
     if response.changed() {
-        let mut sanitized = value
+        let sanitized = value
             .chars()
             .filter(|c| c.is_ascii() && !c.is_control())
+            .take(TITLE_CHAR_LIMIT)
             .collect::<String>();
-        if sanitized.len() > TITLE_CHAR_LIMIT {
-            sanitized.truncate(TITLE_CHAR_LIMIT);
-        }
         if *value != sanitized {
             *value = sanitized;
         }
         changed = true;
     }
 
-    ui.small(format!("{} / {TITLE_CHAR_LIMIT}", value.chars().count()));
+    let char_count = value.chars().count();
+    ui.small(format!(
+        "{char_count} / {TITLE_CHAR_LIMIT} characters (ASCII only)"
+    ));
     changed
 }
 

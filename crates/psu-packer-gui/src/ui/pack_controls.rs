@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui;
 
-use crate::{PackerApp, SasPrefix};
+use crate::{PackerApp, SasPrefix, ICON_SYS_TITLE_CHAR_LIMIT};
 
 pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
@@ -447,11 +447,15 @@ impl PackerApp {
             let line1 = &self.icon_sys_title_line1;
             let line2 = &self.icon_sys_title_line2;
 
-            if line1.chars().count() > 10 {
-                return Err("Icon.sys line 1 cannot exceed 10 characters".to_string());
+            if line1.chars().count() > ICON_SYS_TITLE_CHAR_LIMIT {
+                return Err(format!(
+                    "Icon.sys line 1 cannot exceed {ICON_SYS_TITLE_CHAR_LIMIT} characters"
+                ));
             }
-            if line2.chars().count() > 10 {
-                return Err("Icon.sys line 2 cannot exceed 10 characters".to_string());
+            if line2.chars().count() > ICON_SYS_TITLE_CHAR_LIMIT {
+                return Err(format!(
+                    "Icon.sys line 2 cannot exceed {ICON_SYS_TITLE_CHAR_LIMIT} characters"
+                ));
             }
             let title_is_valid = |value: &str| {
                 value
