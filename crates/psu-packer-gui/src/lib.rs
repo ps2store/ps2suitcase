@@ -20,6 +20,7 @@ pub use ui::{dialogs, file_picker, pack_controls};
 pub(crate) const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 pub(crate) const ICON_SYS_FLAG_OPTIONS: &[(u16, &str)] =
     &[(0, "Save Data"), (1, "System Software"), (4, "Settings")];
+pub(crate) const ICON_SYS_TITLE_CHAR_LIMIT: usize = 16;
 const TIMESTAMP_RULES_FILE: &str = "timestamp_rules.json";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -513,13 +514,13 @@ impl PackerApp {
             .collect();
         let break_index = icon_cfg.linebreak_position() as usize;
         let break_index = break_index.min(ascii_chars.len());
-        let line1_count = break_index.min(10);
+        let line1_count = break_index.min(ICON_SYS_TITLE_CHAR_LIMIT);
         let skip_count = line1_count;
         self.icon_sys_title_line1 = ascii_chars.iter().take(line1_count).copied().collect();
         self.icon_sys_title_line2 = ascii_chars
             .iter()
             .skip(skip_count)
-            .take(10)
+            .take(ICON_SYS_TITLE_CHAR_LIMIT)
             .copied()
             .collect();
 
@@ -617,13 +618,13 @@ impl PackerApp {
             .filter(|c| c.is_ascii() && *c != '\n' && *c != '\r')
             .collect();
         let break_index = (icon_sys.linebreak_pos as usize).min(ascii_chars.len());
-        let line1_count = break_index.min(10);
+        let line1_count = break_index.min(ICON_SYS_TITLE_CHAR_LIMIT);
         let skip_count = line1_count;
         self.icon_sys_title_line1 = ascii_chars.iter().take(line1_count).copied().collect();
         self.icon_sys_title_line2 = ascii_chars
             .iter()
             .skip(skip_count)
-            .take(10)
+            .take(ICON_SYS_TITLE_CHAR_LIMIT)
             .copied()
             .collect();
 

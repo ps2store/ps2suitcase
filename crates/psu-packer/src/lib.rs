@@ -416,6 +416,59 @@ impl From<IconSysFlags> for u16 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn icon_sys_serializes_two_16_char_lines() {
+        let line1 = "ABCDEFGHIJKLMNOP";
+        let line2 = "QRSTUVWXYZ012345";
+        let title = format!("{line1}{line2}");
+        let icon_sys = IconSysConfig {
+            flags: IconSysFlags::new(0),
+            title: title.clone(),
+            linebreak_pos: Some(line1.chars().count() as u16),
+            preset: None,
+            background_transparency: None,
+            background_colors: None,
+            light_directions: None,
+            light_colors: None,
+            ambient_color: None,
+        };
+
+        assert_eq!(icon_sys.linebreak_position(), line1.chars().count() as u16);
+
+        let config = Config {
+            name: "Example".to_string(),
+            timestamp: None,
+            include: None,
+            exclude: None,
+            icon_sys: Some(icon_sys.clone()),
+        };
+
+        let toml = config
+            .to_toml_string()
+            .expect("icon_sys config serializes to TOML");
+        let parsed: toml::Value = toml::from_str(&toml).expect("parse TOML output");
+        let icon_sys_table = parsed
+            .get("icon_sys")
+            .and_then(|value| value.as_table())
+            .expect("icon_sys table present");
+
+        assert_eq!(
+            icon_sys_table.get("title").and_then(|value| value.as_str()),
+            Some(title.as_str())
+        );
+        assert_eq!(
+            icon_sys_table
+                .get("linebreak_pos")
+                .and_then(|value| value.as_integer()),
+            Some(line1.chars().count() as i64)
+        );
+    }
+}
+
 impl<'de> Deserialize<'de> for IconSysFlags {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
