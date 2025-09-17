@@ -2,11 +2,11 @@ use std::path::Path;
 
 use eframe::egui;
 
-use crate::{PackerApp, SasPrefix, ICON_SYS_TITLE_CHAR_LIMIT};
+use crate::{ui::theme, PackerApp, SasPrefix, ICON_SYS_TITLE_CHAR_LIMIT};
 
 pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
-        ui.heading("Metadata");
+        ui.heading(theme::display_heading_text(ui, "Metadata"));
         ui.small("Edit PSU metadata before or after selecting a folder.");
         let previous_default_output = app.default_output_file_name();
         let mut metadata_changed = false;
@@ -87,7 +87,7 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
 pub(crate) fn file_filters_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
-        ui.heading("File filters");
+        ui.heading(theme::display_heading_text(ui, "File filters"));
         ui.small("Manage which files to include or exclude before creating the archive.");
         let folder_selected = app.folder.is_some();
         if !folder_selected {
@@ -139,7 +139,7 @@ pub(crate) fn file_filters_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
 pub(crate) fn output_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
-        ui.heading("Output");
+        ui.heading(theme::display_heading_text(ui, "Output"));
         ui.small("Choose where the packed PSU file will be saved.");
         egui::Grid::new("output_grid")
             .num_columns(2)
@@ -164,7 +164,7 @@ pub(crate) fn output_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
 pub(crate) fn packaging_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
-        ui.heading("Packaging");
+        ui.heading(theme::display_heading_text(ui, "Packaging"));
         ui.small("Validate the configuration and generate the PSU archive.");
         let pack_in_progress = app.is_pack_running();
         if !app.missing_required_project_files.is_empty() {

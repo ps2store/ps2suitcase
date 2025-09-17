@@ -1,6 +1,8 @@
 use eframe::egui::{self, Color32};
 
-use crate::{IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS, ICON_SYS_TITLE_CHAR_LIMIT};
+use crate::{
+    ui::theme, IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS, ICON_SYS_TITLE_CHAR_LIMIT,
+};
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 
 const TITLE_CHAR_LIMIT: usize = ICON_SYS_TITLE_CHAR_LIMIT;
@@ -184,7 +186,7 @@ const ICON_SYS_PRESETS: &[IconSysPreset] = &[
 ];
 
 pub(crate) fn icon_sys_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
-    ui.heading("icon.sys metadata");
+    ui.heading(theme::display_heading_text(ui, "icon.sys metadata"));
     ui.small("Configure the save icon title, flags, and lighting.");
     ui.add_space(8.0);
 
@@ -271,7 +273,7 @@ pub(crate) fn icon_sys_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
 fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     let mut changed = false;
     ui.group(|ui| {
-        ui.heading("Title");
+        ui.heading(theme::display_heading_text(ui, "Title"));
         ui.small("Each line supports up to 10 ASCII characters.");
 
         egui::Grid::new("icon_sys_title_grid")
@@ -349,7 +351,7 @@ fn title_input(ui: &mut egui::Ui, id: egui::Id, value: &mut String) -> bool {
 fn flag_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     let mut changed = false;
     ui.group(|ui| {
-        ui.heading("Flags");
+        ui.heading(theme::display_heading_text(ui, "Flags"));
         egui::Grid::new("icon_sys_flag_grid")
             .num_columns(2)
             .spacing(egui::vec2(8.0, 4.0))
@@ -401,7 +403,7 @@ fn flag_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
 fn presets_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     let mut changed = false;
     ui.group(|ui| {
-        ui.heading("Presets");
+        ui.heading(theme::display_heading_text(ui, "Presets"));
         ui.small("Choose a preset to populate the colors and lights automatically.");
 
         let selected_label = match app.icon_sys_selected_preset.as_deref() {
@@ -469,7 +471,7 @@ fn draw_color_swatch(ui: &mut egui::Ui, color: Color32) {
 fn background_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     let mut changed = false;
     ui.group(|ui| {
-        ui.heading("Background");
+        ui.heading(theme::display_heading_text(ui, "Background"));
         ui.small("Adjust the gradient colors and alpha layer.");
 
         if ui
@@ -511,7 +513,7 @@ fn background_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
 fn lighting_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     let mut changed = false;
     ui.group(|ui| {
-        ui.heading("Lighting");
+        ui.heading(theme::display_heading_text(ui, "Lighting"));
         ui.small("Tweak light directions, colors, and the ambient glow.");
 
         let mut lighting_changed = false;

@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use eframe::egui;
 use ps2_filetypes::{IconSys, PSUEntryKind, PSU};
 
-use crate::{PackerApp, SasPrefix, TimestampStrategy};
+use crate::{ui::theme, PackerApp, SasPrefix, TimestampStrategy};
 
 pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.menu_button("File", |ui| {
@@ -158,7 +158,7 @@ mod tests {
 
 pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
-        ui.heading("Folder");
+        ui.heading(theme::display_heading_text(ui, "Folder"));
         ui.small("Select the PSU project folder containing psu.toml.");
         ui.horizontal(|ui| {
             let spacing = ui.spacing().item_spacing.x;
@@ -289,7 +289,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
 pub(crate) fn loaded_psu_section(app: &PackerApp, ui: &mut egui::Ui) {
     ui.group(|ui| {
-        ui.heading("Loaded PSU");
+        ui.heading(theme::display_heading_text(ui, "Loaded PSU"));
         ui.small("Review the files discovered in the opened PSU archive.");
         if let Some(path) = &app.loaded_psu_path {
             ui.label(format!("File: {}", path.display()));
