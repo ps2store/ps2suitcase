@@ -5,9 +5,25 @@ use eframe::egui::{
     include_image, vec2, Align, Button, Color32, Id, ImageSource, Layout, ScrollArea, Stroke,
     Style, TextWrapMode, Ui,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+
+fn is_symlink_or_junction(file_type: &std::fs::FileType) -> bool {
+    if file_type.is_symlink() {
+        true
+    } else {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::FileTypeExt;
+            file_type.is_symlink_dir() || file_type.is_symlink_file()
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+}
 
 pub struct FileTree {
     show_timestamp: bool,
@@ -15,6 +31,7 @@ pub struct FileTree {
     id: Id,
     expanded: HashMap<PathBuf, bool>,
     dir_cache: HashMap<PathBuf, Vec<PathBuf>>,
+    visited_dirs: HashSet<PathBuf>,
 }
 
 fn set_menu_style(style: &mut Style) {
@@ -33,6 +50,7 @@ impl FileTree {
             id: Id::new("file_tree"),
             expanded: HashMap::new(),
             dir_cache: HashMap::new(),
+            visited_dirs: HashSet::new(),
         }
     }
 
@@ -130,13 +148,29 @@ impl FileTree {
         }
     }
 
-    fn index_folder_internal(&mut self, root: &PathBuf) -> std::io::Result<()> {
+    fn index_folder_internal(&mut self, root: &Path) -> std::io::Result<()> {
+        let canonical_root = match root.canonicalize() {
+            Ok(path) => path,
+            Err(err) => {
+                eprintln!(
+                    "Failed to canonicalize directory '{}': {err}",
+                    root.display()
+                );
+                return Err(err);
+            }
+        };
+
+        if !self.visited_dirs.insert(canonical_root.clone()) {
+            return Ok(());
+        }
+
         let mut folders = Vec::new();
         let mut files = Vec::new();
-        let children = match std::fs::read_dir(&root) {
+        let children = match std::fs::read_dir(root) {
             Ok(children) => children,
             Err(err) => {
                 eprintln!("Failed to read contents of '{}': {err}", root.display());
+                self.visited_dirs.remove(&canonical_root);
                 return Err(err);
             }
         };
@@ -145,14 +179,34 @@ impl FileTree {
             match entry {
                 Ok(entry) => {
                     let path = entry.path();
-                    if path.is_dir() {
-                        if let Err(err) = self.index_folder_internal(&path) {
+                    let file_type = match entry.file_type() {
+                        Ok(file_type) => file_type,
+                        Err(err) => {
                             eprintln!(
-                                "Skipping subdirectory '{}' due to error: {err}",
+                                "Failed to read metadata for '{}': {err}",
                                 path.display()
                             );
-                        } else {
-                            folders.push(path);
+                            continue;
+                        }
+                    };
+
+                    if is_symlink_or_junction(&file_type) {
+                        continue;
+                    }
+
+                    if file_type.is_dir() {
+                        match self.index_folder_internal(&path) {
+                            Ok(()) => {
+                                if self.dir_cache.contains_key(&path) {
+                                    folders.push(path);
+                                }
+                            }
+                            Err(err) => {
+                                eprintln!(
+                                    "Skipping subdirectory '{}' due to error: {err}",
+                                    path.display()
+                                );
+                            }
                         }
                     } else {
                         files.push(path);
@@ -168,17 +222,19 @@ impl FileTree {
         }
 
         self.dir_cache
-            .insert(root.clone(), [folders, files].concat());
+            .insert(root.to_path_buf(), [folders, files].concat());
 
         Ok(())
     }
 
     pub fn index_folder(&mut self, root: &PathBuf) -> std::io::Result<()> {
         self.dir_cache.clear();
-        match self.index_folder_internal(root) {
+        self.visited_dirs.clear();
+        match self.index_folder_internal(root.as_path()) {
             Ok(()) => Ok(()),
             Err(err) => {
                 self.dir_cache.clear();
+                self.visited_dirs.clear();
                 Err(err)
             }
         }
