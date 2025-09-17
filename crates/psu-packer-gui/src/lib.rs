@@ -10,6 +10,7 @@ use eframe::egui;
 use ps2_filetypes::{templates, IconSys};
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 
+pub(crate) mod sas_timestamps;
 pub mod ui;
 
 pub use ui::{dialogs, file_picker, pack_controls};

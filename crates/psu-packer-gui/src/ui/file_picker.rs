@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use eframe::egui;
 use ps2_filetypes::{IconSys, PSUEntryKind, PSU};
 
-use crate::{PackerApp, SasPrefix};
+use crate::{sas_timestamps, PackerApp, SasPrefix};
 
 pub(crate) fn file_menu(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.menu_button("File", |ui| {
@@ -67,6 +67,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 .clicked()
             {
                 if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                    let mut deterministic_timestamp_added = false;
                     match psu_packer::load_config(&folder) {
                         Ok(config) => {
                             let psu_packer::Config {
@@ -80,7 +81,11 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                             app.set_folder_name_from_full(&name);
                             app.psu_file_base_name = app.folder_base_name.clone();
                             app.output = app.default_output_file_name().unwrap_or_default();
-                            app.timestamp = timestamp;
+                            let planned_timestamp = timestamp
+                                .or_else(|| sas_timestamps::planned_timestamp_for_folder(&folder));
+                            deterministic_timestamp_added =
+                                timestamp.is_none() && planned_timestamp.is_some();
+                            app.timestamp = planned_timestamp;
                             app.include_files = include.unwrap_or_default();
                             app.exclude_files = exclude.unwrap_or_default();
                             app.selected_include = None;
@@ -148,6 +153,9 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                     app.loaded_psu_files.clear();
                     app.folder = Some(folder.clone());
                     app.reload_project_files();
+                    if deterministic_timestamp_added {
+                        app.refresh_psu_toml_editor();
+                    }
                     if app.icon_sys_enabled {
                         app.open_icon_sys_tab();
                     } else {
