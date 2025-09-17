@@ -16,6 +16,19 @@ fn file_menu_contents(
     ui: &mut egui::Ui,
     mut recorder: Option<&mut dyn FileMenuRecorder>,
 ) {
+    let pack_in_progress = app.is_pack_running();
+
+    let pack_psu_response = ui
+        .add_enabled(!pack_in_progress, egui::Button::new("Pack PSU"))
+        .on_hover_text("Create the PSU archive using the settings above.");
+    if let Some(recorder) = recorder.as_mut() {
+        recorder.record(FileMenuItem::PackPsu, pack_psu_response.enabled());
+    }
+    if pack_psu_response.clicked() {
+        app.handle_pack_request();
+        ui.close_menu();
+    }
+
     if ui.button("Save PSU As...").clicked() {
         app.browse_output_destination();
         ui.close_menu();
@@ -84,6 +97,7 @@ fn file_menu_contents(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum FileMenuItem {
+    PackPsu,
     EditPsuToml,
     EditTitleCfg,
     EditIconSys,
@@ -116,6 +130,7 @@ mod tests {
         });
         let _ = ctx.end_frame();
 
+        assert!(recorder.is_enabled(FileMenuItem::PackPsu));
         assert!(recorder.is_enabled(FileMenuItem::EditPsuToml));
         assert!(recorder.is_enabled(FileMenuItem::EditTitleCfg));
         assert!(recorder.is_enabled(FileMenuItem::EditIconSys));
