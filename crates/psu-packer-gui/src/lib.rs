@@ -917,36 +917,54 @@ impl PackerApp {
     }
 
     fn create_file_from_template(&mut self, file_name: &str, template: &str, tab: EditorTab) {
-        let Some(folder) = self.folder.clone() else {
-            self.set_error_message(format!(
-                "Select a folder before creating {file_name} from the template."
-            ));
-            return;
-        };
+        if let Some(folder) = self.folder.clone() {
+            let path = folder.join(file_name);
+            if path.exists() {
+                self.set_error_message(format!(
+                    "{} already exists in the selected folder.",
+                    path.display()
+                ));
+                return;
+            }
 
-        let path = folder.join(file_name);
-        if path.exists() {
-            self.set_error_message(format!(
-                "{} already exists in the selected folder.",
-                path.display()
-            ));
-            return;
+            if let Err(err) = fs::write(&path, template) {
+                self.set_error_message(format!("Failed to create {}: {}", path.display(), err));
+                return;
+            }
+
+            self.status = format!("Created {} from template.", path.display());
+            self.clear_error_message();
+            self.reload_project_files();
+        } else {
+            if let Some(editor) = self.editor_for_text_tab(tab) {
+                editor.set_content(template.to_string());
+                editor.modified = true;
+                self.clear_error_message();
+                self.status = format!(
+                    "Loaded default {file_name} template in the editor. Select a folder to save it."
+                );
+            } else {
+                self.set_error_message(format!(
+                    "Select a folder before creating {file_name} from the template."
+                ));
+                return;
+            }
         }
 
-        if let Err(err) = fs::write(&path, template) {
-            self.set_error_message(format!("Failed to create {}: {}", path.display(), err));
-            return;
-        }
-
-        self.status = format!("Created {} from template.", path.display());
-        self.clear_error_message();
-        self.reload_project_files();
         match tab {
             EditorTab::PsuSettings => self.open_psu_settings_tab(),
             EditorTab::PsuToml => self.open_psu_toml_tab(),
             EditorTab::TitleCfg => self.open_title_cfg_tab(),
             EditorTab::IconSys => self.open_icon_sys_tab(),
             EditorTab::TimestampAuto => self.open_timestamp_auto_tab(),
+        }
+    }
+
+    fn editor_for_text_tab(&mut self, tab: EditorTab) -> Option<&mut TextFileEditor> {
+        match tab {
+            EditorTab::PsuToml => Some(&mut self.psu_toml_editor),
+            EditorTab::TitleCfg => Some(&mut self.title_cfg_editor),
+            _ => None,
         }
     }
 
@@ -1283,7 +1301,7 @@ impl eframe::App for PackerApp {
                     });
                 }
                 EditorTab::PsuToml => {
-                    let editing_enabled = self.folder.is_some() || self.showing_loaded_psu();
+                    let editing_enabled = true;
                     let save_clicked = text_editor_ui(
                         ui,
                         "psu.toml",
@@ -1308,7 +1326,7 @@ impl eframe::App for PackerApp {
                     }
                 }
                 EditorTab::TitleCfg => {
-                    let editing_enabled = self.folder.is_some() || self.showing_loaded_psu();
+                    let editing_enabled = true;
                     let save_clicked = text_editor_ui(
                         ui,
                         "title.cfg",
