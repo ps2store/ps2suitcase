@@ -183,7 +183,12 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 
                             app.set_folder_name_from_full(&name);
                             app.psu_file_base_name = app.folder_base_name.clone();
-                            app.output = app.default_output_file_name().unwrap_or_default();
+                            if let Some(default_path) = app.default_output_path_with(Some(&folder))
+                            {
+                                app.output = default_path.display().to_string();
+                            } else {
+                                app.output.clear();
+                            }
                             app.source_timestamp = timestamp;
                             app.include_files = include.unwrap_or_default();
                             app.exclude_files = exclude.unwrap_or_default();

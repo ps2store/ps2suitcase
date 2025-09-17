@@ -921,14 +921,72 @@ impl PackerApp {
         name
     }
 
-    pub(crate) fn psu_file_stem(&self) -> String {
-        let mut stem = String::from(self.selected_prefix.as_str());
-        stem.push_str(&self.psu_file_base_name);
-        stem
+    fn effective_psu_file_base_name(&self) -> Option<String> {
+        let trimmed_file = self.psu_file_base_name.trim();
+        if !trimmed_file.is_empty() {
+            return Some(trimmed_file.to_string());
+        }
+
+        let trimmed_folder = self.folder_base_name.trim();
+        if trimmed_folder.is_empty() {
+            None
+        } else {
+            Some(trimmed_folder.to_string())
+        }
+    }
+
+    fn existing_output_directory(&self) -> Option<PathBuf> {
+        let trimmed_output = self.output.trim();
+        if trimmed_output.is_empty() {
+            return None;
+        }
+
+        let path = Path::new(trimmed_output);
+        path.parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map(|parent| parent.to_path_buf())
+    }
+
+    fn loaded_psu_directory(&self) -> Option<PathBuf> {
+        self.loaded_psu_path
+            .as_ref()
+            .and_then(|path| path.parent())
+            .map(|parent| parent.to_path_buf())
+    }
+
+    fn default_output_directory(&self, fallback_dir: Option<&Path>) -> Option<PathBuf> {
+        if let Some(existing) = self.existing_output_directory() {
+            return Some(existing);
+        }
+
+        if let Some(dir) = fallback_dir {
+            return Some(dir.to_path_buf());
+        }
+
+        if let Some(folder) = self.folder.as_ref() {
+            return Some(folder.clone());
+        }
+
+        self.loaded_psu_directory()
+    }
+
+    pub(crate) fn default_output_path(&self) -> Option<PathBuf> {
+        self.default_output_path_with(None)
+    }
+
+    pub(crate) fn default_output_path_with(&self, fallback_dir: Option<&Path>) -> Option<PathBuf> {
+        let file_name = self.default_output_file_name()?;
+        let directory = self.default_output_directory(fallback_dir);
+        Some(match directory {
+            Some(dir) => dir.join(file_name),
+            None => PathBuf::from(file_name),
+        })
     }
 
     pub(crate) fn default_output_file_name(&self) -> Option<String> {
-        let stem = self.psu_file_stem();
+        let base_name = self.effective_psu_file_base_name()?;
+        let mut stem = String::from(self.selected_prefix.as_str());
+        stem.push_str(&base_name);
         if stem.is_empty() {
             None
         } else {
@@ -950,15 +1008,9 @@ impl PackerApp {
         };
 
         if should_update {
-            match self.default_output_file_name() {
-                Some(file_name) => {
-                    if let Some(parent) = Path::new(&self.output).parent() {
-                        if !parent.as_os_str().is_empty() {
-                            self.output = parent.join(&file_name).display().to_string();
-                            return;
-                        }
-                    }
-                    self.output = file_name;
+            match self.default_output_path() {
+                Some(path) => {
+                    self.output = path.display().to_string();
                 }
                 None => self.output.clear(),
             }
@@ -966,11 +1018,37 @@ impl PackerApp {
     }
 
     pub(crate) fn metadata_inputs_changed(&mut self, previous_default_output: Option<String>) {
+        if self.psu_file_base_name.trim().is_empty() {
+            let trimmed_folder = self.folder_base_name.trim();
+            if !trimmed_folder.is_empty() {
+                self.psu_file_base_name = trimmed_folder.to_string();
+            }
+        }
+
         self.update_output_if_matches_default(previous_default_output);
+        self.ensure_timestamp_strategy_default();
         if matches!(self.timestamp_strategy, TimestampStrategy::SasRules) {
             self.refresh_timestamp_from_strategy();
         }
         self.refresh_psu_toml_editor();
+    }
+
+    fn ensure_timestamp_strategy_default(&mut self) {
+        if !matches!(self.timestamp_strategy, TimestampStrategy::None) {
+            return;
+        }
+
+        let recommended = if self.source_timestamp.is_some() {
+            Some(TimestampStrategy::InheritSource)
+        } else if self.planned_timestamp_for_current_source().is_some() {
+            Some(TimestampStrategy::SasRules)
+        } else {
+            Some(TimestampStrategy::Manual)
+        };
+
+        if let Some(strategy) = recommended {
+            self.set_timestamp_strategy(strategy);
+        }
     }
 
     pub(crate) fn set_folder_name_from_full(&mut self, name: &str) {
@@ -1113,7 +1191,22 @@ impl PackerApp {
         }
 
         if self.psu_file_base_name.trim().is_empty() {
-            self.set_error_message("Please provide a PSU filename");
+            let trimmed_folder = self.folder_base_name.trim();
+            if trimmed_folder.is_empty() {
+                self.set_error_message("Please provide a PSU filename");
+                return None;
+            }
+            self.psu_file_base_name = trimmed_folder.to_string();
+        }
+
+        if self.output.trim().is_empty() {
+            if let Some(path) = self.default_output_path() {
+                self.output = path.display().to_string();
+            }
+        }
+
+        if self.output.trim().is_empty() {
+            self.set_error_message("Please choose where the PSU will be saved");
             return None;
         }
 
@@ -1597,6 +1690,43 @@ mod packer_app_tests {
             let path = folder.join(file);
             fs::write(&path, b"data").expect("write required file");
         }
+    }
+
+    #[test]
+    fn metadata_inputs_fill_missing_psu_filename() {
+        let workspace = tempdir().expect("temp workspace");
+        let project_dir = workspace.path().join("project");
+        fs::create_dir_all(&project_dir).expect("create project folder");
+
+        let mut app = PackerApp::default();
+        app.folder = Some(project_dir.clone());
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name.clear();
+
+        let previous_default = app.default_output_file_name();
+        app.metadata_inputs_changed(previous_default);
+
+        assert_eq!(app.psu_file_base_name, "SAVE");
+        assert!(app.output.ends_with("APP_SAVE.psu"));
+    }
+
+    #[test]
+    fn prepare_pack_inputs_sets_default_output_path() {
+        let workspace = tempdir().expect("temp workspace");
+        let project_dir = workspace.path().join("project");
+        fs::create_dir_all(&project_dir).expect("create project folder");
+        write_required_files(&project_dir);
+
+        let mut app = PackerApp::default();
+        app.folder = Some(project_dir.clone());
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name.clear();
+        app.selected_prefix = SasPrefix::App;
+        app.output.clear();
+
+        let result = app.prepare_pack_inputs();
+        assert!(result.is_some(), "inputs should prepare successfully");
+        assert!(app.output.ends_with("APP_SAVE.psu"));
     }
 
     #[test]

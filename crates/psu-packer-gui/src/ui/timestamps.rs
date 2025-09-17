@@ -32,7 +32,7 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
                     let response = ui.radio_value(
                         &mut strategy,
                         TimestampStrategy::None,
-                        "Do not save a timestamp",
+                        "No timestamp",
                     );
                     if response.changed()
                         && app.timestamp_strategy != TimestampStrategy::None
@@ -54,7 +54,7 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
                     let response = ui.radio_value(
                         &mut strategy,
                         TimestampStrategy::InheritSource,
-                        "Inherit timestamp from the loaded folder or PSU",
+                        "Use source timestamp",
                     );
                     if recommended_strategy == Some(TimestampStrategy::InheritSource) {
                         recommended_badge(ui);
@@ -85,7 +85,7 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
                     let response = ui.radio_value(
                         &mut strategy,
                         TimestampStrategy::SasRules,
-                        "Apply SAS timestamp rules",
+                        "Use SAS prefix rules",
                     );
                     if recommended_strategy == Some(TimestampStrategy::SasRules) {
                         recommended_badge(ui);
@@ -119,7 +119,7 @@ pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui)
                     let response = ui.radio_value(
                         &mut strategy,
                         TimestampStrategy::Manual,
-                        "Enter timestamp manually",
+                        "Manual timestamp",
                     );
                     if recommended_strategy == Some(TimestampStrategy::Manual) {
                         recommended_badge(ui);
@@ -512,7 +512,7 @@ mod tests {
 
         let rendered = render_metadata_text(&mut app);
 
-        assert!(rendered.contains("Do not save a timestamp"));
+        assert!(rendered.contains("No timestamp"));
         assert!(rendered.contains("Source timestamp (available)"));
         assert!(rendered.contains(
             "Currently using: Inherited source timestamp because the loaded source provided 2024-01-02 03:04:05 to preserve."

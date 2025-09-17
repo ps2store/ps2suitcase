@@ -145,7 +145,7 @@ pub(crate) fn output_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             .num_columns(2)
             .spacing(egui::vec2(12.0, 6.0))
             .show(ui, |ui| {
-                ui.label("File path");
+                ui.label("PSU extracts to");
                 ui.text_edit_singleline(&mut app.output);
                 ui.end_row();
 
@@ -372,11 +372,36 @@ fn file_list_ui(
 
 impl PackerApp {
     pub(crate) fn browse_output_destination(&mut self) {
-        if let Some(mut file) = rfd::FileDialog::new()
-            .add_filter("PSU", &["psu"])
-            .set_file_name(&self.output)
-            .save_file()
-        {
+        let mut dialog = rfd::FileDialog::new().add_filter("PSU", &["psu"]);
+
+        let trimmed_output = self.output.trim();
+        if trimmed_output.is_empty() {
+            if let Some(default_dir) = self.default_output_directory(None) {
+                dialog = dialog.set_directory(default_dir);
+            }
+            if let Some(default_name) = self.default_output_file_name() {
+                dialog = dialog.set_file_name(&default_name);
+            }
+        } else {
+            let current_path = Path::new(trimmed_output);
+            if let Some(parent) = current_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    dialog = dialog.set_directory(parent);
+                } else if let Some(default_dir) = self.default_output_directory(None) {
+                    dialog = dialog.set_directory(default_dir);
+                }
+            } else if let Some(default_dir) = self.default_output_directory(None) {
+                dialog = dialog.set_directory(default_dir);
+            }
+
+            if let Some(existing_name) = current_path.file_name().and_then(|name| name.to_str()) {
+                dialog = dialog.set_file_name(existing_name);
+            } else if let Some(default_name) = self.default_output_file_name() {
+                dialog = dialog.set_file_name(&default_name);
+            }
+        }
+
+        if let Some(mut file) = dialog.save_file() {
             let has_psu_extension = file
                 .extension()
                 .and_then(|ext| ext.to_str())
