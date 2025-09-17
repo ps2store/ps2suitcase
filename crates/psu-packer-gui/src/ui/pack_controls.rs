@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use eframe::egui;
 
@@ -153,35 +153,18 @@ pub(crate) fn packaging_section(app: &mut PackerApp, ui: &mut egui::Ui) {
         ui.heading("Packaging");
         ui.small("Validate the configuration and generate the PSU archive.");
         let pack_in_progress = app.is_pack_running();
+        if !app.missing_required_project_files.is_empty() {
+            let warning = PackerApp::format_missing_required_files_message(
+                &app.missing_required_project_files,
+            );
+            ui.colored_label(egui::Color32::YELLOW, warning);
+        }
         let pack_button = ui
             .add_enabled(!pack_in_progress, egui::Button::new("Pack"))
             .on_hover_text("Create the PSU archive using the settings above.");
 
         if pack_button.clicked() {
-            if let Some(folder) = &app.folder {
-                if app.folder_base_name.trim().is_empty() {
-                    app.set_error_message("Please provide a folder name");
-                    return;
-                }
-
-                if app.psu_file_base_name.trim().is_empty() {
-                    app.set_error_message("Please provide a PSU filename");
-                    return;
-                }
-
-                let config = match app.build_config() {
-                    Ok(config) => config,
-                    Err(err) => {
-                        app.set_error_message(err);
-                        return;
-                    }
-                };
-
-                let output_path = PathBuf::from(&app.output);
-                app.start_pack_job(folder.clone(), output_path, config);
-            } else {
-                app.set_error_message("Please select a folder");
-            }
+            app.handle_pack_request();
         }
 
         if pack_in_progress {
@@ -216,6 +199,7 @@ impl ListKind {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+    use std::path::PathBuf;
 
     #[test]
     fn build_config_uses_loaded_psu_edits() {
