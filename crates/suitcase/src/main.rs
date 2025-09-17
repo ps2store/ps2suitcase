@@ -32,7 +32,27 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() -> eframe::Result<()> {
-    let options = NativeOptions {
+    let wgpu_result = run_app(create_native_options(eframe::Renderer::Wgpu));
+
+    match wgpu_result {
+        Ok(result) => Ok(result),
+        Err(wgpu_error) => {
+            report_renderer_error("WGPU", &wgpu_error);
+
+            let glow_result = run_app(create_native_options(eframe::Renderer::Glow));
+            match glow_result {
+                Ok(result) => Ok(result),
+                Err(glow_error) => {
+                    report_renderer_error("Glow", &glow_error);
+                    Err(wgpu_error)
+                }
+            }
+        }
+    }
+}
+
+fn create_native_options(renderer: eframe::Renderer) -> NativeOptions {
+    NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1920.0, 1080.0])
             .with_icon({
@@ -60,9 +80,12 @@ fn main() -> eframe::Result<()> {
             }),
         multisampling: 4,
         depth_buffer: 1,
-        renderer: eframe::Renderer::Glow,
+        renderer,
         ..Default::default()
-    };
+    }
+}
+
+fn run_app(options: NativeOptions) -> eframe::Result<()> {
     eframe::run_native(
         "PS2Suitcase",
         options,
@@ -71,6 +94,23 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(PSUBuilderApp::new(cc)))
         }),
     )
+}
+
+fn report_renderer_error(renderer: &str, error: &eframe::Error) {
+    eprintln!("Failed to initialize {renderer} renderer: {error}");
+
+    #[cfg(target_os = "windows")]
+    {
+        use rfd::MessageDialog;
+
+        MessageDialog::new()
+            .set_title("PS2Suitcase")
+            .set_description(&format!(
+                "Failed to initialize {renderer} renderer:\n{error}\n\nAttempting fallback..."
+            ))
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    }
 }
 
 struct PSUBuilderApp {
