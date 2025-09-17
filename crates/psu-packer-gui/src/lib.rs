@@ -303,7 +303,11 @@ impl PackerApp {
         self.icon_sys_selected_preset = None;
     }
 
-    pub(crate) fn apply_icon_sys_config(&mut self, icon_cfg: psu_packer::IconSysConfig) {
+    pub(crate) fn apply_icon_sys_config(
+        &mut self,
+        icon_cfg: psu_packer::IconSysConfig,
+        icon_sys_fallback: Option<&IconSys>,
+    ) {
         let flag_value = icon_cfg.flags.value();
         self.icon_sys_enabled = true;
         self.icon_sys_use_existing = false;
@@ -333,11 +337,76 @@ impl PackerApp {
             .copied()
             .collect();
 
-        self.icon_sys_background_transparency = icon_cfg.background_transparency_value();
-        self.icon_sys_background_colors = icon_cfg.background_colors_array();
-        self.icon_sys_light_directions = icon_cfg.light_directions_array();
-        self.icon_sys_light_colors = icon_cfg.light_colors_array();
-        self.icon_sys_ambient_color = icon_cfg.ambient_color_value();
+        self.icon_sys_background_transparency =
+            icon_cfg.background_transparency.unwrap_or_else(|| {
+                icon_sys_fallback
+                    .map(|icon_sys| icon_sys.background_transparency)
+                    .unwrap_or_else(IconSysConfig::default_background_transparency)
+            });
+
+        self.icon_sys_background_colors = if icon_cfg.background_colors.is_some() {
+            icon_cfg.background_colors_array()
+        } else if let Some(icon_sys) = icon_sys_fallback {
+            let mut colors = IconSysConfig::default_background_colors();
+            for (target, color) in colors.iter_mut().zip(icon_sys.background_colors.iter()) {
+                *target = ColorConfig {
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                    a: color.a,
+                };
+            }
+            colors
+        } else {
+            IconSysConfig::default_background_colors()
+        };
+
+        self.icon_sys_light_directions = if icon_cfg.light_directions.is_some() {
+            icon_cfg.light_directions_array()
+        } else if let Some(icon_sys) = icon_sys_fallback {
+            let mut directions = IconSysConfig::default_light_directions();
+            for (target, direction) in directions.iter_mut().zip(icon_sys.light_directions.iter()) {
+                *target = VectorConfig {
+                    x: direction.x,
+                    y: direction.y,
+                    z: direction.z,
+                    w: direction.w,
+                };
+            }
+            directions
+        } else {
+            IconSysConfig::default_light_directions()
+        };
+
+        self.icon_sys_light_colors = if icon_cfg.light_colors.is_some() {
+            icon_cfg.light_colors_array()
+        } else if let Some(icon_sys) = icon_sys_fallback {
+            let mut colors = IconSysConfig::default_light_colors();
+            for (target, color) in colors.iter_mut().zip(icon_sys.light_colors.iter()) {
+                *target = ColorFConfig {
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                    a: color.a,
+                };
+            }
+            colors
+        } else {
+            IconSysConfig::default_light_colors()
+        };
+
+        self.icon_sys_ambient_color = if let Some(color) = icon_cfg.ambient_color {
+            color
+        } else if let Some(icon_sys) = icon_sys_fallback {
+            ColorFConfig {
+                r: icon_sys.ambient_color.r,
+                g: icon_sys.ambient_color.g,
+                b: icon_sys.ambient_color.b,
+                a: icon_sys.ambient_color.a,
+            }
+        } else {
+            IconSysConfig::default_ambient_color()
+        };
         self.icon_sys_selected_preset = icon_cfg.preset.clone();
     }
 
