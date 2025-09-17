@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn manual_filter_entries_allowed_without_folder() {
         let mut app = PackerApp::default();
-        app.selected_prefix = SasPrefix::Ps2;
+        app.selected_prefix = SasPrefix::App;
         app.folder_base_name = "SAVE".to_string();
 
         assert!(app.handle_add_file_from_entry(ListKind::Include, "BOOT.ELF"));
