@@ -36,9 +36,8 @@ fn shared_native_options() -> NativeOptions {
     let mut options = NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1024.0, 768.0])
-            .with_min_inner_size([1024.0, 768.0])
-            .with_max_inner_size([1024.0, 768.0])
-            .with_resizable(false),
+            .with_min_inner_size([640.0, 480.0])
+            .with_resizable(true),
         ..Default::default()
     };
 
