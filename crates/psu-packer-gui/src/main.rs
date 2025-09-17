@@ -30,6 +30,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "PSU Packer",
         options,
-        Box::new(|_cc| Box::<PackerApp>::default()),
+        Box::new(|cc| Box::new(PackerApp::new(cc))),
     )
 }

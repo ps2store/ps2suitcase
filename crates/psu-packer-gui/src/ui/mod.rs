@@ -4,6 +4,7 @@ pub mod dialogs;
 pub mod file_picker;
 pub mod icon_sys;
 pub mod pack_controls;
+pub mod theme;
 pub mod timestamps;
 
 pub(crate) fn centered_column<R>(

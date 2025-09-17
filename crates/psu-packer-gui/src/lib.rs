@@ -5,6 +5,7 @@ use std::{
     thread,
 };
 
+use crate::ui::theme;
 use chrono::NaiveDateTime;
 use eframe::egui;
 use ps2_filetypes::{templates, IconSys, PSUEntryKind, TitleCfg, PSU};
@@ -337,6 +338,7 @@ pub struct PackerApp {
     psu_toml_editor: TextFileEditor,
     title_cfg_editor: TextFileEditor,
     psu_toml_sync_blocked: bool,
+    theme: theme::Palette,
 }
 
 struct ErrorMessage {
@@ -424,11 +426,18 @@ impl Default for PackerApp {
             psu_toml_editor: TextFileEditor::default(),
             title_cfg_editor: TextFileEditor::default(),
             psu_toml_sync_blocked: false,
+            theme: theme::Palette::default(),
         }
     }
 }
 
 impl PackerApp {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let app = Self::default();
+        theme::install(&cc.egui_ctx, &app.theme);
+        app
+    }
+
     fn timestamp_rules_path_from(folder: &Path) -> PathBuf {
         folder.join(TIMESTAMP_RULES_FILE)
     }
@@ -1814,7 +1823,11 @@ impl eframe::App for PackerApp {
                 .frame(egui::Frame::popup(&ctx.style()))
                 .show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.heading("Packing PSU…");
+                        ui.label(
+                            egui::RichText::new("Packing PSU…")
+                                .font(theme::display_font(26.0))
+                                .color(self.theme.neon_accent),
+                        );
                         ui.add_space(8.0);
                         ui.add(
                             egui::ProgressBar::new(progress)
@@ -1825,143 +1838,211 @@ impl eframe::App for PackerApp {
                 });
         }
 
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                ui::file_picker::file_menu(self, ui);
-            });
-        });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.editor_tab, EditorTab::PsuSettings, "PSU Settings");
-                let psu_toml_label = if self.psu_toml_editor.modified {
-                    "psu.toml*"
-                } else {
-                    "psu.toml"
-                };
-                ui.selectable_value(&mut self.editor_tab, EditorTab::PsuToml, psu_toml_label);
-                let title_cfg_label = if self.title_cfg_editor.modified {
-                    "title.cfg*"
-                } else {
-                    "title.cfg"
-                };
-                ui.selectable_value(&mut self.editor_tab, EditorTab::TitleCfg, title_cfg_label);
-                ui.selectable_value(&mut self.editor_tab, EditorTab::IconSys, "icon.sys");
-                let timestamp_label = if self.timestamp_rules_modified {
-                    "Timestamp rules*"
-                } else {
-                    "Timestamp rules"
-                };
-                ui.selectable_value(
-                    &mut self.editor_tab,
-                    EditorTab::TimestampAuto,
-                    timestamp_label,
+        egui::TopBottomPanel::top("top_panel")
+            .frame(egui::Frame::none().fill(self.theme.background))
+            .show(ctx, |ui| {
+                let rect = ui.max_rect();
+                theme::draw_vertical_gradient(
+                    ui.painter(),
+                    rect,
+                    self.theme.header_top,
+                    self.theme.header_bottom,
                 );
+                let separator_rect =
+                    egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - 2.0), rect.max);
+                theme::draw_separator(ui.painter(), separator_rect, self.theme.neon_accent);
+                egui::menu::bar(ui, |ui| {
+                    ui::file_picker::file_menu(self, ui);
+                });
             });
-            ui.separator();
 
-            match self.editor_tab {
-                EditorTab::PsuSettings => {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
-                            ui::file_picker::folder_section(self, ui);
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(self.theme.background))
+            .show(ctx, |ui| {
+                let rect = ui.max_rect();
+                theme::draw_vertical_gradient(
+                    ui.painter(),
+                    rect,
+                    self.theme.footer_top,
+                    self.theme.footer_bottom,
+                );
+                let top_separator =
+                    egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.min.y + 2.0));
+                theme::draw_separator(ui.painter(), top_separator, self.theme.neon_accent);
+                let bottom_separator =
+                    egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - 2.0), rect.max);
+                theme::draw_separator(ui.painter(), bottom_separator, self.theme.neon_accent);
+                ui.add_space(8.0);
 
-                            let showing_psu = self.showing_loaded_psu();
-                            if showing_psu {
-                                ui.add_space(8.0);
-                                ui::file_picker::loaded_psu_section(self, ui);
+                let tab_bar = ui.horizontal(|ui| {
+                    let tab_font = theme::display_font(18.0);
+                    let mut tab_button =
+                        |ui: &mut egui::Ui, tab: EditorTab, label: &str, highlight: bool| {
+                            let is_selected = self.editor_tab == tab;
+                            let mut text = egui::RichText::new(label).font(tab_font.clone()).color(
+                                if is_selected || highlight {
+                                    self.theme.neon_accent
+                                } else {
+                                    self.theme.soft_accent
+                                },
+                            );
+                            if is_selected {
+                                text = text.strong();
                             }
+                            ui.selectable_value(&mut self.editor_tab, tab, text);
+                        };
 
-                            ui.add_space(8.0);
-                            ui::pack_controls::metadata_section(self, ui);
-
-                            if !showing_psu {
-                                ui.add_space(8.0);
-                                ui::pack_controls::file_filters_section(self, ui);
-                            }
-
-                            ui.add_space(8.0);
-                            ui::pack_controls::output_section(self, ui);
-
-                            ui.add_space(8.0);
-                            ui::pack_controls::packaging_section(self, ui);
-                        });
-                    });
-                }
-                EditorTab::PsuToml => {
-                    let editing_enabled = true; // Allow editing even without a source selection.
-                    let save_enabled = self.folder.is_some();
-                    let actions = text_editor_ui(
+                    tab_button(ui, EditorTab::PsuSettings, "PSU Settings", false);
+                    let psu_toml_label = if self.psu_toml_editor.modified {
+                        "psu.toml*"
+                    } else {
+                        "psu.toml"
+                    };
+                    tab_button(
                         ui,
-                        "psu.toml",
-                        editing_enabled,
-                        save_enabled,
-                        &mut self.psu_toml_editor,
+                        EditorTab::PsuToml,
+                        psu_toml_label,
+                        self.psu_toml_editor.modified,
                     );
-                    if actions.save_clicked {
-                        match save_editor_to_disk(
-                            self.folder.as_deref(),
+                    let title_cfg_label = if self.title_cfg_editor.modified {
+                        "title.cfg*"
+                    } else {
+                        "title.cfg"
+                    };
+                    tab_button(
+                        ui,
+                        EditorTab::TitleCfg,
+                        title_cfg_label,
+                        self.title_cfg_editor.modified,
+                    );
+                    tab_button(ui, EditorTab::IconSys, "icon.sys", false);
+                    let timestamp_label = if self.timestamp_rules_modified {
+                        "Timestamp rules*"
+                    } else {
+                        "Timestamp rules"
+                    };
+                    tab_button(
+                        ui,
+                        EditorTab::TimestampAuto,
+                        timestamp_label,
+                        self.timestamp_rules_modified,
+                    );
+                });
+
+                let tab_rect = tab_bar.response.rect;
+                let tab_separator = egui::Rect::from_min_max(
+                    egui::pos2(rect.min.x, tab_rect.max.y + 4.0),
+                    egui::pos2(rect.max.x, tab_rect.max.y + 6.0),
+                );
+                theme::draw_separator(ui.painter(), tab_separator, self.theme.neon_accent);
+                ui.add_space(10.0);
+
+                match self.editor_tab {
+                    EditorTab::PsuSettings => {
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
+                                ui::file_picker::folder_section(self, ui);
+
+                                let showing_psu = self.showing_loaded_psu();
+                                if showing_psu {
+                                    ui.add_space(8.0);
+                                    ui::file_picker::loaded_psu_section(self, ui);
+                                }
+
+                                ui.add_space(8.0);
+                                ui::pack_controls::metadata_section(self, ui);
+
+                                if !showing_psu {
+                                    ui.add_space(8.0);
+                                    ui::pack_controls::file_filters_section(self, ui);
+                                }
+
+                                ui.add_space(8.0);
+                                ui::pack_controls::output_section(self, ui);
+
+                                ui.add_space(8.0);
+                                ui::pack_controls::packaging_section(self, ui);
+                            });
+                        });
+                    }
+                    EditorTab::PsuToml => {
+                        let editing_enabled = true; // Allow editing even without a source selection.
+                        let save_enabled = self.folder.is_some();
+                        let actions = text_editor_ui(
+                            ui,
                             "psu.toml",
+                            editing_enabled,
+                            save_enabled,
                             &mut self.psu_toml_editor,
-                        ) {
-                            Ok(path) => {
-                                self.status = format!("Saved {}", path.display());
-                                self.clear_error_message();
-                            }
-                            Err(err) => {
-                                self.set_error_message(format!("Failed to save psu.toml: {err}"));
+                        );
+                        if actions.save_clicked {
+                            match save_editor_to_disk(
+                                self.folder.as_deref(),
+                                "psu.toml",
+                                &mut self.psu_toml_editor,
+                            ) {
+                                Ok(path) => {
+                                    self.status = format!("Saved {}", path.display());
+                                    self.clear_error_message();
+                                }
+                                Err(err) => {
+                                    self.set_error_message(format!(
+                                        "Failed to save psu.toml: {err}"
+                                    ));
+                                }
                             }
                         }
+                        if actions.apply_clicked {
+                            self.apply_psu_toml_edits();
+                        }
                     }
-                    if actions.apply_clicked {
-                        self.apply_psu_toml_edits();
-                    }
-                }
-                EditorTab::TitleCfg => {
-                    let editing_enabled = true; // Allow editing even without a source selection.
-                    let save_enabled = self.folder.is_some();
-                    let actions = text_editor_ui(
-                        ui,
-                        "title.cfg",
-                        editing_enabled,
-                        save_enabled,
-                        &mut self.title_cfg_editor,
-                    );
-                    if actions.save_clicked {
-                        match save_editor_to_disk(
-                            self.folder.as_deref(),
+                    EditorTab::TitleCfg => {
+                        let editing_enabled = true; // Allow editing even without a source selection.
+                        let save_enabled = self.folder.is_some();
+                        let actions = text_editor_ui(
+                            ui,
                             "title.cfg",
+                            editing_enabled,
+                            save_enabled,
                             &mut self.title_cfg_editor,
-                        ) {
-                            Ok(path) => {
-                                self.status = format!("Saved {}", path.display());
-                                self.clear_error_message();
-                            }
-                            Err(err) => {
-                                self.set_error_message(format!("Failed to save title.cfg: {err}"));
+                        );
+                        if actions.save_clicked {
+                            match save_editor_to_disk(
+                                self.folder.as_deref(),
+                                "title.cfg",
+                                &mut self.title_cfg_editor,
+                            ) {
+                                Ok(path) => {
+                                    self.status = format!("Saved {}", path.display());
+                                    self.clear_error_message();
+                                }
+                                Err(err) => {
+                                    self.set_error_message(format!(
+                                        "Failed to save title.cfg: {err}"
+                                    ));
+                                }
                             }
                         }
+                        if actions.apply_clicked {
+                            self.apply_title_cfg_edits();
+                        }
                     }
-                    if actions.apply_clicked {
-                        self.apply_title_cfg_edits();
+                    EditorTab::IconSys => {
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
+                                ui::icon_sys::icon_sys_editor(self, ui);
+                            });
+                        });
+                    }
+                    EditorTab::TimestampAuto => {
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
+                                ui::timestamps::timestamp_rules_editor(self, ui);
+                            });
+                        });
                     }
                 }
-                EditorTab::IconSys => {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
-                            ui::icon_sys::icon_sys_editor(self, ui);
-                        });
-                    });
-                }
-                EditorTab::TimestampAuto => {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
-                            ui::timestamps::timestamp_rules_editor(self, ui);
-                        });
-                    });
-                }
-            }
-        });
+            });
 
         ui::dialogs::exit_confirmation(self, ctx);
     }
