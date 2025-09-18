@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32};
+use eframe::egui::{self, Color32, RichText};
 
 use crate::{
     ui::theme, IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS, ICON_SYS_TITLE_CHAR_LIMIT,
@@ -313,8 +313,25 @@ fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
                         app.icon_sys_title_line2,
                         width = ICON_SYS_TITLE_CHAR_LIMIT
                     ));
-                    let break_pos = app.icon_sys_title_line1.chars().count();
-                    ui.small(format!("Line break position: {break_pos}"));
+
+                    match sjis::encode_sjis(&app.icon_sys_title_line1) {
+                        Ok(bytes) => {
+                            let break_pos = bytes.len();
+                            ui.small(format!("Shift-JIS byte length: {break_pos}"));
+                            ui.small(format!("Line break position: {break_pos}"));
+                        }
+                        Err(_) => {
+                            let warning = RichText::new(
+                                "Shift-JIS byte length: invalid (non-encodable characters)",
+                            )
+                            .color(Color32::RED);
+                            ui.small(warning);
+                            ui.small(
+                                RichText::new("Line break position: -- (invalid Shift-JIS)")
+                                    .color(Color32::RED),
+                            );
+                        }
+                    }
                 });
                 ui.end_row();
             });
