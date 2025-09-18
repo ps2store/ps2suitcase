@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs, io,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -30,6 +30,39 @@ pub(crate) const REQUIRED_PROJECT_FILES: &[&str] =
     &["icon.icn", "icon.sys", "psu.toml", "title.cfg"];
 const CENTERED_COLUMN_MAX_WIDTH: f32 = 1180.0;
 const PACK_CONTROLS_TWO_COLUMN_MIN_WIDTH: f32 = 940.0;
+const TITLE_CFG_GRID_SPACING: [f32; 2] = [28.0, 12.0];
+const TITLE_CFG_SECTION_GAP: f32 = 20.0;
+const TITLE_CFG_SECTION_HEADING_GAP: f32 = 6.0;
+const TITLE_CFG_MULTILINE_ROWS: usize = 6;
+const TITLE_CFG_SECTIONS: &[(&str, &[&str])] = &[
+    (
+        "Application identity",
+        &["title", "Title", "Version", "Release", "Developer", "Genre"],
+    ),
+    (
+        "Boot configuration",
+        &["boot", "CfgVersion", "$ConfigSource", "source"],
+    ),
+    ("Description", &["Description", "Notes"]),
+    (
+        "Presentation",
+        &[
+            "Parental",
+            "ParentalText",
+            "Vmode",
+            "VmodeText",
+            "Aspect",
+            "AspectText",
+            "Scan",
+            "ScanText",
+        ],
+    ),
+    (
+        "Players and devices",
+        &["Players", "PlayersText", "Device", "DeviceText"],
+    ),
+    ("Ratings", &["Rating", "RatingText"]),
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MissingFileReason {
@@ -2326,144 +2359,205 @@ fn title_cfg_form_ui(
 
         let missing_fields = cfg.missing_mandatory_fields();
         let missing_field_set: HashSet<&str> = missing_fields.iter().copied().collect();
+
+        let mut section_lookup: HashMap<&'static str, usize> = HashMap::new();
+        for (index, (_, field_keys)) in TITLE_CFG_SECTIONS.iter().enumerate() {
+            for key in *field_keys {
+                section_lookup.insert(*key, index);
+            }
+        }
+
+        let mut section_fields: Vec<Vec<String>> = vec![Vec::new(); TITLE_CFG_SECTIONS.len()];
+        let mut additional_fields: Vec<String> = Vec::new();
+        for key in &keys {
+            if let Some(&index) = section_lookup.get(key.as_str()) {
+                section_fields[index].push(key.clone());
+            } else {
+                additional_fields.push(key.clone());
+            }
+        }
+
         let mut index_map_changed = false;
 
         egui::ScrollArea::vertical()
             .id_source("title_cfg_form_scroll")
             .show(ui, |ui| {
-                if !missing_fields.is_empty() {
-                    let message =
-                        format!("Missing mandatory fields: {}", missing_fields.join(", "));
-                    ui.colored_label(egui::Color32::YELLOW, message);
-                    ui.add_space(8.0);
-                }
+                ui::centered_column(ui, CENTERED_COLUMN_MAX_WIDTH, |ui| {
+                    if !missing_fields.is_empty() {
+                        let message =
+                            format!("Missing mandatory fields: {}", missing_fields.join(", "));
+                        ui.colored_label(egui::Color32::YELLOW, message);
+                        ui.add_space(8.0);
+                    }
 
-                egui::Grid::new("title_cfg_form_grid")
-                    .num_columns(2)
-                    .spacing([24.0, 6.0])
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for key in &keys {
-                            let mut tooltip: Option<String> = None;
-                            let mut hint: Option<String> = None;
-                            let mut values: Option<Vec<String>> = None;
-                            let mut char_limit: Option<usize> = None;
-                            let mut multiline = false;
+                    let mut render_fields =
+                        |ui: &mut egui::Ui, grid_id: String, section_keys: &[String]| {
+                            egui::Grid::new(grid_id)
+                                .num_columns(2)
+                                .spacing(TITLE_CFG_GRID_SPACING)
+                                .striped(true)
+                                .show(ui, |ui| {
+                                    for key in section_keys {
+                                        let mut tooltip: Option<String> = None;
+                                        let mut hint: Option<String> = None;
+                                        let mut values: Option<Vec<String>> = None;
+                                        let mut char_limit: Option<usize> = None;
+                                        let mut multiline = false;
 
-                            if let Some(table) = helper.get(key).and_then(|value| value.as_table())
-                            {
-                                tooltip = table
-                                    .get("tooltip")
-                                    .and_then(|value| value.as_str())
-                                    .map(|s| s.to_owned());
-                                hint = table
-                                    .get("hint")
-                                    .and_then(|value| value.as_str())
-                                    .map(|s| s.to_owned());
-                                if let Some(array) =
-                                    table.get("values").and_then(|value| value.as_array())
-                                {
-                                    let options: Vec<String> = array
-                                        .iter()
-                                        .filter_map(|value| value.as_str().map(|s| s.to_owned()))
-                                        .collect();
-                                    if !options.is_empty() {
-                                        values = Some(options);
-                                    }
-                                }
-                                char_limit = table
-                                    .get("char_limit")
-                                    .and_then(|value| value.as_integer())
-                                    .and_then(|value| (value >= 0).then(|| value as usize));
-                                multiline = table
-                                    .get("multiline")
-                                    .and_then(|value| value.as_bool())
-                                    .unwrap_or(false);
-                            }
-
-                            let mut label_text = egui::RichText::new(key.as_str());
-                            if missing_field_set.contains(key.as_str()) {
-                                label_text = label_text.color(egui::Color32::YELLOW);
-                            }
-                            let label = ui.label(label_text);
-                            if let Some(tooltip) = &tooltip {
-                                label.on_hover_text(tooltip);
-                            }
-
-                            let existing_value =
-                                cfg.index_map.get(key).cloned().unwrap_or_default();
-                            let mut new_value = existing_value.clone();
-                            let mut field_changed = false;
-
-                            if let Some(options) = values.as_ref() {
-                                let display_text = if new_value.is_empty() {
-                                    hint.clone().unwrap_or_else(|| "(not set)".to_string())
-                                } else {
-                                    new_value.clone()
-                                };
-                                if editing_enabled {
-                                    let response = egui::ComboBox::from_id_source(format!(
-                                        "title_cfg_option_{key}"
-                                    ))
-                                    .selected_text(display_text.clone())
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(
-                                            &mut new_value,
-                                            String::new(),
-                                            "(not set)",
-                                        );
-                                        for option in options {
-                                            ui.selectable_value(
-                                                &mut new_value,
-                                                option.clone(),
-                                                option,
-                                            );
+                                        if let Some(table) =
+                                            helper.get(key).and_then(|value| value.as_table())
+                                        {
+                                            tooltip = table
+                                                .get("tooltip")
+                                                .and_then(|value| value.as_str())
+                                                .map(|s| s.to_owned());
+                                            hint = table
+                                                .get("hint")
+                                                .and_then(|value| value.as_str())
+                                                .map(|s| s.to_owned());
+                                            if let Some(array) = table
+                                                .get("values")
+                                                .and_then(|value| value.as_array())
+                                            {
+                                                let options: Vec<String> = array
+                                                    .iter()
+                                                    .filter_map(|value| {
+                                                        value.as_str().map(|s| s.to_owned())
+                                                    })
+                                                    .collect();
+                                                if !options.is_empty() {
+                                                    values = Some(options);
+                                                }
+                                            }
+                                            char_limit = table
+                                                .get("char_limit")
+                                                .and_then(|value| value.as_integer())
+                                                .and_then(|value| {
+                                                    (value >= 0).then(|| value as usize)
+                                                });
+                                            multiline = table
+                                                .get("multiline")
+                                                .and_then(|value| value.as_bool())
+                                                .unwrap_or(false);
                                         }
-                                    });
-                                    if let Some(tooltip) = &tooltip {
-                                        response.response.on_hover_text(tooltip);
-                                    }
-                                    if new_value != existing_value {
-                                        field_changed = true;
-                                    }
-                                } else {
-                                    let response = ui.label(display_text);
-                                    if let Some(tooltip) = &tooltip {
-                                        response.on_hover_text(tooltip);
-                                    }
-                                }
-                            } else {
-                                let mut text_edit = if multiline {
-                                    egui::TextEdit::multiline(&mut new_value).desired_rows(3)
-                                } else {
-                                    egui::TextEdit::singleline(&mut new_value)
-                                };
-                                if let Some(hint) = &hint {
-                                    text_edit = text_edit.hint_text(hint.clone());
-                                }
-                                if let Some(limit) = char_limit {
-                                    text_edit = text_edit.char_limit(limit);
-                                }
-                                let response = ui.add_enabled(editing_enabled, text_edit);
-                                let changed = editing_enabled
-                                    && response.changed()
-                                    && new_value != existing_value;
-                                if let Some(tooltip) = &tooltip {
-                                    response.on_hover_text(tooltip);
-                                }
-                                if changed {
-                                    field_changed = true;
-                                }
-                            }
 
-                            if editing_enabled && field_changed {
-                                cfg.index_map.insert(key.clone(), new_value);
-                                index_map_changed = true;
-                            }
+                                        let mut label_text = egui::RichText::new(key.as_str());
+                                        if missing_field_set.contains(key.as_str()) {
+                                            label_text = label_text.color(egui::Color32::YELLOW);
+                                        }
+                                        let label = ui.label(label_text);
+                                        if let Some(tooltip) = &tooltip {
+                                            label.on_hover_text(tooltip);
+                                        }
 
-                            ui.end_row();
+                                        let existing_value =
+                                            cfg.index_map.get(key).cloned().unwrap_or_default();
+                                        let mut new_value = existing_value.clone();
+                                        let mut field_changed = false;
+
+                                        if let Some(options) = values.as_ref() {
+                                            let display_text = if new_value.is_empty() {
+                                                hint.clone()
+                                                    .unwrap_or_else(|| "(not set)".to_string())
+                                            } else {
+                                                new_value.clone()
+                                            };
+                                            if editing_enabled {
+                                                let response = egui::ComboBox::from_id_source(
+                                                    format!("title_cfg_option_{key}"),
+                                                )
+                                                .selected_text(display_text.clone())
+                                                .show_ui(ui, |ui| {
+                                                    ui.selectable_value(
+                                                        &mut new_value,
+                                                        String::new(),
+                                                        "(not set)",
+                                                    );
+                                                    for option in options {
+                                                        ui.selectable_value(
+                                                            &mut new_value,
+                                                            option.clone(),
+                                                            option,
+                                                        );
+                                                    }
+                                                });
+                                                if let Some(tooltip) = &tooltip {
+                                                    response.response.on_hover_text(tooltip);
+                                                }
+                                                if new_value != existing_value {
+                                                    field_changed = true;
+                                                }
+                                            } else {
+                                                let response = ui.label(display_text);
+                                                if let Some(tooltip) = &tooltip {
+                                                    response.on_hover_text(tooltip);
+                                                }
+                                            }
+                                        } else {
+                                            let mut text_edit = if multiline {
+                                                egui::TextEdit::multiline(&mut new_value)
+                                                    .desired_rows(TITLE_CFG_MULTILINE_ROWS)
+                                                    .desired_width(f32::INFINITY)
+                                            } else {
+                                                egui::TextEdit::singleline(&mut new_value)
+                                            };
+                                            if let Some(hint) = &hint {
+                                                text_edit = text_edit.hint_text(hint.clone());
+                                            }
+                                            if let Some(limit) = char_limit {
+                                                text_edit = text_edit.char_limit(limit);
+                                            }
+                                            let response =
+                                                ui.add_enabled(editing_enabled, text_edit);
+                                            let changed = editing_enabled
+                                                && response.changed()
+                                                && new_value != existing_value;
+                                            if let Some(tooltip) = &tooltip {
+                                                response.on_hover_text(tooltip);
+                                            }
+                                            if changed {
+                                                field_changed = true;
+                                            }
+                                        }
+
+                                        if editing_enabled && field_changed {
+                                            cfg.index_map.insert(key.clone(), new_value);
+                                            index_map_changed = true;
+                                        }
+
+                                        ui.end_row();
+                                    }
+                                });
+                        };
+
+                    let mut rendered_section = false;
+                    for (index, (title, _)) in TITLE_CFG_SECTIONS.iter().enumerate() {
+                        let section_keys = &section_fields[index];
+                        if section_keys.is_empty() {
+                            continue;
                         }
-                    });
+                        if rendered_section {
+                            ui.add_space(TITLE_CFG_SECTION_GAP);
+                        }
+                        rendered_section = true;
+                        ui.heading(theme::display_heading_text(ui, *title));
+                        ui.add_space(TITLE_CFG_SECTION_HEADING_GAP);
+                        render_fields(ui, format!("title_cfg_form_grid_{title}"), section_keys);
+                    }
+
+                    if !additional_fields.is_empty() {
+                        if rendered_section {
+                            ui.add_space(TITLE_CFG_SECTION_GAP);
+                        }
+                        ui.heading(theme::display_heading_text(ui, "Additional fields"));
+                        ui.add_space(TITLE_CFG_SECTION_HEADING_GAP);
+                        render_fields(
+                            ui,
+                            "title_cfg_form_grid_additional".to_string(),
+                            &additional_fields,
+                        );
+                    }
+                });
             });
 
         if index_map_changed {
