@@ -1,5 +1,5 @@
 # PS2Suitcase
-
+*Original Project by [tech](https://github.com/ps2store/ps2suitcase) and his team <3*<br>
 PS2Suitcase is a Rust toolchain for building, inspecting, and packaging PlayStation 2 save archives. The project focuses on a reliable PSU packer and modern graphical front ends so creators can prepare saves without juggling legacy utilities.
 
 ## Project goals
