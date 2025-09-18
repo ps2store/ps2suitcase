@@ -10,7 +10,7 @@ use chrono::NaiveDateTime;
 use eframe::egui::{self, Widget};
 use ps2_filetypes::{sjis, templates, IconSys, PSUEntryKind, TitleCfg, PSU};
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
 
 pub(crate) mod sas_timestamps;
 pub mod ui;
@@ -386,6 +386,7 @@ pub struct PackerApp {
     pub(crate) icon_sys_existing: Option<IconSys>,
     zoom_factor: f32,
     pack_job: Option<PackJob>,
+    temp_workspace: Option<TempDir>,
     editor_tab: EditorTab,
     psu_toml_editor: TextFileEditor,
     title_cfg_editor: TextFileEditor,
@@ -480,6 +481,7 @@ impl Default for PackerApp {
             icon_sys_existing: None,
             zoom_factor: 1.0,
             pack_job: None,
+            temp_workspace: None,
             editor_tab: EditorTab::PsuSettings,
             psu_toml_editor: TextFileEditor::default(),
             title_cfg_editor: TextFileEditor::default(),
@@ -1269,17 +1271,39 @@ impl PackerApp {
             return;
         }
 
-        let Some(preparation) = self.prepare_pack_inputs() else {
+        let mut temp_workspace_to_hold: Option<TempDir> = None;
+        let preparation_result = if self.folder.is_some() {
+            self.prepare_pack_inputs()
+        } else if self.loaded_psu_path.is_some() {
+            let (workspace, export_root) = match self.prepare_loaded_psu_workspace() {
+                Ok(result) => result,
+                Err(message) => {
+                    self.set_error_message(message);
+                    return;
+                }
+            };
+            let preparation = self.prepare_pack_inputs_for_folder(export_root, None, true);
+            if preparation.is_some() {
+                temp_workspace_to_hold = Some(workspace);
+            }
+            preparation
+        } else {
+            self.prepare_pack_inputs()
+        };
+
+        let Some(preparation) = preparation_result else {
             return;
         };
 
         if !preparation.missing_required_files.is_empty() {
             self.pending_pack_action = None;
+            self.temp_workspace = None;
             return;
         }
 
         let PackPreparation { folder, config, .. } = preparation;
 
+        self.temp_workspace = temp_workspace_to_hold;
         self.begin_pack_job(folder, destination, config);
     }
 
@@ -1321,6 +1345,15 @@ impl PackerApp {
             return None;
         };
 
+        self.prepare_pack_inputs_for_folder(folder, None, false)
+    }
+
+    fn prepare_pack_inputs_for_folder(
+        &mut self,
+        folder: PathBuf,
+        config_override: Option<psu_packer::Config>,
+        allow_missing_psu_toml: bool,
+    ) -> Option<PackPreparation> {
         if self.folder_base_name.trim().is_empty() {
             self.set_error_message("Please provide a folder name");
             return None;
@@ -1346,7 +1379,10 @@ impl PackerApp {
             return None;
         }
 
-        let missing = self.missing_required_project_files_for(&folder);
+        let mut missing = self.missing_required_project_files_for(&folder);
+        if allow_missing_psu_toml {
+            missing.retain(|entry| !entry.name.eq_ignore_ascii_case("psu.toml"));
+        }
         self.missing_required_project_files = missing.clone();
         if !missing.is_empty() {
             let message = Self::format_missing_required_files_message(&missing);
@@ -1354,13 +1390,16 @@ impl PackerApp {
             self.set_error_message((message, failed_files));
         }
 
-        let config = match self.build_config() {
-            Ok(config) => config,
-            Err(err) => {
-                self.set_error_message(err);
-                self.pending_pack_action = None;
-                return None;
-            }
+        let config = match config_override {
+            Some(config) => config,
+            None => match self.build_config() {
+                Ok(config) => config,
+                Err(err) => {
+                    self.set_error_message(err);
+                    self.pending_pack_action = None;
+                    return None;
+                }
+            },
         };
 
         Some(PackPreparation {
@@ -1474,6 +1513,19 @@ impl PackerApp {
         }
 
         Ok(export_root)
+    }
+
+    fn prepare_loaded_psu_workspace(&self) -> Result<(TempDir, PathBuf), String> {
+        let source_path = self
+            .loaded_psu_path
+            .as_ref()
+            .ok_or_else(|| "No PSU file is currently loaded.".to_string())?;
+        let temp_dir =
+            tempdir().map_err(|err| format!("Failed to create temporary workspace: {err}"))?;
+        let export_root = self
+            .export_psu_to_folder(source_path, temp_dir.path())
+            .map_err(|err| format!("Failed to export loaded PSU: {err}"))?;
+        Ok((temp_dir, export_root))
     }
 
     pub(crate) fn reload_project_files(&mut self) {
@@ -1797,6 +1849,8 @@ impl PackerApp {
                 let _ = handle.join();
             }
 
+            self.temp_workspace = None;
+
             match outcome {
                 PackOutcome::Success { output_path } => {
                     self.status = format!("Packed to {}", output_path.display());
@@ -2012,6 +2066,57 @@ mod packer_app_tests {
         assert!(app.pack_job.is_none(), "pack job should not start");
         let message = app.error_message.expect("error message expected");
         assert!(message.contains("does not exist"));
+    }
+
+    #[test]
+    fn update_loaded_psu_without_project_folder_uses_temporary_workspace() {
+        let workspace = tempdir().expect("temp workspace");
+        let project_dir = workspace.path().join("project");
+        fs::create_dir_all(&project_dir).expect("create project folder");
+        write_required_files(&project_dir);
+
+        let existing_output = workspace.path().join("existing.psu");
+        let config = PsuConfig {
+            name: "APP_SAVE".to_string(),
+            timestamp: None,
+            include: None,
+            exclude: None,
+            icon_sys: None,
+        };
+        psu_packer::pack_with_config(&project_dir, &existing_output, config)
+            .expect("pack source PSU");
+
+        let mut app = PackerApp::default();
+        app.folder = None;
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name = "SAVE".to_string();
+        app.selected_prefix = SasPrefix::App;
+        app.output = existing_output.display().to_string();
+        app.loaded_psu_path = Some(existing_output.clone());
+
+        app.handle_update_psu_request();
+
+        assert!(app.pack_job.is_some(), "pack job should start");
+        assert_ne!(
+            app.error_message.as_deref(),
+            Some("Please select a folder"),
+            "loaded PSU update should not emit folder selection error"
+        );
+        assert!(
+            app.folder.is_none(),
+            "temporary workspace should not persist as project folder"
+        );
+
+        wait_for_pack_completion(&mut app);
+
+        assert!(
+            app.error_message.is_none(),
+            "no error after updating loaded PSU"
+        );
+        assert!(
+            app.temp_workspace.is_none(),
+            "temporary workspace should be cleaned up"
+        );
     }
 
     #[test]
