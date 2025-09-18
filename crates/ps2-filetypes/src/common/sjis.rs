@@ -16,7 +16,7 @@ pub fn encode_sjis(input: &str) -> Result<Vec<u8>, SjisEncodeError> {
 
 pub fn decode_sjis(input: &[u8]) -> String {
     let (decoded, _, _) = SHIFT_JIS.decode(input);
-    decoded.into_owned()
+    decoded.trim_end_matches('\0').to_string()
 }
 
 pub fn is_roundtrip_sjis(value: &str) -> bool {
