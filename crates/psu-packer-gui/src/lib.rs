@@ -2706,6 +2706,92 @@ linebreak_pos = 5
     }
 
     #[test]
+    fn load_project_files_reads_uppercase_icon_sys() {
+        use ps2_filetypes::{color::Color, ColorF, Vector};
+
+        let temp_dir = tempdir().expect("temporary directory");
+        let folder = temp_dir.path();
+
+        let config = psu_packer::Config {
+            name: "APP_Test Save".to_string(),
+            timestamp: None,
+            include: None,
+            exclude: None,
+            icon_sys: None,
+        };
+        let config_toml = config.to_toml_string().expect("serialize minimal psu.toml");
+        fs::write(folder.join("psu.toml"), config_toml).expect("write psu.toml");
+        fs::write(folder.join("title.cfg"), "title=Test Save\n").expect("write title.cfg");
+
+        let icon_sys = IconSys {
+            flags: 1,
+            linebreak_pos: 5,
+            background_transparency: 0,
+            background_colors: [Color::WHITE; 4],
+            light_directions: [
+                Vector {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 1.0,
+                    w: 0.0,
+                },
+                Vector {
+                    x: 0.0,
+                    y: 1.0,
+                    z: 0.0,
+                    w: 0.0,
+                },
+                Vector {
+                    x: 1.0,
+                    y: 0.0,
+                    z: 0.0,
+                    w: 0.0,
+                },
+            ],
+            light_colors: [
+                ColorF {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 1.0,
+                },
+                ColorF {
+                    r: 0.5,
+                    g: 0.5,
+                    b: 0.5,
+                    a: 1.0,
+                },
+                ColorF {
+                    r: 0.25,
+                    g: 0.25,
+                    b: 0.25,
+                    a: 1.0,
+                },
+            ],
+            ambient_color: ColorF {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 1.0,
+            },
+            title: "HELLOWORLD".to_string(),
+            icon_file: "icon.icn".to_string(),
+            icon_copy_file: "icon.icn".to_string(),
+            icon_delete_file: "icon.icn".to_string(),
+        };
+        let icon_bytes = icon_sys.to_bytes().expect("serialize icon.sys");
+        fs::write(folder.join("ICON.SYS"), icon_bytes).expect("write ICON.SYS");
+
+        let mut app = PackerApp::default();
+        crate::ui::file_picker::load_project_files(&mut app, folder);
+
+        assert!(app.icon_sys_existing.is_some());
+        assert!(app.icon_sys_use_existing);
+        assert_eq!(app.icon_sys_title_line1, "HELLO");
+        assert_eq!(app.icon_sys_title_line2, "WORLD");
+    }
+
+    #[test]
     fn split_icon_sys_title_replaces_control_characters() {
         let (line1, line2) = split_icon_sys_title("A\u{0001}B\rC", 3);
 

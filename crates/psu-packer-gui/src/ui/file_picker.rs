@@ -1,4 +1,7 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use eframe::egui;
 use ps2_filetypes::{IconSys, PSUEntryKind, PSU};
@@ -171,92 +174,7 @@ pub(crate) fn folder_section(app: &mut PackerApp, ui: &mut egui::Ui) {
                 .clicked()
             {
                 if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-                    app.load_timestamp_rules_from_folder(&folder);
-                    match psu_packer::load_config(&folder) {
-                        Ok(config) => {
-                            let psu_packer::Config {
-                                name,
-                                timestamp,
-                                include,
-                                exclude,
-                                icon_sys,
-                            } = config;
-
-                            app.set_folder_name_from_full(&name);
-                            app.psu_file_base_name = app.folder_base_name.clone();
-                            if let Some(default_path) = app.default_output_path_with(Some(&folder))
-                            {
-                                app.output = default_path.display().to_string();
-                            } else {
-                                app.output.clear();
-                            }
-                            app.source_timestamp = timestamp;
-                            app.include_files = include.unwrap_or_default();
-                            app.exclude_files = exclude.unwrap_or_default();
-                            app.selected_include = None;
-                            app.selected_exclude = None;
-                            app.clear_error_message();
-                            app.status.clear();
-
-                            let icon_sys_path = folder.join("icon.sys");
-                            let mut parsed_icon_sys = None;
-                            if icon_sys_path.is_file() {
-                                match fs::read(&icon_sys_path) {
-                                    Ok(bytes) => {
-                                        match std::panic::catch_unwind(|| IconSys::new(bytes)) {
-                                            Ok(icon_sys) => parsed_icon_sys = Some(icon_sys),
-                                            Err(_) => {
-                                                app.set_error_message(format!(
-                                                    "Failed to parse {} as an icon.sys file.",
-                                                    icon_sys_path.display()
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    Err(err) => {
-                                        app.set_error_message(format!(
-                                            "Failed to read {}: {}",
-                                            icon_sys_path.display(),
-                                            err
-                                        ));
-                                    }
-                                }
-                            }
-
-                            if let Some(icon_cfg) = icon_sys {
-                                app.apply_icon_sys_config(icon_cfg, parsed_icon_sys.as_ref());
-                            } else if let Some(existing_icon_sys) = parsed_icon_sys.as_ref() {
-                                app.apply_icon_sys_file(existing_icon_sys);
-                            } else {
-                                app.reset_icon_sys_fields();
-                            }
-
-                            app.icon_sys_existing = parsed_icon_sys;
-                        }
-                        Err(err) => {
-                            let message = format_load_error(&folder, err);
-                            app.set_error_message(message);
-                            app.output.clear();
-                            app.selected_prefix = SasPrefix::default();
-                            app.folder_base_name.clear();
-                            app.psu_file_base_name.clear();
-                            app.timestamp = None;
-                            app.timestamp_strategy = TimestampStrategy::None;
-                            app.timestamp_from_rules = false;
-                            app.source_timestamp = None;
-                            app.manual_timestamp = None;
-                            app.include_files.clear();
-                            app.exclude_files.clear();
-                            app.selected_include = None;
-                            app.selected_exclude = None;
-                            app.reset_icon_sys_fields();
-                        }
-                    }
-                    app.loaded_psu_path = None;
-                    app.loaded_psu_files.clear();
-                    app.folder = Some(folder.clone());
-                    app.sync_timestamp_after_source_update();
-                    app.reload_project_files();
+                    load_project_files(app, &folder);
                     if app.icon_sys_enabled {
                         app.open_icon_sys_tab();
                     } else {
@@ -307,6 +225,106 @@ pub(crate) fn loaded_psu_section(app: &PackerApp, ui: &mut egui::Ui) {
                 }
             });
     });
+}
+
+pub(crate) fn load_project_files(app: &mut PackerApp, folder: &Path) {
+    app.load_timestamp_rules_from_folder(folder);
+    match psu_packer::load_config(folder) {
+        Ok(config) => {
+            let psu_packer::Config {
+                name,
+                timestamp,
+                include,
+                exclude,
+                icon_sys,
+            } = config;
+
+            app.set_folder_name_from_full(&name);
+            app.psu_file_base_name = app.folder_base_name.clone();
+            if let Some(default_path) = app.default_output_path_with(Some(folder)) {
+                app.output = default_path.display().to_string();
+            } else {
+                app.output.clear();
+            }
+            app.source_timestamp = timestamp;
+            app.include_files = include.unwrap_or_default();
+            app.exclude_files = exclude.unwrap_or_default();
+            app.selected_include = None;
+            app.selected_exclude = None;
+            app.clear_error_message();
+            app.status.clear();
+
+            let mut parsed_icon_sys = None;
+            if let Some(icon_sys_path) = find_icon_sys_path(folder) {
+                match fs::read(&icon_sys_path) {
+                    Ok(bytes) => match std::panic::catch_unwind(|| IconSys::new(bytes)) {
+                        Ok(icon_sys) => parsed_icon_sys = Some(icon_sys),
+                        Err(_) => {
+                            app.set_error_message(format!(
+                                "Failed to parse {} as an icon.sys file.",
+                                icon_sys_path.display()
+                            ));
+                        }
+                    },
+                    Err(err) => {
+                        app.set_error_message(format!(
+                            "Failed to read {}: {}",
+                            icon_sys_path.display(),
+                            err
+                        ));
+                    }
+                }
+            }
+
+            if let Some(icon_cfg) = icon_sys {
+                app.apply_icon_sys_config(icon_cfg, parsed_icon_sys.as_ref());
+            } else if let Some(existing_icon_sys) = parsed_icon_sys.as_ref() {
+                app.apply_icon_sys_file(existing_icon_sys);
+            } else {
+                app.reset_icon_sys_fields();
+            }
+
+            app.icon_sys_existing = parsed_icon_sys;
+        }
+        Err(err) => {
+            let message = format_load_error(folder, err);
+            app.set_error_message(message);
+            app.output.clear();
+            app.selected_prefix = SasPrefix::default();
+            app.folder_base_name.clear();
+            app.psu_file_base_name.clear();
+            app.timestamp = None;
+            app.timestamp_strategy = TimestampStrategy::None;
+            app.timestamp_from_rules = false;
+            app.source_timestamp = None;
+            app.manual_timestamp = None;
+            app.include_files.clear();
+            app.exclude_files.clear();
+            app.selected_include = None;
+            app.selected_exclude = None;
+            app.reset_icon_sys_fields();
+        }
+    }
+    app.loaded_psu_path = None;
+    app.loaded_psu_files.clear();
+    app.folder = Some(folder.to_path_buf());
+    app.sync_timestamp_after_source_update();
+    app.reload_project_files();
+}
+
+fn find_icon_sys_path(folder: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(folder).ok()?;
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.eq_ignore_ascii_case("icon.sys"))
+                    .unwrap_or(false)
+        })
 }
 
 impl PackerApp {
