@@ -3,6 +3,7 @@ use std::path::Path;
 use eframe::egui;
 
 use crate::{ui::theme, PackerApp, SasPrefix, ICON_SYS_TITLE_CHAR_LIMIT};
+use ps2_filetypes::sjis;
 
 pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.set_width(ui.available_width());
@@ -650,12 +651,13 @@ impl PackerApp {
                 ));
             }
             let title_is_valid = |value: &str| {
-                value
-                    .chars()
-                    .all(|c| c.is_ascii() && (!c.is_ascii_control() || c == ' '))
+                !value.chars().any(|c| c.is_control()) && sjis::is_roundtrip_sjis(value)
             };
             if !title_is_valid(line1) || !title_is_valid(line2) {
-                return Err("Icon.sys titles only support printable ASCII characters".to_string());
+                return Err(
+                    "Icon.sys titles must contain characters representable in Shift-JIS"
+                        .to_string(),
+                );
             }
 
             let has_content = line1.chars().any(|c| !c.is_whitespace())
