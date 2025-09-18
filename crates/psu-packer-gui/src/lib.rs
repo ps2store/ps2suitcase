@@ -27,7 +27,8 @@ const ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER: char = '\u{FFFD}';
 const TIMESTAMP_RULES_FILE: &str = "timestamp_rules.json";
 pub(crate) const REQUIRED_PROJECT_FILES: &[&str] =
     &["icon.icn", "icon.sys", "psu.toml", "title.cfg"];
-const CENTERED_COLUMN_MAX_WIDTH: f32 = 720.0;
+const CENTERED_COLUMN_MAX_WIDTH: f32 = 1180.0;
+const PACK_CONTROLS_TWO_COLUMN_MIN_WIDTH: f32 = 940.0;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MissingFileReason {
@@ -2311,18 +2312,39 @@ impl eframe::App for PackerApp {
                                 }
 
                                 ui.add_space(8.0);
-                                ui::pack_controls::metadata_section(self, ui);
 
-                                if !showing_psu {
+                                let two_column_layout =
+                                    ui.available_width() >= PACK_CONTROLS_TWO_COLUMN_MIN_WIDTH;
+                                if two_column_layout {
+                                    ui.columns(2, |columns| {
+                                        columns[0].vertical(|ui| {
+                                            ui::pack_controls::metadata_section(self, ui);
+                                            ui.add_space(8.0);
+                                            ui::pack_controls::output_section(self, ui);
+                                        });
+
+                                        columns[1].vertical(|ui| {
+                                            if !showing_psu {
+                                                ui::pack_controls::file_filters_section(self, ui);
+                                                ui.add_space(8.0);
+                                            }
+                                            ui::pack_controls::packaging_section(self, ui);
+                                        });
+                                    });
+                                } else {
+                                    ui::pack_controls::metadata_section(self, ui);
+
+                                    if !showing_psu {
+                                        ui.add_space(8.0);
+                                        ui::pack_controls::file_filters_section(self, ui);
+                                    }
+
                                     ui.add_space(8.0);
-                                    ui::pack_controls::file_filters_section(self, ui);
+                                    ui::pack_controls::output_section(self, ui);
+
+                                    ui.add_space(8.0);
+                                    ui::pack_controls::packaging_section(self, ui);
                                 }
-
-                                ui.add_space(8.0);
-                                ui::pack_controls::output_section(self, ui);
-
-                                ui.add_space(8.0);
-                                ui::pack_controls::packaging_section(self, ui);
                             });
                         });
                     }
