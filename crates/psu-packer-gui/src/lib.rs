@@ -348,6 +348,7 @@ pub struct PackerApp {
     pub(crate) loaded_psu_path: Option<PathBuf>,
     pub(crate) loaded_psu_files: Vec<String>,
     pub(crate) show_exit_confirm: bool,
+    pub(crate) exit_confirmed: bool,
     pub(crate) source_present_last_frame: bool,
     pub(crate) icon_sys_enabled: bool,
     pub(crate) icon_sys_title_line1: String,
@@ -441,6 +442,7 @@ impl Default for PackerApp {
             loaded_psu_path: None,
             loaded_psu_files: Vec::new(),
             show_exit_confirm: false,
+            exit_confirmed: false,
             source_present_last_frame: false,
             icon_sys_enabled: false,
             icon_sys_title_line1: String::new(),
@@ -2145,6 +2147,12 @@ fn text_editor_ui(
 impl eframe::App for PackerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_pack_job();
+
+        if ctx.input(|i| i.viewport().close_requested()) && !self.exit_confirmed {
+            self.exit_confirmed = false;
+            self.show_exit_confirm = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        }
 
         self.zoom_factor = self.zoom_factor.clamp(0.5, 2.0);
         ctx.set_pixels_per_point(self.zoom_factor);

@@ -38,9 +38,11 @@ pub(crate) fn exit_confirmation(app: &mut PackerApp, ctx: &egui::Context) {
                     let no_clicked = ui.button("No").clicked();
 
                     if yes_clicked {
+                        app.exit_confirmed = true;
                         app.show_exit_confirm = false;
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     } else if no_clicked {
+                        app.exit_confirmed = false;
                         app.show_exit_confirm = false;
                     }
                 });

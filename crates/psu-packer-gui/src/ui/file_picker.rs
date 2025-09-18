@@ -91,6 +91,7 @@ fn file_menu_contents(
 
     if ui.button("Exit").clicked() {
         app.show_exit_confirm = true;
+        app.exit_confirmed = false;
         ui.close_menu();
     }
 }
