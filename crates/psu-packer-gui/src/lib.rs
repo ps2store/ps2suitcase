@@ -8,7 +8,7 @@ use std::{
 use crate::ui::theme;
 use chrono::NaiveDateTime;
 use eframe::egui::{self, Widget};
-use ps2_filetypes::{templates, IconSys, PSUEntryKind, TitleCfg, PSU};
+use ps2_filetypes::{sjis, templates, IconSys, PSUEntryKind, TitleCfg, PSU};
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 use tempfile::tempdir;
 
@@ -88,7 +88,28 @@ fn split_icon_sys_title(title: &str, break_index: usize) -> (String, String) {
         })
         .collect();
 
-    let break_index = break_index.min(sanitized_chars.len());
+    let mut remaining_bytes = break_index;
+    let mut break_in_chars = 0usize;
+    if remaining_bytes > 0 {
+        for ch in title.chars() {
+            let mut utf8 = [0u8; 4];
+            let encoded_len = sjis::encode_sjis(ch.encode_utf8(&mut utf8))
+                .map(|bytes| bytes.len())
+                .unwrap_or(1)
+                .max(1);
+
+            if remaining_bytes < encoded_len {
+                break;
+            }
+            remaining_bytes -= encoded_len;
+            break_in_chars += 1;
+            if remaining_bytes == 0 {
+                break;
+            }
+        }
+    }
+
+    let break_index = break_in_chars.min(sanitized_chars.len());
     let line1_count = break_index.min(ICON_SYS_TITLE_CHAR_LIMIT);
     let skip_count = line1_count;
 
@@ -2541,6 +2562,7 @@ impl<'a> Widget for EditorTabWidget<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ps2_filetypes::sjis;
     use psu_packer::IconSysFlags;
     use std::fs;
     use tempfile::tempdir;
@@ -2664,7 +2686,7 @@ linebreak_pos = 5
 
         let icon_sys = IconSys {
             flags: 4,
-            linebreak_pos: 4,
+            linebreak_pos: sjis::encode_sjis("メモリー").unwrap().len() as u16,
             background_transparency: IconSysConfig::default_background_transparency(),
             background_colors: IconSysConfig::default_background_colors().map(Into::into),
             light_directions: IconSysConfig::default_light_directions().map(Into::into),
@@ -2690,7 +2712,7 @@ linebreak_pos = 5
         let icon_cfg = IconSysConfig {
             flags: IconSysFlags::new(1),
             title: title.to_string(),
-            linebreak_pos: Some(4),
+            linebreak_pos: Some(sjis::encode_sjis("メモリー").unwrap().len() as u16),
             preset: None,
             background_transparency: None,
             background_colors: None,
@@ -2800,6 +2822,28 @@ linebreak_pos = 5
             format!("A{}B", ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER)
         );
         assert_eq!(line2, format!("{}C", ICON_SYS_UNSUPPORTED_CHAR_PLACEHOLDER));
+    }
+
+    #[test]
+    fn split_icon_sys_title_uses_byte_based_breaks_for_multibyte_titles() {
+        let title = "メモリーカード";
+        let break_bytes = sjis::encode_sjis("メモリー").unwrap().len();
+
+        let (line1, line2) = split_icon_sys_title(title, break_bytes);
+
+        assert_eq!(line1, "メモリー");
+        assert_eq!(line2, "カード");
+    }
+
+    #[test]
+    fn split_icon_sys_title_preserves_second_line_for_partial_multibyte_breaks() {
+        let title = "メモリーカード";
+        let break_bytes = sjis::encode_sjis("メモ").unwrap().len() + 1;
+
+        let (line1, line2) = split_icon_sys_title(title, break_bytes);
+
+        assert_eq!(line1, "メモ");
+        assert_eq!(line2, "リーカード");
     }
 
     #[test]
