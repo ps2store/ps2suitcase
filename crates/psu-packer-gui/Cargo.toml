@@ -4,6 +4,11 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[features]
+default = []
+# Re-enable the psu.toml editor UI with `--features psu-toml-editor`.
+psu-toml-editor = []
+
 [dependencies]
 psu-packer = { path = "../psu-packer" }
 ps2-filetypes = { path = "../ps2-filetypes" }
