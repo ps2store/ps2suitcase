@@ -242,13 +242,13 @@ impl IconSysViewer {
                 ui.end_row();
 
                 ui.label("X");
-                ui.add(egui::Slider::new(&mut light.direction.x, 0.0..=1.0));
+                ui.add(egui::Slider::new(&mut light.direction.x, -1.0..=1.0));
                 ui.end_row();
                 ui.label("Y");
-                ui.add(egui::Slider::new(&mut light.direction.y, 0.0..=1.0));
+                ui.add(egui::Slider::new(&mut light.direction.y, -1.0..=1.0));
                 ui.end_row();
                 ui.label("Z");
-                ui.add(egui::Slider::new(&mut light.direction.z, 0.0..=1.0));
+                ui.add(egui::Slider::new(&mut light.direction.z, -1.0..=1.0));
                 ui.end_row();
 
                 Ui::separator(ui);
@@ -407,4 +407,97 @@ fn draw_background(ui: &mut Ui, colors: &[PS2RgbaInterface; 4]) {
         .extend_from_slice(&[i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3]);
 
     painter.add(egui::Shape::mesh(mesh));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tabs::Tab;
+    use tempfile::tempdir;
+
+    #[test]
+    fn icon_sys_viewer_preserves_negative_light_directions_when_loading_and_saving() {
+        let temp_dir = tempdir().expect("failed to create temp dir");
+        let icon_sys_path = temp_dir.path().join("icon.sys");
+
+        let background_color = Color::new(10, 20, 30, 255);
+        let light_direction = Vector {
+            x: -0.5,
+            y: 0.75,
+            z: -1.0,
+            w: 1.0,
+        };
+
+        let original_icon_sys = IconSys {
+            flags: 0,
+            linebreak_pos: 0,
+            background_transparency: 0,
+            background_colors: [
+                background_color,
+                background_color,
+                background_color,
+                background_color,
+            ],
+            light_directions: [light_direction, light_direction, light_direction],
+            light_colors: [
+                ColorF {
+                    r: 0.1,
+                    g: 0.2,
+                    b: 0.3,
+                    a: 1.0,
+                },
+                ColorF {
+                    r: 0.4,
+                    g: 0.5,
+                    b: 0.6,
+                    a: 1.0,
+                },
+                ColorF {
+                    r: 0.7,
+                    g: 0.8,
+                    b: 0.9,
+                    a: 1.0,
+                },
+            ],
+            ambient_color: ColorF {
+                r: 0.2,
+                g: 0.3,
+                b: 0.4,
+                a: 1.0,
+            },
+            title: "Test".into(),
+            icon_file: "test.icn".into(),
+            icon_copy_file: "copy.icn".into(),
+            icon_delete_file: "delete.icn".into(),
+        };
+
+        let bytes = original_icon_sys
+            .to_bytes()
+            .expect("failed to serialize icon.sys");
+        std::fs::write(&icon_sys_path, &bytes).expect("failed to write icon.sys");
+
+        let virtual_file = VirtualFile {
+            name: "icon.sys".into(),
+            file_path: icon_sys_path.clone(),
+            size: bytes.len() as u64,
+        };
+
+        let mut app_state = AppState::new();
+        app_state.opened_folder = Some(temp_dir.path().to_path_buf());
+
+        let mut viewer = IconSysViewer::new(&virtual_file, &app_state);
+
+        assert_eq!(viewer.lights[0].direction.x, light_direction.x);
+        assert_eq!(viewer.lights[0].direction.y, light_direction.y);
+        assert_eq!(viewer.lights[0].direction.z, light_direction.z);
+
+        viewer.save();
+
+        let reloaded_icon_sys =
+            IconSys::new(std::fs::read(icon_sys_path).expect("failed to read icon.sys"));
+
+        assert_eq!(reloaded_icon_sys.light_directions[0].x, light_direction.x);
+        assert_eq!(reloaded_icon_sys.light_directions[0].y, light_direction.y);
+        assert_eq!(reloaded_icon_sys.light_directions[0].z, light_direction.z);
+    }
 }
