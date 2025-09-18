@@ -7,7 +7,7 @@ use std::{
 
 use crate::ui::theme;
 use chrono::NaiveDateTime;
-use eframe::egui;
+use eframe::egui::{self, Widget};
 use ps2_filetypes::{templates, IconSys, PSUEntryKind, TitleCfg, PSU};
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 use tempfile::tempdir;
@@ -496,6 +496,27 @@ impl PackerApp {
             self.missing_required_project_files = self.missing_required_project_files_for(&folder);
         } else {
             self.missing_required_project_files.clear();
+        }
+    }
+
+    fn editor_tab_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        tab: EditorTab,
+        label: &str,
+        alert: bool,
+        font: &egui::FontId,
+    ) {
+        let widget = EditorTabWidget::new(
+            label,
+            font.clone(),
+            &self.theme,
+            self.editor_tab == tab,
+            alert,
+        );
+        let response = ui.add(widget);
+        if response.clicked() {
+            self.editor_tab = tab;
         }
     }
 
@@ -2029,59 +2050,59 @@ impl eframe::App for PackerApp {
                 theme::draw_separator(ui.painter(), bottom_separator, self.theme.separator);
                 ui.add_space(8.0);
 
-                let tab_bar = ui.horizontal(|ui| {
-                    let tab_font = theme::display_font(18.0);
-                    let mut tab_button =
-                        |ui: &mut egui::Ui, tab: EditorTab, label: &str, highlight: bool| {
-                            let is_selected = self.editor_tab == tab;
-                            let base_color = if is_selected || highlight {
-                                self.theme.neon_accent
-                            } else {
-                                self.theme.soft_accent.gamma_multiply(0.85)
-                            };
-                            let mut text = egui::RichText::new(label)
-                                .font(tab_font.clone())
-                                .color(base_color);
-                            if is_selected {
-                                text = text.strong();
-                            }
-                            ui.selectable_value(&mut self.editor_tab, tab, text);
-                        };
+                let tab_font = theme::display_font(18.0);
+                let tab_bar = ui.horizontal_wrapped(|ui| {
+                    let spacing = ui.spacing_mut();
+                    spacing.item_spacing.x = 12.0;
+                    spacing.item_spacing.y = 8.0;
 
-                    tab_button(ui, EditorTab::PsuSettings, "PSU Settings", false);
+                    self.editor_tab_button(
+                        ui,
+                        EditorTab::PsuSettings,
+                        "PSU Settings",
+                        false,
+                        &tab_font,
+                    );
+
                     let psu_toml_label = if self.psu_toml_editor.modified {
                         "psu.toml*"
                     } else {
                         "psu.toml"
                     };
-                    tab_button(
+                    self.editor_tab_button(
                         ui,
                         EditorTab::PsuToml,
                         psu_toml_label,
                         self.psu_toml_editor.modified,
+                        &tab_font,
                     );
+
                     let title_cfg_label = if self.title_cfg_editor.modified {
                         "title.cfg*"
                     } else {
                         "title.cfg"
                     };
-                    tab_button(
+                    self.editor_tab_button(
                         ui,
                         EditorTab::TitleCfg,
                         title_cfg_label,
                         self.title_cfg_editor.modified,
+                        &tab_font,
                     );
-                    tab_button(ui, EditorTab::IconSys, "icon.sys", false);
+
+                    self.editor_tab_button(ui, EditorTab::IconSys, "icon.sys", false, &tab_font);
+
                     let timestamp_label = if self.timestamp_rules_modified {
                         "Timestamp rules*"
                     } else {
                         "Timestamp rules"
                     };
-                    tab_button(
+                    self.editor_tab_button(
                         ui,
                         EditorTab::TimestampAuto,
                         timestamp_label,
                         self.timestamp_rules_modified,
+                        &tab_font,
                     );
                 });
 
@@ -2201,6 +2222,101 @@ impl eframe::App for PackerApp {
             });
 
         ui::dialogs::exit_confirmation(self, ctx);
+    }
+}
+
+struct EditorTabWidget<'a> {
+    label: &'a str,
+    font: egui::FontId,
+    theme: &'a theme::Palette,
+    is_selected: bool,
+    alert: bool,
+}
+
+impl<'a> EditorTabWidget<'a> {
+    fn new(
+        label: &'a str,
+        font: egui::FontId,
+        theme: &'a theme::Palette,
+        is_selected: bool,
+        alert: bool,
+    ) -> Self {
+        Self {
+            label,
+            font,
+            theme,
+            is_selected,
+            alert,
+        }
+    }
+}
+
+impl<'a> Widget for EditorTabWidget<'a> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let base_padding = egui::vec2(12.0, 6.0);
+        let hover_extra = egui::vec2(2.0, 2.0);
+        let selected_extra = egui::vec2(4.0, 4.0);
+        let max_padding = base_padding + selected_extra;
+        let rounding = egui::CornerRadius::same(10);
+
+        let mut text_color = self.theme.text_primary;
+        if self.is_selected {
+            text_color = egui::Color32::WHITE;
+        } else if self.alert {
+            text_color = self.theme.neon_accent;
+        }
+
+        let galley = ui.fonts(|fonts| {
+            fonts.layout_no_wrap(self.label.to_owned(), self.font.clone(), text_color)
+        });
+        let desired_size = galley.size() + max_padding * 2.0;
+
+        let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+
+        if ui.is_rect_visible(rect) {
+            let mut padding = base_padding;
+            if response.hovered() {
+                padding += hover_extra;
+            }
+            if self.is_selected {
+                padding += selected_extra;
+            }
+
+            let fill = if self.is_selected {
+                self.theme.neon_accent.gamma_multiply(0.45)
+            } else if response.hovered() {
+                self.theme.soft_accent.gamma_multiply(0.38)
+            } else if self.alert {
+                self.theme.neon_accent.gamma_multiply(0.24)
+            } else {
+                self.theme.soft_accent.gamma_multiply(0.24)
+            };
+
+            let mut stroke_color = self.theme.soft_accent.gamma_multiply(0.7);
+            if self.is_selected {
+                stroke_color = self.theme.neon_accent;
+            } else if self.alert || response.hovered() {
+                stroke_color = self.theme.neon_accent.gamma_multiply(0.8);
+            }
+
+            ui.painter().rect_filled(rect, rounding, fill);
+            ui.painter().rect_stroke(
+                rect,
+                rounding,
+                egui::Stroke::new(1.0, stroke_color),
+                egui::StrokeKind::Outside,
+            );
+
+            let text_pos = rect.left_top() + padding;
+            ui.painter().galley(text_pos, galley, text_color);
+        }
+
+        response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let enabled = response.enabled();
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, self.label)
+        });
+        response
     }
 }
 
