@@ -248,6 +248,12 @@ enum PackProgress {
     Finished(PackOutcome),
 }
 
+struct PackPreparation {
+    folder: PathBuf,
+    config: psu_packer::Config,
+    missing_required_files: Vec<MissingRequiredFile>,
+}
+
 enum PackOutcome {
     Success {
         output_path: PathBuf,
@@ -257,6 +263,26 @@ enum PackOutcome {
         output_path: PathBuf,
         error: psu_packer::Error,
     },
+}
+
+enum PendingPackAction {
+    Pack {
+        folder: PathBuf,
+        output_path: PathBuf,
+        config: psu_packer::Config,
+        missing_required_files: Vec<MissingRequiredFile>,
+    },
+}
+
+impl PendingPackAction {
+    fn missing_files(&self) -> &[MissingRequiredFile] {
+        match self {
+            PendingPackAction::Pack {
+                missing_required_files,
+                ..
+            } => missing_required_files,
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -317,6 +343,7 @@ pub struct PackerApp {
     pub(crate) selected_include: Option<usize>,
     pub(crate) selected_exclude: Option<usize>,
     pub(crate) missing_required_project_files: Vec<MissingRequiredFile>,
+    pending_pack_action: Option<PendingPackAction>,
     pub(crate) loaded_psu_path: Option<PathBuf>,
     pub(crate) loaded_psu_files: Vec<String>,
     pub(crate) show_exit_confirm: bool,
@@ -341,6 +368,8 @@ pub struct PackerApp {
     title_cfg_editor: TextFileEditor,
     psu_toml_sync_blocked: bool,
     theme: theme::Palette,
+    #[cfg(test)]
+    test_pack_job_started: bool,
 }
 
 struct ErrorMessage {
@@ -407,6 +436,7 @@ impl Default for PackerApp {
             selected_include: None,
             selected_exclude: None,
             missing_required_project_files: Vec::new(),
+            pending_pack_action: None,
             loaded_psu_path: None,
             loaded_psu_files: Vec::new(),
             show_exit_confirm: false,
@@ -431,6 +461,8 @@ impl Default for PackerApp {
             title_cfg_editor: TextFileEditor::default(),
             psu_toml_sync_blocked: false,
             theme: theme::Palette::default(),
+            #[cfg(test)]
+            test_pack_job_started: false,
         }
     }
 }
@@ -500,6 +532,31 @@ impl PackerApp {
         } else {
             self.missing_required_project_files.clear();
         }
+    }
+
+    pub(crate) fn pending_pack_missing_files(&self) -> Option<&[MissingRequiredFile]> {
+        self.pending_pack_action
+            .as_ref()
+            .map(|action| action.missing_files())
+    }
+
+    pub(crate) fn confirm_pending_pack_action(&mut self) {
+        if let Some(action) = self.pending_pack_action.take() {
+            match action {
+                PendingPackAction::Pack {
+                    folder,
+                    output_path,
+                    config,
+                    ..
+                } => {
+                    self.begin_pack_job(folder, output_path, config);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn cancel_pending_pack_action(&mut self) {
+        self.pending_pack_action = None;
     }
 
     fn editor_tab_button(
@@ -1144,12 +1201,27 @@ impl PackerApp {
             return;
         }
 
-        let Some((folder, config)) = self.prepare_pack_inputs() else {
+        let Some(preparation) = self.prepare_pack_inputs() else {
             return;
         };
 
         let output_path = PathBuf::from(&self.output);
-        self.start_pack_job(folder, output_path, config);
+        let PackPreparation {
+            folder,
+            config,
+            missing_required_files,
+        } = preparation;
+
+        if missing_required_files.is_empty() {
+            self.begin_pack_job(folder, output_path, config);
+        } else {
+            self.pending_pack_action = Some(PendingPackAction::Pack {
+                folder,
+                output_path,
+                config,
+                missing_required_files,
+            });
+        }
     }
 
     pub(crate) fn handle_update_psu_request(&mut self) {
@@ -1173,11 +1245,18 @@ impl PackerApp {
             return;
         }
 
-        let Some((folder, config)) = self.prepare_pack_inputs() else {
+        let Some(preparation) = self.prepare_pack_inputs() else {
             return;
         };
 
-        self.start_pack_job(folder, destination, config);
+        if !preparation.missing_required_files.is_empty() {
+            self.pending_pack_action = None;
+            return;
+        }
+
+        let PackPreparation { folder, config, .. } = preparation;
+
+        self.begin_pack_job(folder, destination, config);
     }
 
     pub(crate) fn handle_save_as_folder_with_contents(&mut self) {
@@ -1212,7 +1291,7 @@ impl PackerApp {
         }
     }
 
-    fn prepare_pack_inputs(&mut self) -> Option<(PathBuf, psu_packer::Config)> {
+    fn prepare_pack_inputs(&mut self) -> Option<PackPreparation> {
         let Some(folder) = self.folder.clone() else {
             self.set_error_message("Please select a folder");
             return None;
@@ -1249,18 +1328,22 @@ impl PackerApp {
             let message = Self::format_missing_required_files_message(&missing);
             let failed_files = missing.iter().map(|entry| entry.name.clone()).collect();
             self.set_error_message((message, failed_files));
-            return None;
         }
 
         let config = match self.build_config() {
             Ok(config) => config,
             Err(err) => {
                 self.set_error_message(err);
+                self.pending_pack_action = None;
                 return None;
             }
         };
 
-        Some((folder, config))
+        Some(PackPreparation {
+            folder,
+            config,
+            missing_required_files: missing,
+        })
     }
 
     fn determine_update_destination(&self) -> Result<PathBuf, String> {
@@ -1576,6 +1659,29 @@ impl PackerApp {
         self.pack_job.is_some()
     }
 
+    #[cfg(not(test))]
+    fn begin_pack_job(
+        &mut self,
+        folder: PathBuf,
+        output_path: PathBuf,
+        config: psu_packer::Config,
+    ) {
+        self.pending_pack_action = None;
+        self.start_pack_job(folder, output_path, config);
+    }
+
+    #[cfg(test)]
+    fn begin_pack_job(
+        &mut self,
+        folder: PathBuf,
+        output_path: PathBuf,
+        config: psu_packer::Config,
+    ) {
+        self.pending_pack_action = None;
+        self.test_pack_job_started = true;
+        self.start_pack_job(folder, output_path, config);
+    }
+
     pub(crate) fn start_pack_job(
         &mut self,
         folder: PathBuf,
@@ -1760,6 +1866,75 @@ mod packer_app_tests {
         let result = app.prepare_pack_inputs();
         assert!(result.is_some(), "inputs should prepare successfully");
         assert!(app.output.ends_with("APP_SAVE.psu"));
+    }
+
+    #[test]
+    fn declining_pack_confirmation_keeps_warning_visible() {
+        let workspace = tempdir().expect("temp workspace");
+        let project_dir = workspace.path().join("project");
+        fs::create_dir_all(&project_dir).expect("create project folder");
+
+        let mut app = PackerApp::default();
+        app.folder = Some(project_dir);
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name = "SAVE".to_string();
+        app.selected_prefix = SasPrefix::App;
+        app.output = workspace.path().join("output.psu").display().to_string();
+
+        app.handle_pack_request();
+
+        assert!(
+            app.pending_pack_action.is_some(),
+            "confirmation should be pending"
+        );
+        assert!(
+            !app.missing_required_project_files.is_empty(),
+            "missing files should be tracked"
+        );
+
+        let missing_before = app.missing_required_project_files.clone();
+        app.cancel_pending_pack_action();
+
+        assert!(
+            app.pending_pack_action.is_none(),
+            "pending confirmation cleared"
+        );
+        assert_eq!(
+            app.missing_required_project_files, missing_before,
+            "warning about missing files remains visible"
+        );
+    }
+
+    #[test]
+    fn accepting_pack_confirmation_triggers_pack_job() {
+        let workspace = tempdir().expect("temp workspace");
+        let project_dir = workspace.path().join("project");
+        fs::create_dir_all(&project_dir).expect("create project folder");
+
+        let mut app = PackerApp::default();
+        app.folder = Some(project_dir);
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name = "SAVE".to_string();
+        app.selected_prefix = SasPrefix::App;
+        app.output = workspace.path().join("output.psu").display().to_string();
+
+        app.handle_pack_request();
+        assert!(
+            app.pending_pack_action.is_some(),
+            "confirmation should be pending"
+        );
+        assert!(!app.test_pack_job_started);
+
+        app.confirm_pending_pack_action();
+
+        assert!(app.pending_pack_action.is_none(), "confirmation accepted");
+        assert!(
+            app.test_pack_job_started,
+            "pack job should start after acceptance"
+        );
+        assert!(app.pack_job.is_some(), "pack job handle should be created");
+
+        wait_for_pack_completion(&mut app);
     }
 
     #[test]
@@ -2230,6 +2405,7 @@ impl eframe::App for PackerApp {
                 }
             });
 
+        ui::dialogs::pack_confirmation(self, ctx);
         ui::dialogs::exit_confirmation(self, ctx);
     }
 }
