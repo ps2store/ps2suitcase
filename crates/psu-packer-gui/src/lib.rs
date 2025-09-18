@@ -306,6 +306,7 @@ pub struct PackerApp {
     pub(crate) source_timestamp: Option<NaiveDateTime>,
     pub(crate) manual_timestamp: Option<NaiveDateTime>,
     pub(crate) timestamp_rules: TimestampRules,
+    pub(crate) timestamp_rules_loaded_from_file: bool,
     pub(crate) timestamp_rules_modified: bool,
     pub(crate) timestamp_rules_error: Option<String>,
     pub(crate) timestamp_rules_ui: TimestampRulesUiState,
@@ -395,6 +396,7 @@ impl Default for PackerApp {
             source_timestamp: None,
             manual_timestamp: None,
             timestamp_rules,
+            timestamp_rules_loaded_from_file: false,
             timestamp_rules_modified: false,
             timestamp_rules_error: None,
             timestamp_rules_ui,
@@ -489,6 +491,7 @@ impl PackerApp {
 
     fn uses_timestamp_rules_file(&self) -> bool {
         matches!(self.timestamp_strategy, TimestampStrategy::SasRules)
+            && (self.timestamp_rules_loaded_from_file || self.timestamp_rules_modified)
     }
 
     pub(crate) fn refresh_missing_required_project_files(&mut self) {
@@ -528,21 +531,25 @@ impl PackerApp {
                     rules.sanitize();
                     self.timestamp_rules = rules;
                     self.timestamp_rules_error = None;
+                    self.timestamp_rules_loaded_from_file = true;
                 }
                 Err(err) => {
                     self.timestamp_rules = TimestampRules::default();
                     self.timestamp_rules_error =
                         Some(format!("Failed to parse {}: {err}", path.display()));
+                    self.timestamp_rules_loaded_from_file = true;
                 }
             },
             Err(err) => {
                 if err.kind() == io::ErrorKind::NotFound {
                     self.timestamp_rules = TimestampRules::default();
                     self.timestamp_rules_error = None;
+                    self.timestamp_rules_loaded_from_file = false;
                 } else {
                     self.timestamp_rules = TimestampRules::default();
                     self.timestamp_rules_error =
                         Some(format!("Failed to read {}: {err}", path.display()));
+                    self.timestamp_rules_loaded_from_file = true;
                 }
             }
         }
@@ -567,6 +574,7 @@ impl PackerApp {
         self.timestamp_rules_ui = TimestampRulesUiState::from_rules(&self.timestamp_rules);
         self.timestamp_rules_modified = false;
         self.timestamp_rules_error = None;
+        self.timestamp_rules_loaded_from_file = true;
         Ok(path)
     }
 
@@ -697,6 +705,7 @@ impl PackerApp {
         self.timestamp_rules = TimestampRules::default();
         self.timestamp_rules_error = None;
         self.timestamp_rules_ui = TimestampRulesUiState::from_rules(&self.timestamp_rules);
+        self.timestamp_rules_loaded_from_file = false;
         self.mark_timestamp_rules_modified();
     }
 
@@ -2582,12 +2591,28 @@ linebreak_pos = 5
 
         app.timestamp_strategy = TimestampStrategy::SasRules;
         app.refresh_missing_required_project_files();
+        assert!(app.missing_required_project_files.is_empty());
+
+        app.mark_timestamp_rules_modified();
+        app.refresh_missing_required_project_files();
         assert_eq!(
             app.missing_required_project_files,
             vec![MissingRequiredFile::timestamp_rules()]
         );
 
+        app.timestamp_rules_modified = false;
+        app.timestamp_rules_loaded_from_file = false;
+
         fs::write(&timestamp_path, b"{}").expect("create timestamp rules");
+        app.load_timestamp_rules_from_folder(temp_dir.path());
+        fs::remove_file(&timestamp_path).expect("remove timestamp rules");
+        app.refresh_missing_required_project_files();
+        assert_eq!(
+            app.missing_required_project_files,
+            vec![MissingRequiredFile::timestamp_rules()]
+        );
+
+        fs::write(&timestamp_path, b"{}").expect("restore timestamp rules");
         app.refresh_missing_required_project_files();
         assert!(app.missing_required_project_files.is_empty());
     }
@@ -2652,19 +2677,12 @@ linebreak_pos = 5
             fs::remove_file(&timestamp_path).expect("remove timestamp rules");
         }
         app.timestamp_strategy = TimestampStrategy::SasRules;
-        app.handle_pack_request();
-        let error = app
-            .error_message
-            .as_ref()
-            .expect("missing timestamp rules should block packing");
-        assert!(error.contains(TIMESTAMP_RULES_FILE));
-        assert_eq!(
-            app.missing_required_project_files,
-            vec![MissingRequiredFile::timestamp_rules()]
+        let result = app.prepare_pack_inputs();
+        assert!(
+            result.is_some(),
+            "timestamp automation should use built-in rules"
         );
-        fs::write(&timestamp_path, b"{}").expect("restore timestamp rules");
-        app.clear_error_message();
-        app.refresh_missing_required_project_files();
+        assert!(app.error_message.is_none());
         assert!(app.missing_required_project_files.is_empty());
     }
 }
