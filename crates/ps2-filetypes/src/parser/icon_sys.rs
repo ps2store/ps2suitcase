@@ -102,7 +102,12 @@ impl IconSys {
 
         bytes.extend_from_slice(&self.ambient_color.to_bytes());
 
-        let title_bytes = encode_sjis(&self.title);
+        let title_bytes = encode_sjis(&self.title).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Title contains characters that cannot be encoded as Shift-JIS",
+            )
+        })?;
         let title_len = title_bytes.len();
         if title_len > 68 {
             return Err(std::io::Error::new(

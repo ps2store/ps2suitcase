@@ -3,6 +3,7 @@ use eframe::egui::{self, Color32};
 use crate::{
     ui::theme, IconFlagSelection, PackerApp, ICON_SYS_FLAG_OPTIONS, ICON_SYS_TITLE_CHAR_LIMIT,
 };
+use ps2_filetypes::sjis;
 use psu_packer::{ColorConfig, ColorFConfig, IconSysConfig, VectorConfig};
 
 const TITLE_CHAR_LIMIT: usize = ICON_SYS_TITLE_CHAR_LIMIT;
@@ -274,7 +275,7 @@ fn title_section(app: &mut PackerApp, ui: &mut egui::Ui) -> bool {
     let mut changed = false;
     ui.group(|ui| {
         ui.heading(theme::display_heading_text(ui, "Title"));
-        ui.small("Each line supports up to 10 ASCII characters.");
+        ui.small("Each line supports up to 16 characters that must round-trip through Shift-JIS");
 
         egui::Grid::new("icon_sys_title_grid")
             .num_columns(2)
@@ -330,11 +331,24 @@ fn title_input(ui: &mut egui::Ui, id: egui::Id, value: &mut String) -> bool {
     let response = ui.add(edit);
     let mut changed = false;
     if response.changed() {
-        let sanitized = value
-            .chars()
-            .filter(|c| c.is_ascii() && !c.is_control())
-            .take(TITLE_CHAR_LIMIT)
-            .collect::<String>();
+        let mut sanitized = String::new();
+        let mut accepted_chars = 0usize;
+        for ch in value.chars() {
+            if ch.is_control() {
+                continue;
+            }
+
+            if accepted_chars >= TITLE_CHAR_LIMIT {
+                break;
+            }
+
+            sanitized.push(ch);
+            if sjis::is_roundtrip_sjis(&sanitized) {
+                accepted_chars += 1;
+            } else {
+                sanitized.pop();
+            }
+        }
         if *value != sanitized {
             *value = sanitized;
         }
@@ -343,7 +357,7 @@ fn title_input(ui: &mut egui::Ui, id: egui::Id, value: &mut String) -> bool {
 
     let char_count = value.chars().count();
     ui.small(format!(
-        "{char_count} / {TITLE_CHAR_LIMIT} characters (ASCII only)"
+        "{char_count} / {TITLE_CHAR_LIMIT} characters (Shift-JIS compatible)"
     ));
     changed
 }
