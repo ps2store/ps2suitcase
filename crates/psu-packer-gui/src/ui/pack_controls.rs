@@ -150,14 +150,19 @@ pub(crate) fn output_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             .num_columns(2)
             .spacing(egui::vec2(12.0, 6.0))
             .show(ui, |ui| {
-                ui.label("PSU extracts to");
-                ui.text_edit_singleline(&mut app.output);
+                ui.label("Packed PSU path");
+                let trimmed_output = app.output.trim();
+                if trimmed_output.is_empty() {
+                    ui.weak("No destination selected");
+                } else {
+                    ui.label(egui::RichText::new(trimmed_output).monospace());
+                }
                 ui.end_row();
 
                 ui.label("");
                 if ui
-                    .button("Browse")
-                    .on_hover_text("Set a custom destination for the PSU file.")
+                    .button("Choose destination")
+                    .on_hover_text("Pick where the PSU file will be created or updated.")
                     .clicked()
                 {
                     app.browse_output_destination();
@@ -435,7 +440,7 @@ fn file_list_ui(
 }
 
 impl PackerApp {
-    pub(crate) fn browse_output_destination(&mut self) {
+    pub(crate) fn browse_output_destination(&mut self) -> bool {
         let mut dialog = rfd::FileDialog::new().add_filter("PSU", &["psu"]);
 
         let trimmed_output = self.output.trim();
@@ -477,7 +482,24 @@ impl PackerApp {
             }
 
             self.output = file.display().to_string();
+            true
+        } else {
+            false
         }
+    }
+
+    pub(crate) fn ensure_output_destination_selected(&mut self) -> bool {
+        if self.output.trim().is_empty() {
+            if let Some(path) = self.default_output_path() {
+                self.output = path.display().to_string();
+            }
+        }
+
+        if self.output.trim().is_empty() {
+            return self.browse_output_destination();
+        }
+
+        true
     }
 
     pub(crate) fn build_config(&self) -> Result<psu_packer::Config, String> {

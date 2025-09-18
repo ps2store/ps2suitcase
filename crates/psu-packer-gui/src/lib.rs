@@ -1246,6 +1246,12 @@ impl PackerApp {
             return;
         }
 
+        if self.loaded_psu_path.is_none() && self.output.trim().is_empty() {
+            if !self.ensure_output_destination_selected() {
+                return;
+            }
+        }
+
         let destination = match self.determine_update_destination() {
             Ok(path) => path,
             Err(message) => {
@@ -1301,6 +1307,12 @@ impl PackerApp {
     pub(crate) fn handle_save_as_folder_with_contents(&mut self) {
         if self.is_pack_running() {
             return;
+        }
+
+        if self.loaded_psu_path.is_none() && self.output.trim().is_empty() {
+            if !self.ensure_output_destination_selected() {
+                return;
+            }
         }
 
         let source_path = match self.determine_export_source_path() {
@@ -1359,14 +1371,7 @@ impl PackerApp {
             self.psu_file_base_name = trimmed_folder.to_string();
         }
 
-        if self.output.trim().is_empty() {
-            if let Some(path) = self.default_output_path() {
-                self.output = path.display().to_string();
-            }
-        }
-
-        if self.output.trim().is_empty() {
-            self.set_error_message("Please choose where the PSU will be saved");
+        if !self.ensure_output_destination_selected() {
             return None;
         }
 
