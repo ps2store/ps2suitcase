@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use eframe::{egui, NativeOptions, Renderer};
+use eframe::{egui, egui::IconData, NativeOptions, Renderer};
 use psu_packer_gui::PackerApp;
 use std::any::Any;
 use std::fmt;
@@ -37,12 +37,37 @@ fn shared_native_options() -> NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1024.0, 768.0])
             .with_min_inner_size([640.0, 480.0])
+            .with_icon(load_app_icon())
             .with_resizable(true),
         ..Default::default()
     };
 
     options.centered = true;
     options
+}
+
+fn load_app_icon() -> IconData {
+    let icon = include_bytes!("../../suitcase/assets/psupackergui.ico");
+    match image::load_from_memory(icon) {
+        Ok(image) => {
+            let image = image.into_rgba8();
+            let (width, height) = image.dimensions();
+
+            IconData {
+                rgba: image.into_raw(),
+                width,
+                height,
+            }
+        }
+        Err(error) => {
+            eprintln!("Failed to load icon: {error}");
+            IconData {
+                rgba: vec![0; 4],
+                width: 1,
+                height: 1,
+            }
+        }
+    }
 }
 
 fn run_app(options: NativeOptions) -> eframe::Result<()> {
