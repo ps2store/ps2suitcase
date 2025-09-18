@@ -19,10 +19,10 @@ impl Color {
 
     pub fn to_bytes(&self) -> Vec<u8> {
         vec![
-            (self.r as u32).to_le_bytes(),
-            (self.g as u32).to_le_bytes(),
-            (self.b as u32).to_le_bytes(),
-            (self.a as u32).to_le_bytes(),
+            f32::to_le_bytes(self.r as f32 / 255.0),
+            f32::to_le_bytes(self.g as f32 / 255.0),
+            f32::to_le_bytes(self.b as f32 / 255.0),
+            f32::to_le_bytes(self.a as f32 / 255.0),
         ]
         .into_flattened()
     }
