@@ -145,6 +145,13 @@ impl TimestampRules {
         if self.seconds_between_items == 0 {
             self.seconds_between_items = Self::default_seconds_between_items();
         }
+        let adjusted = u64::from(self.seconds_between_items.max(2));
+        let next_even = ((adjusted + 1) / 2) * 2;
+        let max_even = {
+            let max_value = u64::from(u32::MAX);
+            max_value - (max_value % 2)
+        };
+        self.seconds_between_items = next_even.min(max_even) as u32;
         if self.slots_per_category == 0 {
             self.slots_per_category = Self::default_slots_per_category();
         }
@@ -434,5 +441,37 @@ mod tests {
             .expect("category");
 
         assert!(aliases.aliases.is_empty());
+    }
+
+    #[test]
+    fn odd_spacing_produces_distinct_consecutive_timestamps() {
+        let mut rules = TimestampRules {
+            seconds_between_items: 3,
+            slots_per_category: 32,
+            categories: vec![CategoryRule {
+                key: "DEFAULT".to_string(),
+                aliases: Vec::new(),
+            }],
+        };
+        rules.sanitize();
+        assert!(rules.seconds_between_items >= 2);
+        assert_eq!(rules.seconds_between_items % 2, 0);
+
+        let first_name = "A";
+        let second_name = "B";
+        let first_effective =
+            normalize_name_for_rules(first_name, &rules).expect("first effective name");
+        let second_effective =
+            normalize_name_for_rules(second_name, &rules).expect("second effective name");
+        let first_slot = slot_index_within_category(&first_effective, &rules);
+        let second_slot = slot_index_within_category(&second_effective, &rules);
+        assert_eq!(second_slot, first_slot + 1, "expected consecutive slots");
+
+        let first_timestamp =
+            planned_timestamp_for_name(first_name, &rules).expect("first timestamp");
+        let second_timestamp =
+            planned_timestamp_for_name(second_name, &rules).expect("second timestamp");
+
+        assert_ne!(first_timestamp, second_timestamp);
     }
 }
