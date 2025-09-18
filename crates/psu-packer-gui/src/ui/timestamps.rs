@@ -332,17 +332,25 @@ pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
         .spacing(egui::vec2(12.0, 6.0))
         .show(ui, |ui| {
             ui.label("Seconds between items");
-            let mut seconds = app.timestamp_rules.seconds_between_items.max(1);
+            let mut seconds = app.timestamp_rules.seconds_between_items.max(2);
             if ui
                 .add(
                     egui::DragValue::new(&mut seconds)
-                        .clamp_range(1..=3600)
+                        .clamp_range(2..=3600)
                         .speed(1.0),
                 )
                 .changed()
             {
-                app.timestamp_rules.seconds_between_items = seconds.max(1);
-                app.mark_timestamp_rules_modified();
+                let mut coerced = if seconds % 2 == 0 {
+                    seconds
+                } else {
+                    seconds + 1
+                };
+                coerced = coerced.clamp(2, 3600);
+                if app.timestamp_rules.seconds_between_items != coerced {
+                    app.timestamp_rules.seconds_between_items = coerced;
+                    app.mark_timestamp_rules_modified();
+                }
             }
             ui.end_row();
 
