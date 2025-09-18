@@ -5,6 +5,7 @@ use eframe::egui;
 use crate::{ui::theme, PackerApp, SasPrefix, ICON_SYS_TITLE_CHAR_LIMIT};
 
 pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+    ui.set_width(ui.available_width());
     ui.group(|ui| {
         ui.heading(theme::display_heading_text(ui, "Metadata"));
         ui.small("Edit PSU metadata before or after selecting a folder.");
@@ -86,6 +87,7 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 }
 
 pub(crate) fn file_filters_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+    ui.set_width(ui.available_width());
     ui.group(|ui| {
         ui.heading(theme::display_heading_text(ui, "File filters"));
         ui.small("Manage which files to include or exclude before creating the archive.");
@@ -138,6 +140,7 @@ pub(crate) fn file_filters_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 }
 
 pub(crate) fn output_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+    ui.set_width(ui.available_width());
     ui.group(|ui| {
         ui.heading(theme::display_heading_text(ui, "Output"));
         ui.small("Choose where the packed PSU file will be saved.");
@@ -163,6 +166,7 @@ pub(crate) fn output_section(app: &mut PackerApp, ui: &mut egui::Ui) {
 }
 
 pub(crate) fn packaging_section(app: &mut PackerApp, ui: &mut egui::Ui) {
+    ui.set_width(ui.available_width());
     ui.group(|ui| {
         ui.heading(theme::display_heading_text(ui, "Packaging"));
         ui.small("Validate the configuration and generate the PSU archive.");
@@ -173,7 +177,7 @@ pub(crate) fn packaging_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             );
             ui.colored_label(egui::Color32::YELLOW, warning);
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let pack_button = ui
                 .add_enabled(!pack_in_progress, egui::Button::new("Pack PSU"))
                 .on_hover_text("Create the PSU archive using the settings above.");

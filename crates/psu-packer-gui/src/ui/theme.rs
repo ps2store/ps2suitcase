@@ -39,7 +39,10 @@ impl Default for Palette {
 pub fn install(ctx: &egui::Context, palette: &Palette) {
     install_fonts(ctx);
     apply_visuals(ctx, palette);
-    ctx.style_mut(|style| apply_spacing(style));
+    ctx.style_mut(|style| {
+        apply_text_styles(style);
+        apply_spacing(style);
+    });
 }
 
 pub fn display_font(size: f32) -> FontId {
@@ -90,6 +93,24 @@ fn apply_spacing(style: &mut Style) {
     style.spacing.window_margin = Margin::same(14);
     style.spacing.menu_margin = Margin::same(10);
     style.spacing.indent = 20.0;
+}
+
+fn apply_text_styles(style: &mut Style) {
+    style
+        .text_styles
+        .insert(TextStyle::Heading, FontId::proportional(28.0));
+    style
+        .text_styles
+        .insert(TextStyle::Body, FontId::proportional(18.0));
+    style
+        .text_styles
+        .insert(TextStyle::Button, FontId::proportional(18.0));
+    style
+        .text_styles
+        .insert(TextStyle::Small, FontId::proportional(15.0));
+    style
+        .text_styles
+        .insert(TextStyle::Monospace, FontId::monospace(16.0));
 }
 
 pub fn draw_vertical_gradient(
