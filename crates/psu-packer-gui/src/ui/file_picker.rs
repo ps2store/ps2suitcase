@@ -42,13 +42,16 @@ fn file_menu_contents(
         ui.close_menu();
     }
 
-    let edit_psu_response = ui.button("Edit psu.toml");
-    if let Some(recorder) = recorder.as_mut() {
-        recorder.record(FileMenuItem::EditPsuToml, edit_psu_response.enabled());
-    }
-    if edit_psu_response.clicked() {
-        app.open_psu_toml_tab();
-        ui.close_menu();
+    #[cfg(feature = "psu-toml-editor")]
+    {
+        let edit_psu_response = ui.button("Edit psu.toml");
+        if let Some(recorder) = recorder.as_mut() {
+            recorder.record(FileMenuItem::EditPsuToml, edit_psu_response.enabled());
+        }
+        if edit_psu_response.clicked() {
+            app.open_psu_toml_tab();
+            ui.close_menu();
+        }
     }
 
     let edit_title_response = ui.button("Edit title.cfg");
@@ -69,13 +72,16 @@ fn file_menu_contents(
         ui.close_menu();
     }
 
-    let create_psu_response = ui.button("Create psu.toml from template");
-    if let Some(recorder) = recorder.as_mut() {
-        recorder.record(FileMenuItem::CreatePsuToml, create_psu_response.enabled());
-    }
-    if create_psu_response.clicked() {
-        app.create_psu_toml_from_template();
-        ui.close_menu();
+    #[cfg(feature = "psu-toml-editor")]
+    {
+        let create_psu_response = ui.button("Create psu.toml from template");
+        if let Some(recorder) = recorder.as_mut() {
+            recorder.record(FileMenuItem::CreatePsuToml, create_psu_response.enabled());
+        }
+        if create_psu_response.clicked() {
+            app.create_psu_toml_from_template();
+            ui.close_menu();
+        }
     }
 
     let create_title_response = ui.button("Create title.cfg from template");
@@ -102,9 +108,11 @@ fn file_menu_contents(
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum FileMenuItem {
     PackPsu,
+    #[cfg_attr(not(feature = "psu-toml-editor"), allow(dead_code))]
     EditPsuToml,
     EditTitleCfg,
     EditIconSys,
+    #[cfg_attr(not(feature = "psu-toml-editor"), allow(dead_code))]
     CreatePsuToml,
     CreateTitleCfg,
 }
@@ -135,10 +143,16 @@ mod tests {
         let _ = ctx.end_frame();
 
         assert!(recorder.is_enabled(FileMenuItem::PackPsu));
+        #[cfg(feature = "psu-toml-editor")]
         assert!(recorder.is_enabled(FileMenuItem::EditPsuToml));
+        #[cfg(not(feature = "psu-toml-editor"))]
+        assert!(!recorder.has_entry(FileMenuItem::EditPsuToml));
         assert!(recorder.is_enabled(FileMenuItem::EditTitleCfg));
         assert!(recorder.is_enabled(FileMenuItem::EditIconSys));
+        #[cfg(feature = "psu-toml-editor")]
         assert!(recorder.is_enabled(FileMenuItem::CreatePsuToml));
+        #[cfg(not(feature = "psu-toml-editor"))]
+        assert!(!recorder.has_entry(FileMenuItem::CreatePsuToml));
         assert!(recorder.is_enabled(FileMenuItem::CreateTitleCfg));
     }
 
@@ -150,6 +164,10 @@ mod tests {
     impl RecordingMenuRecorder {
         fn is_enabled(&self, item: FileMenuItem) -> bool {
             *self.entries.get(&item).unwrap_or(&false)
+        }
+
+        fn has_entry(&self, item: FileMenuItem) -> bool {
+            self.entries.contains_key(&item)
         }
     }
 

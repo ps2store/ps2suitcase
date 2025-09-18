@@ -228,6 +228,8 @@ impl Default for TimestampStrategy {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EditorTab {
     PsuSettings,
+    #[cfg(feature = "psu-toml-editor")]
+    /// Enable the psu.toml editor again with `--features psu-toml-editor`.
     PsuToml,
     TitleCfg,
     IconSys,
@@ -1529,6 +1531,7 @@ impl PackerApp {
         }
     }
 
+    #[cfg(feature = "psu-toml-editor")]
     pub(crate) fn apply_psu_toml_edits(&mut self) -> bool {
         let temp_dir = match tempdir() {
             Ok(dir) => dir,
@@ -1618,11 +1621,15 @@ impl PackerApp {
     }
 
     fn clear_text_editors(&mut self) {
-        self.psu_toml_editor.clear();
+        #[cfg(feature = "psu-toml-editor")]
+        {
+            self.psu_toml_editor.clear();
+            self.psu_toml_sync_blocked = false;
+        }
         self.title_cfg_editor.clear();
-        self.psu_toml_sync_blocked = false;
     }
 
+    #[cfg(feature = "psu-toml-editor")]
     pub(crate) fn create_psu_toml_from_template(&mut self) {
         self.create_file_from_template(
             "psu.toml",
@@ -1676,6 +1683,7 @@ impl PackerApp {
 
         match tab {
             EditorTab::PsuSettings => self.open_psu_settings_tab(),
+            #[cfg(feature = "psu-toml-editor")]
             EditorTab::PsuToml => self.open_psu_toml_tab(),
             EditorTab::TitleCfg => self.open_title_cfg_tab(),
             EditorTab::IconSys => self.open_icon_sys_tab(),
@@ -1683,9 +1691,18 @@ impl PackerApp {
         }
     }
 
+    #[cfg(feature = "psu-toml-editor")]
     fn editor_for_text_tab(&mut self, tab: EditorTab) -> Option<&mut TextFileEditor> {
         match tab {
             EditorTab::PsuToml => Some(&mut self.psu_toml_editor),
+            EditorTab::TitleCfg => Some(&mut self.title_cfg_editor),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(feature = "psu-toml-editor"))]
+    fn editor_for_text_tab(&mut self, tab: EditorTab) -> Option<&mut TextFileEditor> {
+        match tab {
             EditorTab::TitleCfg => Some(&mut self.title_cfg_editor),
             _ => None,
         }
@@ -1695,6 +1712,7 @@ impl PackerApp {
         self.editor_tab = EditorTab::PsuSettings;
     }
 
+    #[cfg(feature = "psu-toml-editor")]
     pub(crate) fn open_psu_toml_tab(&mut self) {
         self.editor_tab = EditorTab::PsuToml;
     }
@@ -2238,6 +2256,7 @@ fn editor_action_buttons(
     actions
 }
 
+#[cfg(feature = "psu-toml-editor")]
 fn text_editor_ui(
     ui: &mut egui::Ui,
     file_name: &str,
@@ -2568,18 +2587,21 @@ impl eframe::App for PackerApp {
                         &tab_font,
                     );
 
-                    let psu_toml_label = if self.psu_toml_editor.modified {
-                        "psu.toml*"
-                    } else {
-                        "psu.toml"
-                    };
-                    self.editor_tab_button(
-                        ui,
-                        EditorTab::PsuToml,
-                        psu_toml_label,
-                        self.psu_toml_editor.modified,
-                        &tab_font,
-                    );
+                    #[cfg(feature = "psu-toml-editor")]
+                    {
+                        let psu_toml_label = if self.psu_toml_editor.modified {
+                            "psu.toml*"
+                        } else {
+                            "psu.toml"
+                        };
+                        self.editor_tab_button(
+                            ui,
+                            EditorTab::PsuToml,
+                            psu_toml_label,
+                            self.psu_toml_editor.modified,
+                            &tab_font,
+                        );
+                    }
 
                     let title_cfg_label = if self.title_cfg_editor.modified {
                         "title.cfg*"
@@ -2667,6 +2689,7 @@ impl eframe::App for PackerApp {
                             });
                         });
                     }
+                    #[cfg(feature = "psu-toml-editor")]
                     EditorTab::PsuToml => {
                         let editing_enabled = true; // Allow editing even without a source selection.
                         let save_enabled = self.folder.is_some();
@@ -2853,6 +2876,7 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
+    #[cfg(feature = "psu-toml-editor")]
     #[test]
     fn manual_edits_persist_without_folder_selection() {
         let mut app = PackerApp::default();
@@ -2918,6 +2942,7 @@ mod tests {
         assert!(app.psu_toml_editor.modified);
     }
 
+    #[cfg(feature = "psu-toml-editor")]
     #[test]
     fn apply_psu_toml_updates_state_without_disk() {
         let mut app = PackerApp::default();
@@ -3127,6 +3152,7 @@ linebreak_pos = 5
         assert_eq!(line2, "リーカード");
     }
 
+    #[cfg(feature = "psu-toml-editor")]
     #[test]
     fn apply_invalid_psu_toml_reports_error() {
         let mut app = PackerApp::default();

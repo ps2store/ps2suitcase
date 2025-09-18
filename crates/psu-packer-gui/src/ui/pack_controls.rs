@@ -77,6 +77,7 @@ pub(crate) fn metadata_section(app: &mut PackerApp, ui: &mut egui::Ui) {
             app.metadata_inputs_changed(previous_default_output);
         }
 
+        #[cfg(feature = "psu-toml-editor")]
         if app.folder.is_some() && app.psu_toml_sync_blocked {
             ui.add_space(6.0);
             ui.colored_label(
@@ -237,8 +238,8 @@ impl ListKind {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
-    use std::path::PathBuf;
     use ps2_filetypes::sjis;
+    use std::path::PathBuf;
 
     #[test]
     fn config_from_state_appends_psu_toml_once() {
@@ -338,9 +339,7 @@ mod tests {
 
         let config = app.config_from_state().expect("configuration should build");
         let icon_sys = config.icon_sys.expect("icon_sys configuration present");
-        let expected_break = sjis::encode_sjis(&app.icon_sys_title_line1)
-            .unwrap()
-            .len() as u16;
+        let expected_break = sjis::encode_sjis(&app.icon_sys_title_line1).unwrap().len() as u16;
 
         assert_eq!(icon_sys.linebreak_pos, Some(expected_break));
     }
@@ -710,8 +709,7 @@ impl PackerApp {
 
         let icon_sys = if self.icon_sys_enabled && !self.icon_sys_use_existing {
             let encoded_line1 = sjis::encode_sjis(&self.icon_sys_title_line1).map_err(|_| {
-                "Icon.sys titles must contain characters representable in Shift-JIS"
-                    .to_string()
+                "Icon.sys titles must contain characters representable in Shift-JIS".to_string()
             })?;
             let linebreak_pos = encoded_line1.len() as u16;
             let combined_title =
@@ -748,6 +746,7 @@ impl PackerApp {
         })
     }
 
+    #[cfg(feature = "psu-toml-editor")]
     pub(crate) fn refresh_psu_toml_editor(&mut self) {
         if self.folder.is_none() {
             self.psu_toml_sync_blocked = false;
@@ -776,5 +775,10 @@ impl PackerApp {
                 self.psu_toml_sync_blocked = true;
             }
         }
+    }
+
+    #[cfg(not(feature = "psu-toml-editor"))]
+    pub(crate) fn refresh_psu_toml_editor(&mut self) {
+        self.psu_toml_sync_blocked = false;
     }
 }
