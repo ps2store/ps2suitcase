@@ -239,6 +239,39 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn config_from_state_appends_psu_toml_once() {
+        let mut app = PackerApp::default();
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name = "SAVE".to_string();
+        app.selected_prefix = SasPrefix::App;
+
+        let config = app.config_from_state().expect("configuration should build");
+        assert_eq!(config.exclude, Some(vec!["psu.toml".to_string()]));
+        assert!(
+            app.exclude_files.is_empty(),
+            "building the configuration should not modify the exclude list"
+        );
+
+        app.exclude_files = vec!["DATA.BIN".to_string()];
+        let config_with_manual_entry = app
+            .config_from_state()
+            .expect("configuration should include manual exclude");
+        assert_eq!(
+            config_with_manual_entry.exclude,
+            Some(vec!["DATA.BIN".to_string(), "psu.toml".to_string()])
+        );
+
+        app.exclude_files = vec!["psu.toml".to_string()];
+        let config_with_duplicate = app
+            .config_from_state()
+            .expect("configuration should handle duplicate entries");
+        assert_eq!(
+            config_with_duplicate.exclude,
+            Some(vec!["psu.toml".to_string()])
+        );
+    }
+
+    #[test]
     fn build_config_uses_loaded_psu_edits() {
         let mut app = PackerApp::default();
         app.loaded_psu_path = Some(PathBuf::from("input.psu"));
@@ -255,7 +288,10 @@ mod tests {
         assert_eq!(config.name, "EMU_SAVE");
         assert_eq!(config.timestamp, Some(timestamp));
         assert_eq!(config.include, Some(vec!["FILE.BIN".to_string()]));
-        assert_eq!(config.exclude, Some(vec!["SKIP.DAT".to_string()]));
+        assert_eq!(
+            config.exclude,
+            Some(vec!["SKIP.DAT".to_string(), "psu.toml".to_string()])
+        );
     }
 
     #[test]
@@ -269,7 +305,10 @@ mod tests {
 
         let config = app.build_config().expect("config builds successfully");
         assert_eq!(config.include, Some(vec!["BOOT.ELF".to_string()]));
-        assert_eq!(config.exclude, Some(vec!["THUMBS.DB".to_string()]));
+        assert_eq!(
+            config.exclude,
+            Some(vec!["THUMBS.DB".to_string(), "psu.toml".to_string()])
+        );
     }
 
     #[test]
@@ -640,11 +679,11 @@ impl PackerApp {
             Some(self.include_files.clone())
         };
 
-        let exclude = if self.exclude_files.is_empty() {
-            None
-        } else {
-            Some(self.exclude_files.clone())
-        };
+        let mut exclude = self.exclude_files.clone();
+        if !exclude.iter().any(|entry| entry == "psu.toml") {
+            exclude.push("psu.toml".to_string());
+        }
+        let exclude = Some(exclude);
 
         let icon_sys = if self.icon_sys_enabled && !self.icon_sys_use_existing {
             let linebreak_pos = self.icon_sys_title_line1.chars().count() as u16;

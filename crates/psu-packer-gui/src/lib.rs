@@ -2020,7 +2020,10 @@ mod packer_app_tests {
             .expect("export succeeds");
 
         assert_eq!(exported_root, export_parent.join("APP_SAVE"));
-        assert!(exported_root.join("psu.toml").exists());
+        assert!(
+            !exported_root.join("psu.toml").exists(),
+            "psu.toml should not be embedded in exported PSUs"
+        );
         assert!(exported_root.join("title.cfg").exists());
         assert!(exported_root.join("icon.icn").exists());
         assert!(exported_root.join("EXTRA.BIN").exists());

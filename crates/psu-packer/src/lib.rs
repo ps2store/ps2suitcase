@@ -785,7 +785,13 @@ fn filter_files(files: &[PathBuf]) -> Vec<PathBuf> {
     files
         .iter()
         .filter_map(|f| {
-            if !f.is_file() {
+            if f.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.eq_ignore_ascii_case("psu.toml"))
+                .unwrap_or(false)
+            {
+                None
+            } else if !f.is_file() {
                 println!(
                     "{} {}",
                     f.display().to_string().dimmed(),
