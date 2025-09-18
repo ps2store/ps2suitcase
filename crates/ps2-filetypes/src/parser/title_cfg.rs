@@ -43,12 +43,15 @@ impl TitleCfg {
     }
 
     pub fn has_mandatory_fields(&self) -> bool {
-        for (_, key) in MANDATORY_KEYS.iter().enumerate() {
-            if !self.index_map.contains_key(*key) {
-                return false;
-            }
-        }
-        true
+        self.missing_mandatory_fields().is_empty()
+    }
+
+    pub fn missing_mandatory_fields(&self) -> Vec<&'static str> {
+        MANDATORY_KEYS
+            .iter()
+            .copied()
+            .filter(|key| !self.index_map.contains_key(*key))
+            .collect()
     }
 
     pub fn add_missing_fields(&mut self) -> &Self {
@@ -105,8 +108,28 @@ mod tests {
 
         let cfg = TitleCfg::new(contents.to_string());
 
-        assert_eq!(cfg.index_map.get("title"), Some(&"Another Game".to_string()));
-        assert_eq!(cfg.index_map.get("boot"), Some(&"cdrom0:\\SLUS_123.45".to_string()));
+        assert_eq!(
+            cfg.index_map.get("title"),
+            Some(&"Another Game".to_string())
+        );
+        assert_eq!(
+            cfg.index_map.get("boot"),
+            Some(&"cdrom0:\\SLUS_123.45".to_string())
+        );
         assert!(!cfg.index_map.contains_key("just_text"));
+    }
+
+    #[test]
+    fn reports_missing_mandatory_fields() {
+        let contents = "title=Example\nDeveloper=Someone";
+
+        let cfg = TitleCfg::new(contents.to_string());
+        let mut missing = cfg.missing_mandatory_fields();
+        missing.sort();
+
+        assert!(missing.contains(&"Description"));
+        assert!(missing.contains(&"Release"));
+        assert!(missing.contains(&"source"));
+        assert!(!cfg.has_mandatory_fields());
     }
 }

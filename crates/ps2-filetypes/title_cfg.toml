@@ -36,9 +36,12 @@ hint = "Homebrew"
 
 [Description]
 tooltip = "A short description of the app. Must be less than 255 characters or it will be truncated in OPL."
+char_limit = 255
+multiline = true
 
 [Notes]
 tooltip = "A free text field. Not used in most cases."
+multiline = true
 
 [source]
 tooltip = "The url of the project. It can be a git repository, forum thread, website of the app, etc."
