@@ -309,36 +309,16 @@ impl PendingPackAction {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct TimestampRulesUiState {
-    pub(crate) alias_texts: Vec<String>,
-}
+pub(crate) struct TimestampRulesUiState;
 
 impl TimestampRulesUiState {
-    pub(crate) fn from_rules(rules: &TimestampRules) -> Self {
-        Self {
-            alias_texts: rules
-                .categories
-                .iter()
-                .map(|category| category.aliases.join("\n"))
-                .collect(),
-        }
+    pub(crate) fn from_rules(_: &TimestampRules) -> Self {
+        Self
     }
 
-    pub(crate) fn ensure_matches(&mut self, rules: &TimestampRules) {
-        if self.alias_texts.len() != rules.categories.len() {
-            *self = Self::from_rules(rules);
-        }
-    }
+    pub(crate) fn ensure_matches(&mut self, _: &TimestampRules) {}
 
-    fn swap(&mut self, a: usize, b: usize) {
-        if a >= self.alias_texts.len() || b >= self.alias_texts.len() {
-            return;
-        }
-        if a == b {
-            return;
-        }
-        self.alias_texts.swap(a, b);
-    }
+    fn swap(&mut self, _: usize, _: usize) {}
 }
 
 pub struct PackerApp {
@@ -778,8 +758,16 @@ impl PackerApp {
 
     pub(crate) fn set_timestamp_aliases(&mut self, index: usize, aliases: Vec<String>) {
         if let Some(category) = self.timestamp_rules.categories.get_mut(index) {
-            if category.aliases != aliases {
-                category.aliases = aliases;
+            let allowed = sas_timestamps::canonical_aliases_for_category(&category.key);
+            let selected: HashSet<&str> = aliases.iter().map(|alias| alias.as_str()).collect();
+            let sanitized: Vec<String> = allowed
+                .iter()
+                .filter(|alias| selected.contains(**alias))
+                .map(|alias| (*alias).to_string())
+                .collect();
+
+            if category.aliases != sanitized {
+                category.aliases = sanitized;
                 self.mark_timestamp_rules_modified();
             }
         }

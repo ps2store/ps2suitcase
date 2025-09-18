@@ -6,6 +6,86 @@ use chrono::{
 };
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy)]
+pub(crate) struct CanonicalCategoryAliases {
+    pub(crate) key: &'static str,
+    pub(crate) aliases: &'static [&'static str],
+}
+
+const CANONICAL_CATEGORY_ALIASES: &[CanonicalCategoryAliases] = &[
+    CanonicalCategoryAliases {
+        key: "APP_",
+        aliases: &["OSDXMB", "XEBPLUS"],
+    },
+    CanonicalCategoryAliases {
+        key: "APPS",
+        aliases: &[],
+    },
+    CanonicalCategoryAliases {
+        key: "PS1_",
+        aliases: &[],
+    },
+    CanonicalCategoryAliases {
+        key: "EMU_",
+        aliases: &[],
+    },
+    CanonicalCategoryAliases {
+        key: "GME_",
+        aliases: &[],
+    },
+    CanonicalCategoryAliases {
+        key: "DST_",
+        aliases: &[],
+    },
+    CanonicalCategoryAliases {
+        key: "DBG_",
+        aliases: &[],
+    },
+    CanonicalCategoryAliases {
+        key: "RAA_",
+        aliases: &["RESTART", "POWEROFF"],
+    },
+    CanonicalCategoryAliases {
+        key: "RTE_",
+        aliases: &["NEUTRINO"],
+    },
+    CanonicalCategoryAliases {
+        key: "DEFAULT",
+        aliases: &[],
+    },
+    CanonicalCategoryAliases {
+        key: "SYS_",
+        aliases: &["BOOT"],
+    },
+    CanonicalCategoryAliases {
+        key: "ZZY_",
+        aliases: &["EXPLOITS"],
+    },
+    CanonicalCategoryAliases {
+        key: "ZZZ_",
+        aliases: &["BM", "MATRIXTEAM", "OPL"],
+    },
+];
+
+pub(crate) fn canonical_category_aliases() -> &'static [CanonicalCategoryAliases] {
+    CANONICAL_CATEGORY_ALIASES
+}
+
+pub(crate) fn canonical_aliases_for_category(key: &str) -> &'static [&'static str] {
+    for group in CANONICAL_CATEGORY_ALIASES {
+        if group.key == key {
+            return group.aliases;
+        }
+    }
+    &[]
+}
+
+fn is_supported_alias(key: &str, alias: &str) -> bool {
+    canonical_aliases_for_category(key)
+        .iter()
+        .any(|candidate| *candidate == alias)
+}
+
 const CHARSET: &str = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-.";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,21 +129,16 @@ impl TimestampRules {
     }
 
     fn default_categories() -> Vec<CategoryRule> {
-        vec![
-            CategoryRule::new("APP_").with_aliases(&["OSDXMB", "XEBPLUS"]),
-            CategoryRule::new("APPS"),
-            CategoryRule::new("PS1_"),
-            CategoryRule::new("EMU_"),
-            CategoryRule::new("GME_"),
-            CategoryRule::new("DST_"),
-            CategoryRule::new("DBG_"),
-            CategoryRule::new("RAA_").with_aliases(&["RESTART", "POWEROFF"]),
-            CategoryRule::new("RTE_").with_aliases(&["NEUTRINO"]),
-            CategoryRule::new("DEFAULT"),
-            CategoryRule::new("SYS_").with_aliases(&["BOOT"]),
-            CategoryRule::new("ZZY_").with_aliases(&["EXPLOITS"]),
-            CategoryRule::new("ZZZ_").with_aliases(&["BM", "MATRIXTEAM", "OPL"]),
-        ]
+        canonical_category_aliases()
+            .iter()
+            .map(|group| {
+                let mut category = CategoryRule::new(group.key);
+                if !group.aliases.is_empty() {
+                    category = category.with_aliases(group.aliases);
+                }
+                category
+            })
+            .collect()
     }
 
     pub(crate) fn sanitize(&mut self) {
@@ -143,6 +218,10 @@ fn sanitize_alias(alias: String, key: &str) -> Option<String> {
     }
 
     if value.is_empty() {
+        return None;
+    }
+
+    if !is_supported_alias(key, &value) {
         return None;
     }
 
@@ -320,19 +399,12 @@ mod tests {
     }
 
     #[test]
-    fn custom_aliases_match_prefixed_names() {
+    fn canonical_aliases_match_prefixed_names() {
         let mut rules = TimestampRules::default();
-        if let Some(category) = rules
-            .categories
-            .iter_mut()
-            .find(|category| category.key == "APP_")
-        {
-            category.aliases.push("CUSTOM".to_string());
-        }
         rules.sanitize();
 
-        let alias_path = PathBuf::from("custom");
-        let prefixed_path = PathBuf::from("APP_CUSTOM");
+        let alias_path = PathBuf::from("osdxmb");
+        let prefixed_path = PathBuf::from("APP_OSDXMB");
 
         let alias_timestamp =
             planned_timestamp_for_folder(&alias_path, &rules).expect("alias timestamp");
@@ -340,5 +412,27 @@ mod tests {
             planned_timestamp_for_folder(&prefixed_path, &rules).expect("prefixed timestamp");
 
         assert_eq!(alias_timestamp, prefixed_timestamp);
+    }
+
+    #[test]
+    fn unsupported_aliases_are_removed() {
+        let mut rules = TimestampRules::default();
+        if let Some(category) = rules
+            .categories
+            .iter_mut()
+            .find(|category| category.key == "RAA_")
+        {
+            category.aliases = vec!["INVALID".to_string()];
+        }
+
+        rules.sanitize();
+
+        let aliases = rules
+            .categories
+            .iter()
+            .find(|category| category.key == "RAA_")
+            .expect("category");
+
+        assert!(aliases.aliases.is_empty());
     }
 }
