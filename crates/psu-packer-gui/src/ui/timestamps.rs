@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use eframe::egui;
 use egui_extras::DatePickerButton;
 
-use crate::{ui::theme, PackerApp, TimestampStrategy, TIMESTAMP_FORMAT};
+use crate::{sas_timestamps, ui::theme, PackerApp, TimestampStrategy, TIMESTAMP_FORMAT};
 
 pub(crate) fn metadata_timestamp_section(app: &mut PackerApp, ui: &mut egui::Ui) {
     ui.vertical(|ui| {
@@ -365,15 +367,16 @@ pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
         ui,
         "Category order and aliases",
     ));
-    ui.small("Aliases map names without prefixes to their categories (one per line).");
+    ui.small("Toggle canonical aliases to map known unprefixed names to their categories.");
     ui.add_space(6.0);
 
     let mut move_request: Option<(usize, MoveDirection)> = None;
     let category_len = app.timestamp_rules.categories.len();
 
     for index in 0..category_len {
-        let key = app.timestamp_rules.categories[index].key.clone();
-        let alias_count = app.timestamp_rules.categories[index].aliases.len();
+        let category = app.timestamp_rules.categories[index].clone();
+        let key = category.key.clone();
+        let alias_count = category.aliases.len();
         let header_title = if alias_count == 1 {
             format!("{key} (1 alias)")
         } else {
@@ -398,18 +401,38 @@ pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
                     }
                 });
 
-                ui.label("Aliases (one per line):");
-                if let Some(buffer) = app.timestamp_rules_ui.alias_texts.get_mut(index) {
-                    if ui
-                        .add(
-                            egui::TextEdit::multiline(buffer)
-                                .desired_rows(3)
-                                .hint_text("Alias names without prefixes"),
-                        )
-                        .changed()
-                    {
-                        let parsed = parse_aliases(buffer, &key);
-                        app.set_timestamp_aliases(index, parsed);
+                ui.label("Canonical aliases:");
+                let allowed_aliases = sas_timestamps::canonical_aliases_for_category(&key);
+                if allowed_aliases.is_empty() {
+                    ui.small("No canonical aliases are defined for this category.");
+                } else {
+                    let mut selected: HashSet<String> =
+                        category.aliases.iter().cloned().collect();
+
+                    for alias in allowed_aliases {
+                        let mut is_selected = selected.contains(*alias);
+                        if ui.checkbox(&mut is_selected, *alias).changed() {
+                            if is_selected {
+                                selected.insert((*alias).to_string());
+                            } else {
+                                selected.remove(*alias);
+                            }
+
+                            let new_selection: Vec<String> = allowed_aliases
+                                .iter()
+                                .filter(|candidate| selected.contains(**candidate))
+                                .map(|candidate| (*candidate).to_string())
+                                .collect();
+                            app.set_timestamp_aliases(index, new_selection);
+                        }
+                    }
+
+                    if selected.is_empty() {
+                        let alias_list = allowed_aliases.join(", ");
+                        let warning = format!(
+                            "No aliases selected. Unprefixed names ({alias_list}) will fall back to DEFAULT scheduling.",
+                        );
+                        ui.colored_label(egui::Color32::from_rgb(229, 115, 115), warning);
                     }
                 }
             });
@@ -463,30 +486,6 @@ pub(crate) fn timestamp_rules_editor(app: &mut PackerApp, ui: &mut egui::Ui) {
 fn default_timestamp() -> NaiveDateTime {
     let now = Local::now().naive_local();
     now.with_nanosecond(0).unwrap_or(now)
-}
-
-fn parse_aliases(input: &str, key: &str) -> Vec<String> {
-    let mut parsed = Vec::new();
-
-    for line in input.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let mut value = trimmed.to_ascii_uppercase();
-        if key != "APPS" && key != "DEFAULT" && value.starts_with(key) {
-            value = value[key.len()..].to_string();
-        }
-        if value.is_empty() {
-            continue;
-        }
-        if !parsed.contains(&value) {
-            parsed.push(value);
-        }
-    }
-
-    parsed
 }
 
 #[derive(Clone, Copy)]
