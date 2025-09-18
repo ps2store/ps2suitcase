@@ -238,6 +238,7 @@ mod tests {
     use super::*;
     use chrono::NaiveDate;
     use std::path::PathBuf;
+    use ps2_filetypes::sjis;
 
     #[test]
     fn config_from_state_appends_psu_toml_once() {
@@ -322,6 +323,26 @@ mod tests {
         assert!(!app.handle_add_file_from_entry(ListKind::Include, "DATA.BIN"));
         assert_eq!(app.include_files, vec!["DATA.BIN"]);
         assert!(app.error_message.is_some());
+    }
+
+    #[test]
+    fn config_from_state_uses_shift_jis_byte_linebreaks() {
+        let mut app = PackerApp::default();
+        app.selected_prefix = SasPrefix::App;
+        app.folder_base_name = "SAVE".to_string();
+        app.psu_file_base_name = "SAVE".to_string();
+        app.icon_sys_enabled = true;
+        app.icon_sys_use_existing = false;
+        app.icon_sys_title_line1 = "メモ".to_string();
+        app.icon_sys_title_line2 = "リーカード".to_string();
+
+        let config = app.config_from_state().expect("configuration should build");
+        let icon_sys = config.icon_sys.expect("icon_sys configuration present");
+        let expected_break = sjis::encode_sjis(&app.icon_sys_title_line1)
+            .unwrap()
+            .len() as u16;
+
+        assert_eq!(icon_sys.linebreak_pos, Some(expected_break));
     }
 }
 
@@ -688,7 +709,11 @@ impl PackerApp {
         let exclude = Some(exclude);
 
         let icon_sys = if self.icon_sys_enabled && !self.icon_sys_use_existing {
-            let linebreak_pos = self.icon_sys_title_line1.chars().count() as u16;
+            let encoded_line1 = sjis::encode_sjis(&self.icon_sys_title_line1).map_err(|_| {
+                "Icon.sys titles must contain characters representable in Shift-JIS"
+                    .to_string()
+            })?;
+            let linebreak_pos = encoded_line1.len() as u16;
             let combined_title =
                 format!("{}{}", self.icon_sys_title_line1, self.icon_sys_title_line2);
             let flag_value = self.selected_icon_flag_value()?;
