@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs, io,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -2187,7 +2188,7 @@ struct TextEditorActions {
     apply_clicked: bool,
 }
 
-fn text_editor_ui(
+fn editor_action_buttons(
     ui: &mut egui::Ui,
     file_name: &str,
     editing_enabled: bool,
@@ -2195,32 +2196,6 @@ fn text_editor_ui(
     editor: &mut TextFileEditor,
 ) -> TextEditorActions {
     let mut actions = TextEditorActions::default();
-    if let Some(message) = &editor.load_error {
-        ui.colored_label(egui::Color32::YELLOW, message);
-        ui.add_space(8.0);
-    }
-
-    let show_editor = editing_enabled || !editor.content.is_empty();
-
-    if show_editor {
-        let response = egui::ScrollArea::vertical()
-            .id_source(format!("{file_name}_editor_scroll"))
-            .show(ui, |ui| {
-                ui.add_enabled(
-                    editing_enabled,
-                    egui::TextEdit::multiline(&mut editor.content)
-                        .desired_rows(20)
-                        .code_editor(),
-                )
-            })
-            .inner;
-
-        if editing_enabled && response.changed() {
-            editor.modified = true;
-        }
-    }
-
-    ui.add_space(8.0);
 
     if save_enabled {
         ui.horizontal(|ui| {
@@ -2260,10 +2235,12 @@ fn text_editor_ui(
                 ui.colored_label(egui::Color32::YELLOW, "Unsaved changes");
             });
         }
-        ui.label(egui::RichText::new(format!(
-            "Edits to {file_name} are kept in memory. Select a folder when you're ready to save them to disk."
-        ))
-        .italics());
+        ui.label(
+            egui::RichText::new(format!(
+                "Edits to {file_name} are kept in memory. Select a folder when you're ready to save them to disk."
+            ))
+            .italics(),
+        );
     } else {
         ui.label(format!(
             "Select a folder or open a PSU to edit {file_name}."
@@ -2271,6 +2248,223 @@ fn text_editor_ui(
     }
 
     actions
+}
+
+fn text_editor_ui(
+    ui: &mut egui::Ui,
+    file_name: &str,
+    editing_enabled: bool,
+    save_enabled: bool,
+    editor: &mut TextFileEditor,
+) -> TextEditorActions {
+    if let Some(message) = &editor.load_error {
+        ui.colored_label(egui::Color32::YELLOW, message);
+        ui.add_space(8.0);
+    }
+
+    let show_editor = editing_enabled || !editor.content.is_empty();
+
+    if show_editor {
+        let response = egui::ScrollArea::vertical()
+            .id_source(format!("{file_name}_editor_scroll"))
+            .show(ui, |ui| {
+                ui.add_enabled(
+                    editing_enabled,
+                    egui::TextEdit::multiline(&mut editor.content)
+                        .desired_rows(20)
+                        .code_editor(),
+                )
+            })
+            .inner;
+
+        if editing_enabled && response.changed() {
+            editor.modified = true;
+        }
+    }
+
+    ui.add_space(8.0);
+    editor_action_buttons(ui, file_name, editing_enabled, save_enabled, editor)
+}
+
+fn title_cfg_form_ui(
+    ui: &mut egui::Ui,
+    editing_enabled: bool,
+    save_enabled: bool,
+    editor: &mut TextFileEditor,
+) -> TextEditorActions {
+    if let Some(message) = &editor.load_error {
+        ui.colored_label(egui::Color32::YELLOW, message);
+        ui.add_space(8.0);
+    }
+
+    let show_form = editing_enabled || !editor.content.is_empty();
+
+    if show_form {
+        let previous_content = editor.content.clone();
+        let mut cfg = TitleCfg::new(editor.content.clone());
+        let helper = cfg.helper.clone();
+
+        let mut keys: Vec<String> = cfg.index_map.keys().cloned().collect();
+        let mut seen_keys: HashSet<String> = keys.iter().cloned().collect();
+        for key in helper.keys() {
+            if seen_keys.insert(key.clone()) {
+                keys.push(key.clone());
+            }
+        }
+
+        let missing_fields = cfg.missing_mandatory_fields();
+        let missing_field_set: HashSet<&str> = missing_fields.iter().copied().collect();
+        let mut index_map_changed = false;
+
+        egui::ScrollArea::vertical()
+            .id_source("title_cfg_form_scroll")
+            .show(ui, |ui| {
+                if !missing_fields.is_empty() {
+                    let message =
+                        format!("Missing mandatory fields: {}", missing_fields.join(", "));
+                    ui.colored_label(egui::Color32::YELLOW, message);
+                    ui.add_space(8.0);
+                }
+
+                egui::Grid::new("title_cfg_form_grid")
+                    .num_columns(2)
+                    .spacing([24.0, 6.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for key in &keys {
+                            let mut tooltip: Option<String> = None;
+                            let mut hint: Option<String> = None;
+                            let mut values: Option<Vec<String>> = None;
+                            let mut char_limit: Option<usize> = None;
+                            let mut multiline = false;
+
+                            if let Some(table) = helper.get(key).and_then(|value| value.as_table())
+                            {
+                                tooltip = table
+                                    .get("tooltip")
+                                    .and_then(|value| value.as_str())
+                                    .map(|s| s.to_owned());
+                                hint = table
+                                    .get("hint")
+                                    .and_then(|value| value.as_str())
+                                    .map(|s| s.to_owned());
+                                if let Some(array) =
+                                    table.get("values").and_then(|value| value.as_array())
+                                {
+                                    let options: Vec<String> = array
+                                        .iter()
+                                        .filter_map(|value| value.as_str().map(|s| s.to_owned()))
+                                        .collect();
+                                    if !options.is_empty() {
+                                        values = Some(options);
+                                    }
+                                }
+                                char_limit = table
+                                    .get("char_limit")
+                                    .and_then(|value| value.as_integer())
+                                    .and_then(|value| (value >= 0).then(|| value as usize));
+                                multiline = table
+                                    .get("multiline")
+                                    .and_then(|value| value.as_bool())
+                                    .unwrap_or(false);
+                            }
+
+                            let mut label_text = egui::RichText::new(key.as_str());
+                            if missing_field_set.contains(key.as_str()) {
+                                label_text = label_text.color(egui::Color32::YELLOW);
+                            }
+                            let label = ui.label(label_text);
+                            if let Some(tooltip) = &tooltip {
+                                label.on_hover_text(tooltip);
+                            }
+
+                            let existing_value =
+                                cfg.index_map.get(key).cloned().unwrap_or_default();
+                            let mut new_value = existing_value.clone();
+                            let mut field_changed = false;
+
+                            if let Some(options) = values.as_ref() {
+                                let display_text = if new_value.is_empty() {
+                                    hint.clone().unwrap_or_else(|| "(not set)".to_string())
+                                } else {
+                                    new_value.clone()
+                                };
+                                if editing_enabled {
+                                    let response = egui::ComboBox::from_id_source(format!(
+                                        "title_cfg_option_{key}"
+                                    ))
+                                    .selected_text(display_text.clone())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut new_value,
+                                            String::new(),
+                                            "(not set)",
+                                        );
+                                        for option in options {
+                                            ui.selectable_value(
+                                                &mut new_value,
+                                                option.clone(),
+                                                option,
+                                            );
+                                        }
+                                    });
+                                    if let Some(tooltip) = &tooltip {
+                                        response.response.on_hover_text(tooltip);
+                                    }
+                                    if new_value != existing_value {
+                                        field_changed = true;
+                                    }
+                                } else {
+                                    let response = ui.label(display_text);
+                                    if let Some(tooltip) = &tooltip {
+                                        response.on_hover_text(tooltip);
+                                    }
+                                }
+                            } else {
+                                let mut text_edit = if multiline {
+                                    egui::TextEdit::multiline(&mut new_value).desired_rows(3)
+                                } else {
+                                    egui::TextEdit::singleline(&mut new_value)
+                                };
+                                if let Some(hint) = &hint {
+                                    text_edit = text_edit.hint_text(hint.clone());
+                                }
+                                if let Some(limit) = char_limit {
+                                    text_edit = text_edit.char_limit(limit);
+                                }
+                                let response = ui.add_enabled(editing_enabled, text_edit);
+                                let changed = editing_enabled
+                                    && response.changed()
+                                    && new_value != existing_value;
+                                if let Some(tooltip) = &tooltip {
+                                    response.on_hover_text(tooltip);
+                                }
+                                if changed {
+                                    field_changed = true;
+                                }
+                            }
+
+                            if editing_enabled && field_changed {
+                                cfg.index_map.insert(key.clone(), new_value);
+                                index_map_changed = true;
+                            }
+
+                            ui.end_row();
+                        }
+                    });
+            });
+
+        if index_map_changed {
+            cfg.sync_index_map_to_contents();
+            if cfg.contents != previous_content {
+                editor.content = cfg.contents.clone();
+                editor.modified = true;
+            }
+        }
+    }
+
+    ui.add_space(8.0);
+    editor_action_buttons(ui, "title.cfg", editing_enabled, save_enabled, editor)
 }
 
 impl eframe::App for PackerApp {
@@ -2519,9 +2713,8 @@ impl eframe::App for PackerApp {
                     EditorTab::TitleCfg => {
                         let editing_enabled = true; // Allow editing even without a source selection.
                         let save_enabled = self.folder.is_some();
-                        let actions = text_editor_ui(
+                        let actions = title_cfg_form_ui(
                             ui,
-                            "title.cfg",
                             editing_enabled,
                             save_enabled,
                             &mut self.title_cfg_editor,
@@ -2707,13 +2900,8 @@ mod tests {
 
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let actions = text_editor_ui(
-                    ui,
-                    "title.cfg",
-                    true,
-                    app.folder.is_some(),
-                    &mut app.title_cfg_editor,
-                );
+                let actions =
+                    title_cfg_form_ui(ui, true, app.folder.is_some(), &mut app.title_cfg_editor);
                 assert!(!actions.save_clicked);
                 assert!(!actions.apply_clicked);
             });
