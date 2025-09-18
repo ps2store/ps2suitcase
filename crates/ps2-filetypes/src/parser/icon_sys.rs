@@ -216,9 +216,17 @@ fn parse_sjis_string(c: &[u8]) -> String {
 
 fn parse_color(c: &mut Cursor<Vec<u8>>) -> Result<Color> {
     fn read_channel(cursor: &mut Cursor<Vec<u8>>) -> Result<u8> {
-        let raw = cursor.read_f32::<LE>()?;
-        let normalized = if raw.is_nan() { 0.0 } else { raw.clamp(0.0, 1.0) };
-        Ok((normalized * 255.0).round() as u8)
+        let mut buf = [0u8; 4];
+        cursor.read_exact(&mut buf)?;
+        let raw_int = u32::from_le_bytes(buf);
+
+        if raw_int <= 255 {
+            Ok(raw_int as u8)
+        } else {
+            let raw = f32::from_le_bytes(buf);
+            let normalized = if raw.is_nan() { 0.0 } else { raw.clamp(0.0, 1.0) };
+            Ok((normalized * 255.0).round() as u8)
+        }
     }
 
     let r = read_channel(c)?;
