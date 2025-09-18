@@ -67,7 +67,7 @@ impl FileTree {
 
     pub fn show(&mut self, ui: &mut Ui, state: &mut AppState) {
         set_menu_style(ui.style_mut());
-        if let Some(folder) = state.opened_folder.as_ref() {
+        if let Some(folder) = state.opened_folder.clone() {
             ScrollArea::new([true, true]).show(ui, |ui| {
                 ui.with_layout(
                     Layout::top_down(Align::Min).with_cross_justify(true),
