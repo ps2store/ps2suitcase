@@ -53,7 +53,7 @@ struct ConfigFile {
 
 fn check_name(name: &str) -> bool {
     for c in name.chars() {
-        if !matches!(c, 'a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-'|' ') {
+        if !matches!(c, 'a'..='z'|'A'..='Z'|'0'..='9'|'_'|'-'|' ') {
             return false
         }
     }
