@@ -1,8 +1,11 @@
 use crate::color::Color;
-use crate::{AnimationHeader, AnimationShape, BinReader, Frame, ICNHeader, IcnTexture, Key, Normal, Vertex, ICN, ICN_MAGIC, TEXTURE_SIZE, UV};
+use crate::{
+    AnimationHeader, AnimationShape, BinReader, Frame, ICNHeader, IcnTexture, Key, Normal, Vertex,
+    ICN, ICN_MAGIC, TEXTURE_SIZE, UV,
+};
 use byteorder::{ReadBytesExt, LE};
 use image::codecs::png::PngEncoder;
-use image::RgbaImage;
+use image::{EncodableLayout, RgbaImage};
 use std::io::Cursor;
 
 impl ICN {
@@ -58,8 +61,7 @@ impl ICN {
         }
 
         let encoder = PngEncoder::new(&mut png_data);
-        img
-            .write_with_encoder(encoder)
+        img.write_with_encoder(encoder)
             .expect("Failed to write PNG data");
         png_data
     }
@@ -195,43 +197,52 @@ impl ICNParser {
     }
 
     fn parse_texture_compressed(&mut self) -> std::io::Result<IcnTexture> {
-        let size = self.c.read_u32::<LE>()? as usize / 2;
-        let mut compressed = vec![0; size];
+        let compressed_size = self.c.read_u32::<LE>()? as usize;
+        let mut compressed = vec![0u16; compressed_size / 2];
         self.c.read_u16_into::<LE>(&mut compressed)?;
 
-        let mut pixels: [u16; TEXTURE_SIZE] = [0; TEXTURE_SIZE];
+        let mut pixels: Vec<u16> = Vec::with_capacity(TEXTURE_SIZE);
 
-        let mut index = 0;
         let mut offset = 0;
-
-        while offset < size {
-            let rep_count = compressed[offset];
+        while offset < compressed.len() {
+            let rle_code = compressed[offset];
             offset += 1;
-            if rep_count < 0xff00 {
-                let pixel = compressed[offset];
-                offset += 1;
-                for _ in 0..rep_count {
-                    if index >= TEXTURE_SIZE {
+
+            if rle_code & 0x8000 != 0 {
+                // Literal run
+                let next_count = (0x8000 - (rle_code ^ 0x8000)) as usize;
+                for _ in 0..next_count {
+                    if offset >= compressed.len() || pixels.len() >= TEXTURE_SIZE {
                         break;
                     }
-                    pixels[index] = pixel;
-                    index += 1;
+                    pixels.push(compressed[offset]);
+                    offset += 1;
                 }
             } else {
-                let actual_count = 0xffff ^ rep_count;
-                for _ in 0..=actual_count {
-                    if index >= TEXTURE_SIZE {
-                        break;
-                    }
+                // Repeated run
+                let times = rle_code as usize;
+                if times > 0 && offset < compressed.len() {
                     let pixel = compressed[offset];
                     offset += 1;
-                    pixels[index] = pixel;
-                    index += 1;
+                    for _ in 0..times {
+                        if pixels.len() >= TEXTURE_SIZE {
+                            break;
+                        }
+                        pixels.push(pixel);
+                    }
                 }
             }
         }
 
-        Ok(IcnTexture { pixels })
+        // Fill remaining pixels with 0 if decompressed data is smaller than TEXTURE_SIZE
+        pixels.resize(TEXTURE_SIZE, 0);
+
+        let mut final_pixels = [0u16; TEXTURE_SIZE];
+        final_pixels.copy_from_slice(&pixels[..TEXTURE_SIZE]);
+
+        Ok(IcnTexture {
+            pixels: final_pixels,
+        })
     }
 
     fn parse_frame(&mut self) -> std::io::Result<Frame> {
