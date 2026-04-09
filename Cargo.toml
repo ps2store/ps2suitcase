@@ -10,7 +10,7 @@ members = [
     "crates/memcard",
     "crates/psu-packer",
 ]
-default-members = ["crates/psu-packer"]
+default-members = ["crates/psu-packer", "crates/suitcase"]
 
 [workspace.package]
 edition = "2021"

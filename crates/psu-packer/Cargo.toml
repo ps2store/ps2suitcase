@@ -7,11 +7,11 @@ version.workspace = true
 
 [dependencies]
 ps2-filetypes = { path = "../ps2-filetypes" }
-toml = "0.9.5"
-serde = { version = "1.0.219", features = ["derive"] }
-argh = { version = "0.1.13" }
 chrono = "0.4.42"
 colored = "3.0.0"
+clap = { version = "4.6.0", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
+toml = "0.9.5"
 
 [profile.release]
 opt-level = "z"

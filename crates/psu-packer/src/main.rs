@@ -1,247 +1,186 @@
+mod args;
+mod config;
+
+use crate::args::{Cli, Commands};
+use crate::config::PsuConfig;
 use chrono::{DateTime, Local, NaiveDateTime};
+use clap::Parser;
 use colored::Colorize;
-use ps2_filetypes::{PSUEntry, PSUEntryKind, PSUWriter, DIR_ID, FILE_ID, PSU};
-use serde::Deserialize;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
-use argh::FromArgs;
-
-#[derive(Debug, FromArgs)]
-#[argh(description = "Expects a folder with a psu.toml file that follows this format\n\t[config]\n\tname = \"Test PSU\"\t\t\t# Folder name on Memory Card\n\tinclude = [ \"BOOT.ELF\", \"icon.sys\" ]\t# using `exclude` will automatically include all files except the specified ones\n\ttimestamp = \"2024-10-10 10:30:00\"\t# Optional, but recommended\n")]
-struct Args {
-    /// folder to package to psu
-    #[argh(positional)]
-    folder: String,
-    /// output path
-    #[argh(option, short = 'o')]
-    output: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Config {
-    name: String,
-    #[serde(default, with = "date_format")]
-    timestamp: Option<NaiveDateTime>,
-    include: Option<Vec<String>>,
-    exclude: Option<Vec<String>>,
-}
-
-mod date_format {
-    use chrono::NaiveDateTime;
-    use serde::{self, Deserialize, Deserializer};
-
-    pub fn deserialize<'de, D>(deserialize: D) -> Result<Option<NaiveDateTime>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s: Option<String> = Option::deserialize(deserialize)?;
-        if let Some(s) = s {
-            Ok(Some(
-                NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
-                    .map_err(serde::de::Error::custom)?,
-            ))
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct ConfigFile {
-    config: Config,
-}
-
-fn check_name(name: &str) -> bool {
-    for c in name.chars() {
-        if !matches!(c, 'a'..='z'|'A'..='Z'|'0'..='9'|'_'|'-'|' ') {
-            return false
-        }
-    }
-    true
-}
+use ps2_filetypes::{PSUWriter, PSU};
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use toml::value::Datetime;
 
 fn main() -> Result<(), Error> {
-    let args: Args = argh::from_env();
-    let folder = PathBuf::from(args.folder);
+    let cli = Cli::parse();
 
-    let config_file = folder.join("psu.toml");
-
-    if config_file.exists() {
-        let str = std::fs::read_to_string(&config_file)?;
-        let config = toml::from_str::<ConfigFile>(&str)
-            .expect("Failed to parse config file")
-            .config;
-
-        let output_file = args.output.unwrap_or(format!("{}.psu", config.name));
-
-        if !check_name(&config.name) {
-            return Err(Error::NameError);
+    match &cli.command {
+        Commands::Create(args) => {
+            let output_filename = get_output_filename(&args.output, &args.name);
+            let psu = create_psu(
+                &args.name,
+                output_filename,
+                args.files.clone(),
+                args.timestamp,
+                Path::new("."),
+            );
+            println!("{}", psu);
         }
-
-        if config.include.is_some() && config.exclude.is_some() {
-            return Err(Error::IncludeExcludeError);
+        Commands::Read(args) => {
+            let file = fs::read(&args.file)?;
+            let psu = PSU::new(file);
+            println!("Reading the content of {}\n", args.file);
+            println!("{}", psu);
         }
+        Commands::Automate(args) => {
+            let toml_path = Path::new(&args.toml);
+            let raw_toml = fs::read_to_string(&args.toml)?;
+            let psu_table: HashMap<String, Vec<PsuConfig>> =
+                toml::from_str(&raw_toml).expect("Failed to parse config file");
+            let psus: &[PsuConfig] = &psu_table["psu"];
 
-        let mut psu = PSU::default();
-
-        let files = if let Some(include) = config.include {
-            include
-                .iter()
-                .filter_map(|file| {
-                    if file.contains(|c| matches!(c, '\\' | '/')) {
-                        eprintln!(
-                            "{} {} {}",
-                            "File".dimmed(),
-                            file.dimmed(),
-                            "exists in subfolder, skipping".dimmed()
-                        );
-                        None
-                    } else if !folder.join(file).exists() {
-                        eprintln!(
-                            "{} {} {}",
-                            "File".dimmed(),
-                            file.dimmed(),
-                            "does not exist, skipping".dimmed()
-                        );
-                        None
-                    } else {
-                        Some(folder.join(file))
-                    }
-                })
-                .collect::<Vec<_>>()
-        } else if let Some(exclude) = config.exclude {
-            std::fs::read_dir(folder)?
-                .into_iter()
-                .flatten()
-                .filter_map(|d| {
-                    if !exclude.contains(&d.file_name().to_str().unwrap().to_string()) {
-                        Some(d.path())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-        } else {
-            // Include all
-            std::fs::read_dir(folder)?
-                .into_iter()
-                .flatten()
-                .map(|d| d.path())
-                .collect::<Vec<_>>()
-        };
-        let files = filter_files(&files);
-        add_psu_defaults(
-            &mut psu,
-            &config.name,
-            files.len(),
-            config.timestamp.unwrap_or_default(),
-        );
-        add_files_to_psu(&mut psu, &files)?;
-        std::fs::write(&output_file, PSUWriter::new(psu).to_bytes()?)?;
-        println!("Wrote {}! {}", output_file.green(), "".clear());
-    } else {
-        eprintln!("{}", "Failed to find psu.toml".red());
-    }
-
-    Ok(())
-}
-
-fn filter_files(files: &[PathBuf]) -> Vec<PathBuf> {
-    files
-        .iter()
-        .filter_map(|f| {
-            if !f.is_file() {
-                println!(
-                    "{} {}",
-                    f.display().to_string().dimmed(),
-                    "is not a file, skipping".dimmed()
+            psus.iter().for_each(|psu| {
+                let output_filename = get_output_filename(&psu.output, &psu.name);
+                if !args.overwrite && fs::exists(&output_filename).unwrap() {
+                    println!(
+                        "{} already exists. Use --overwrite if you want to overwrite all .psu.",
+                        output_filename,
+                    );
+                    return;
+                }
+                let psu = create_psu(
+                    &psu.name,
+                    output_filename,
+                    psu.files.clone(),
+                    convert_toml_datetime(psu.timestamp),
+                    toml_path.parent().unwrap_or(Path::new(".")),
                 );
-                None
-            } else {
-                Some(f.to_owned())
-            }
-        })
-        .collect()
-}
 
-fn add_psu_defaults(psu: &mut PSU, name: &str, file_count: usize, timestamp: NaiveDateTime) {
-    psu.entries.push(PSUEntry {
-        id: DIR_ID,
-        size: file_count as u32 + 2, // +2 to include . and ..
-        created: timestamp,
-        sector: 0,
-        modified: timestamp,
-        name: name.to_owned(),
-        kind: PSUEntryKind::Directory,
-        contents: None,
-    });
-    psu.entries.push(PSUEntry {
-        id: DIR_ID,
-        size: 0,
-        created: timestamp,
-        sector: 0,
-        modified: timestamp,
-        name: ".".to_string(),
-        kind: PSUEntryKind::Directory,
-        contents: None,
-    });
-    psu.entries.push(PSUEntry {
-        id: DIR_ID,
-        size: 0,
-        created: timestamp,
-        sector: 0,
-        modified: timestamp,
-        name: "..".to_string(),
-        kind: PSUEntryKind::Directory,
-        contents: None,
-    });
-}
+                println!("{}\n\n{}\n", psu, "--------".dimmed());
+            });
+        }
+        Commands::Add(args) => {
+            let file = fs::read(&args.psu)?;
+            let mut psu = PSU::new(file.clone());
 
-fn add_files_to_psu(psu: &mut PSU, files: &[PathBuf]) -> Result<(), Error> {
-    for file in files {
-        let name = file.file_name().unwrap().to_str().unwrap();
+            args.files.iter().for_each(|file| match psu.add_file(file) {
+                Ok(_) => println!("+ Adding {}", file.green()),
+                Err(_) => eprintln!("⚠ File {} doesn't exist. Skipping.", file.dimmed()),
+            });
 
-        let f = std::fs::read(file)?;
-        let stat = std::fs::metadata(file)?;
+            fs::write(
+                &args.psu,
+                PSUWriter::new(psu.clone())
+                    .to_bytes()
+                    .expect("Couldn't generate the PSU file"),
+            )
+            .expect("Couldn't overwrite the PSU");
 
-        println!("+ {} {}", "Adding", name.green());
+            println!("\n{}", psu);
+        }
+        Commands::Delete(args) => {
+            let file = fs::read(&args.psu)?;
+            let mut psu = PSU::new(file.clone());
 
-        psu.entries.push(PSUEntry {
-            id: FILE_ID,
-            size: f.len() as u32,
-            created: convert_timestamp(stat.created()?),
-            sector: 0,
-            modified: convert_timestamp(stat.modified()?),
-            name: name.to_owned(),
-            kind: PSUEntryKind::File,
-            contents: Some(f),
-        })
+            args.entries
+                .iter()
+                .for_each(|entry| match psu.remove_entry(entry) {
+                    Ok(_) => println!("+ Removing {}", entry.green()),
+                    Err(_) => eprintln!("⚠ Entry {} doesn't exist. Skipping.", entry.dimmed()),
+                });
+
+            fs::write(
+                &args.psu,
+                PSUWriter::new(psu.clone())
+                    .to_bytes()
+                    .expect("Couldn't generate the PSU file"),
+            )
+            .expect("Couldn't overwrite the PSU");
+
+            println!("\n{}", psu);
+        }
     }
 
     Ok(())
 }
 
-fn convert_timestamp(time: SystemTime) -> NaiveDateTime {
-    let duration = time.duration_since(UNIX_EPOCH).unwrap();
-    let local = DateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
-        .unwrap()
-        .with_timezone(&Local)
-        .naive_local();
+fn get_output_filename(output: &Option<String>, name: &String) -> String {
+    output.to_owned().unwrap_or(format!("{}.psu", name))
+}
 
-    local
+fn convert_toml_datetime(time: Option<Datetime>) -> Option<NaiveDateTime> {
+    match time {
+        None => None,
+        Some(_) => {
+            let datetime_str = format!(
+                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+                time.unwrap().date.unwrap().year,
+                time.unwrap().date.unwrap().month,
+                time.unwrap().date.unwrap().day,
+                time.unwrap().time.unwrap().hour,
+                time.unwrap().time.unwrap().minute,
+                time.unwrap().time.unwrap().second,
+            );
+            Some(
+                DateTime::<Local>::from_naive_utc_and_offset(
+                    (&datetime_str).parse().unwrap(),
+                    *Local::now().offset(),
+                )
+                .naive_local(),
+            )
+        }
+    }
+}
+
+fn create_psu(
+    name: &String,
+    output: String,
+    files: Vec<String>,
+    timestamp: Option<NaiveDateTime>,
+    path_prefix: &Path,
+) -> PSU {
+    println!("Preparing to create {}", name);
+    let mut psu = PSU::default();
+
+    let files = files
+        .iter()
+        .filter_map(|file| {
+            let actual_file_path = path_prefix.join(file).to_str().unwrap().to_string();
+            if fs::exists(&actual_file_path).unwrap() {
+                return Some(actual_file_path);
+            }
+            eprintln!("⚠ File {} doesn't exist. Skipping.", file.dimmed());
+            None
+        })
+        .collect::<Vec<_>>();
+
+    psu.add_defaults(name, timestamp.unwrap_or(Local::now().naive_local()));
+
+    files.iter().for_each(|file| {
+        psu.add_file(file);
+        println!("+ Adding {}", file.green());
+    });
+
+    fs::write(
+        &output,
+        PSUWriter::new(psu.clone())
+            .to_bytes()
+            .expect("Couldn't generate the PSU file"),
+    )
+    .expect("Couldn't write the .psu file");
+    println!("Wrote {}!\n", output.green());
+
+    psu
 }
 
 enum Error {
-    NameError,
     IOError(std::io::Error),
-    IncludeExcludeError,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Error::NameError => write!(f, "Name must match [a-zA-Z0-9._-\\s]+"),
-            Error::IncludeExcludeError => write!(f, "Exclude cannot be used in include mode"),
             Error::IOError(err) => write!(f, "{err:?}"),
         }
     }

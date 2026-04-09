@@ -1,0 +1,74 @@
+name: Release Suitcase and PSU Packer
+
+on:
+  push:
+    tags:
+      - '*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build and Release ${{matrix.os.name}}
+    strategy:
+      matrix:
+        os:
+          - name: ubuntu
+            version: ubuntu-latest
+            suitcase:
+              executable: suitcase
+              asset_name: suitcase
+            psupacker:
+              executable: psu-packer
+              asset_name: psu-packer
+          - name: macos
+            version: macos-latest
+            suitcase:
+              executable: suitcase
+              asset_name: suitcase-macos
+            psupacker:
+              executable: psu-packer
+              asset_name: psu-packer-macos
+          - name: windows
+            version: windows-latest
+            suitcase:
+              executable: suitcase.exe
+              asset_name: suitcase.exe
+            psupacker:
+              executable: psu-packer.exe
+              asset_name: psu-packer.exe
+    runs-on: ${{matrix.os.version}}
+
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --verbose --release
+      - name: Run tests
+        run: cargo test --verbose
+      - name: Upload Suitcase artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: suitcase-${{matrix.os.name}}
+          path: target/release/${{matrix.os.suitcase.executable}}
+      - name: Upload PSU Packer artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: psu-packer-${{matrix.os.name}}
+          path: target/release/${{matrix.os.psupacker.executable}}
+      - name: Upload Suitcase binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          asset_name: ${{ matrix.os.suitcase.asset_name }}
+          file: target/release/${{ matrix.os.suitcase.executable }}
+          tag: ${{ github.ref }}
+      - name: Upload PSU Packer binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          asset_name: ${{ matrix.os.psupacker.asset_name }}
+          file: target/release/${{ matrix.os.psupacker.executable }}
+          tag: ${{ github.ref }}

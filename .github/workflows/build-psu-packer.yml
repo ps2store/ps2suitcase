@@ -27,13 +27,13 @@ jobs:
     runs-on: ${{matrix.os.version}}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --package psu-packer --verbose --release
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: psu-packer-${{matrix.os.name}}
           path: target/release/${{matrix.os.executable}}
